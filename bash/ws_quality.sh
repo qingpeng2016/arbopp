@@ -65,9 +65,15 @@ show_pid_help() {
   echo "自定义匹配: export PGREP_PATTERN='你的关键字' && bash bash/ws_quality.sh"
 }
 
-count_established_linux() {
+count_established_pid() {
+  local pid="$1"
+  ss -tnp state established 2>/dev/null | grep -c "pid=${pid}," || true
+}
+
+# 域名匹配常因对端是 IP 而为 0，仅作参考
+count_established_linux_host() {
   local pid="$1" host="$2"
-  ss -tnp state established 2>/dev/null | grep "pid=${pid}," | grep -c "$host" || true
+  ss -tnp state established 2>/dev/null | grep "pid=${pid}," | grep -ci "$host" || true
 }
 
 WORKER_PID=""
@@ -91,15 +97,19 @@ if [[ -n "$WORKER_PID" ]]; then
     grep -E 'open files|Max open files' "/proc/$WORKER_PID/limits" 2>/dev/null || true
   fi
 
-  section "TCP 实连 (Poly / Kalshi / Predict)"
+  section "TCP 实连"
   if command -v ss >/dev/null 2>&1; then
-    total=0
+    total=$(count_established_pid "$WORKER_PID")
+    echo "该进程 ESTABLISHED 合计: $total (应约 max_groups×平台数; 你当前应≈$EXPECTED，库内若为500场且 Poly+Predict 则 export MAX_GROUPS=500 PLATFORMS=2)"
+    echo "按域名 grep (对端多为 IP 时常全 0，可忽略):"
     for h in polymarket kalshi predict; do
-      c=$(count_established_linux "$WORKER_PID" "$h")
-      echo "$h: $c"
-      total=$((total + c))
+      echo "  $h: $(count_established_linux_host "$WORKER_PID" "$h")"
     done
-    echo "合计: $total"
+    if command -v lsof >/dev/null 2>&1; then
+      echo "lsof 远端主机分布 (前 20):"
+      lsof -nP -a -p "$WORKER_PID" -iTCP -sTCP:ESTABLISHED 2>/dev/null \
+        | awk 'NR>1 {print $9}' | sed 's/.*->//' | cut -d: -f1 | sort | uniq -c | sort -rn | head -20 || true
+    fi
     ss -tnp 2>/dev/null | grep "pid=${WORKER_PID}," | awk '{print $1}' | sort | uniq -c || true
   fi
 
@@ -133,7 +143,10 @@ if [[ -f "$LOG" ]]; then
   grep -E 'strategy_entry-(poly|kalshi|predict)-disconnected' "$LOG" 2>/dev/null \
     | grep -oE '"map_key":"[^"]+"' | sort | uniq -c | sort -rn | head -15 || true
   grep 'disconnected' "$LOG" 2>/dev/null | grep -oE '"gen":[0-9]+' | sort -t: -k2 -n | tail -5 || true
-  grep -E 'kalshi-seq-gap|predict-snapshot-failed|event queue full|ws-stagger-read-failed' "$LOG" 2>/dev/null | tail -15 || true
+  echo "--- Predict 429 / snapshot ---"
+  grep -c 'predict-snapshot-failed' "$LOG" 2>/dev/null || echo 0
+  grep -c '"code":429' "$LOG" 2>/dev/null || echo 0
+  grep -E 'kalshi-seq-gap|predict-snapshot-failed|event queue full|ws-stagger-read-failed' "$LOG" 2>/dev/null | tail -8 || true
 else
   section "日志"
   echo "找不到 LOG=$LOG"
@@ -151,6 +164,7 @@ FROM market_order_book WHERE updated_at > NOW() - INTERVAL 10 MINUTE GROUP BY pl
 fi
 
 section "判读"
-echo "· 无进程且无 polymarket/kalshi 连接 → 先启动 bot (--run_bot=true)"
-echo "· 正常应 ≈ $EXPECTED 条 ESTABLISHED（错峰后等 2～3 分钟）"
+echo "· ESTABLISHED 合计应 ≈ MAX_GROUPS×PLATFORMS（例：500×2=1000）"
+echo "· Lark Poly「正常」<「应」：冷场 4min 无成交推送也会判不健康（Ping 不算）；看合计 ESTABLISHED 更准"
+echo "· predict-snapshot 429：首轮 REST 拉盘口太猛，加大 ws_connect_stagger_ms 或降 max_groups"
 echo "完成."
