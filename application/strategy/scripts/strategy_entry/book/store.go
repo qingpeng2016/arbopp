@@ -2,8 +2,6 @@ package book
 
 import (
 	"context"
-	"fmt"
-	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -80,8 +78,11 @@ func (s *Store) PausePlatform(platform string) {
 	}
 }
 
-// noteReject 价格无效，或对不上最小跳动时记一次错误。同一原因、同一价格不重复报警。
+// noteReject 价格越界 (0,1) 时记一次错误。同一价格不重复报警。
 func noteReject(platform, id, reason string, price, tick float64) {
+	if reason != "price" {
+		return
+	}
 	key := reason + "|" + platform + "|" + id + "|" + strconv.FormatFloat(price, 'g', -1, 64)
 	if _, loaded := badPriceOnce.LoadOrStore(key, struct{}{}); loaded {
 		return
@@ -95,15 +96,6 @@ func noteReject(platform, id, reason string, price, tick float64) {
 		zap.String("价格", strconv.FormatFloat(price, 'f', -1, 64)),
 		zap.String("tick_size", strconv.FormatFloat(tick, 'f', -1, 64)),
 	}
-	if reason == "tick" && tick > 0 {
-		n := math.Round(price / tick)
-		nearest := n * tick
-		drift := price - nearest
-		fields = append(fields,
-			zap.String("最近合法价", strconv.FormatFloat(nearest, 'f', -1, 64)),
-			zap.String("偏离", fmt.Sprintf("%.10f (%.2f%%tick)", drift, math.Abs(drift/tick)*100)),
-		)
-	}
 	notification.SendErrorLog(context.Background(), "strategy_entry-bad-price", fields...)
 }
 
@@ -111,10 +103,6 @@ func noteBadLevels(platform, id string, levels []Level, tick float64) {
 	for _, lv := range levels {
 		if !ValidPrice(lv.Price) {
 			noteReject(platform, id, "price", lv.Price, tick)
-			continue
-		}
-		if !PriceOnTick(lv.Price, tick) {
-			noteReject(platform, id, "tick", lv.Price, tick)
 		}
 	}
 }
@@ -228,9 +216,6 @@ func (s *Store) ApplyPolyLevels(changes []PolyChange, ts time.Time) {
 func applyPolyLevel(b *Book, side string, price, size float64, ts time.Time) string {
 	if !ValidPrice(price) {
 		return "price"
-	}
-	if !PriceOnTick(price, b.Tick) {
-		return "tick"
 	}
 	switch strings.ToUpper(side) {
 	case "BUY", "BID":

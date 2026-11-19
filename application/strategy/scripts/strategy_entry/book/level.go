@@ -42,22 +42,15 @@ func ParsePrice(s string) float64 {
 	return p
 }
 
-func PriceOnTick(price, tick float64) bool {
-	if tick <= 0 {
-		return true
-	}
-	n := math.Round(price / tick)
-	return math.Abs(price-n*tick) <= tick*0.05+1e-8
-}
-
-// OnTick 丢掉无效档和不合最小价格档的档位。
+// OnTick 丢掉无效价格档；tick 参数保留给调用方写 Book.Tick，不再按 tick 过滤（Polymarket 推送精度常与 book tick_size 不一致）。
 func OnTick(in []Level, tick float64) []Level {
+	_ = tick
 	if len(in) == 0 {
 		return nil
 	}
 	out := make([]Level, 0, len(in))
 	for _, lv := range in {
-		if lv.Size <= 1e-9 || !ValidPrice(lv.Price) || !PriceOnTick(lv.Price, tick) {
+		if lv.Size <= 1e-9 || !ValidPrice(lv.Price) {
 			continue
 		}
 		out = append(out, lv)
