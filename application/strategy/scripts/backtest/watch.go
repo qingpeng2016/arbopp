@@ -32,7 +32,7 @@ func newStrategyEntrySession(
 	taskID uint,
 	params strategyentry.Params,
 	btOpp persistentrepo.BacktestArbBinaryOpportunityRepo,
-	btOrd persistentrepo.ArbBinaryOrderRepo,
+	btOrd persistentrepo.BacktestOrderRepo,
 ) *strategyEntrySession {
 	if marketsByRow == nil {
 		marketsByRow = map[uint]persistententity.Market{}
@@ -81,7 +81,7 @@ func newStrategyEntrySession(
 		BacktestOppRepo: func() persistentrepo.BacktestArbBinaryOpportunityRepo {
 			return btOpp
 		},
-		BacktestOrderRepo: func() persistentrepo.ArbBinaryOrderRepo {
+		BacktestOrderRepo: func() persistentrepo.BacktestOrderRepo {
 			return btOrd
 		},
 		SnapshotNow: sess.replayNowFunc,

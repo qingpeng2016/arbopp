@@ -6,7 +6,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// ArbBinaryOrder strategy_entry / 回测 一次套利组合中的一腿下单（表名 orders）。
+// ArbBinaryOrder 实盘 strategy_entry 组合腿下单（表 orders；回测见 BacktestOrder）。
 type ArbBinaryOrder struct {
 	ID                      uint            `gorm:"primaryKey;column:id;type:bigint unsigned;not null;autoIncrement"`
 	BacktestTaskID          uint            `gorm:"column:backtest_task_id;type:bigint unsigned;not null;default:0"`

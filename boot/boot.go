@@ -66,6 +66,7 @@ func BuildContainer() *dig.Container {
 	_ = c.Provide(mysql.NewBacktestArbBinaryOpportunityImpl)
 	_ = c.Provide(mysql.NewArbBinaryOpportunityImpl)
 	_ = c.Provide(mysql.NewArbBinaryOrderImpl)
+	_ = c.Provide(mysql.NewBacktestOrderImpl)
 
 	_ = c.Provide(http.NewHttpClient)
 	_ = c.Provide(NewPlatformCatalog)

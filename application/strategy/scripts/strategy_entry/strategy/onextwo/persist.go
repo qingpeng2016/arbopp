@@ -19,7 +19,7 @@ type persistDeps struct {
 	opp      persistentrepo.ArbBinaryOpportunityRepo
 	order    persistentrepo.ArbBinaryOrderRepo
 	btOpp    persistentrepo.BacktestArbBinaryOpportunityRepo
-	btOrd    persistentrepo.ArbBinaryOrderRepo
+	btOrd    persistentrepo.BacktestOrderRepo
 	task     uint
 	snap     func() time.Time
 	snapMs   func() int64
@@ -160,14 +160,28 @@ func saveLive(ctx context.Context, d persistDeps, mapKey string, hit GrabHit) {
 		if !hit.Pick.BuyYes {
 			strat = StrategyTypeNoTriple
 		}
-		orders := ordersForHit(0, strat, mapKey, live.ID, hit, live.SnapshotAt)
+		orders := liveOrdersForHit(strat, mapKey, live.ID, hit, live.SnapshotAt)
 		if err := d.order.BatchCreate(runCtx, nil, orders); err != nil {
 			notification.SendErrorLog(runCtx, "onextwo-OrderCreateFailed", zap.Error(err))
 		}
 	}
 }
 
-func ordersForHit(taskID uint, strategyType, mapKey string, oppID uint, hit GrabHit, sentAt time.Time) []*persistententity.ArbBinaryOrder {
+func ordersForHit(taskID uint, strategyType, mapKey string, oppID uint, hit GrabHit, sentAt time.Time) []*persistententity.BacktestOrder {
+	pick := hit.Pick
+	out := make([]*persistententity.BacktestOrder, 0, 3)
+	for i, leg := range pick.Legs {
+		px := pick.Prices[i]
+		fill := pick.Qty
+		if hit.DryRun {
+			fill = 0
+		}
+		out = append(out, yesno.BacktestOrderForSide(strategyType, taskID, mapKey, oppID, sentAt, uint8(i+1), leg, pick.BuyYes, pick.Qty, px, fill, nil))
+	}
+	return out
+}
+
+func liveOrdersForHit(strategyType, mapKey string, oppID uint, hit GrabHit, sentAt time.Time) []*persistententity.ArbBinaryOrder {
 	pick := hit.Pick
 	out := make([]*persistententity.ArbBinaryOrder, 0, 3)
 	for i, leg := range pick.Legs {
@@ -176,36 +190,7 @@ func ordersForHit(taskID uint, strategyType, mapKey string, oppID uint, hit Grab
 		if hit.DryRun {
 			fill = 0
 		}
-		out = append(out, yesnoOrderLeg(taskID, strategyType, mapKey, oppID, sentAt, uint8(i+1), leg, pick.BuyYes, pick.Qty, px, fill, nil))
+		out = append(out, yesno.OrderForSide(strategyType, 0, mapKey, oppID, sentAt, uint8(i+1), leg, pick.BuyYes, pick.Qty, px, fill, nil))
 	}
 	return out
-}
-
-func yesnoOrderLeg(taskID uint, strategyType, mapKey string, oppID uint, sentAt time.Time, sideNo uint8, leg yesno.ExecSide, buyYes bool, qty, px, fill float64, err error) *persistententity.ArbBinaryOrder {
-	// 复用 yesno 的字段映射；仅暴露 orderForSide 逻辑副本避免未导出。
-	side := "NO"
-	if buyYes {
-		side = "YES"
-	}
-	status, errMsg := "FILLED", ""
-	if err != nil {
-		status = "ERROR"
-		errMsg = err.Error()
-	} else if fill <= 0 {
-		status = "NO_FILL"
-	}
-	token := ""
-	if buyYes {
-		token = leg.YesToken
-	} else {
-		token = leg.NoToken
-	}
-	return &persistententity.ArbBinaryOrder{
-		BacktestTaskID: taskID, StrategyType: strategyType,
-		ArbOppID: oppID, MapKey: mapKey, SideNo: sideNo,
-		Platform: leg.Platform, PlatformMarketOutcomeID: leg.MarketID, TokenID: token,
-		Side: side, Action: "BUY",
-		Price: decimal.NewFromFloat(px).Round(8), Qty: decimal.NewFromFloat(qty).Round(8),
-		FillQty: decimal.NewFromFloat(fill).Round(8), Status: status, ErrMsg: errMsg, SentAt: sentAt,
-	}
 }

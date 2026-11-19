@@ -34,10 +34,10 @@ ALTER TABLE `arb_binary_opportunity`
   COMMENT='strategy_entry 套利机会（二元 YES+NO 与 1X2）';
 
 ALTER TABLE `backtest_arb_binary_opportunity`
-  COMMENT='回测套利机会（二元与 1X2，订单见 orders）';
+  COMMENT='回测套利机会（二元与 1X2，订单见 backtest_orders）';
 
 UPDATE `bot_schedule_config`
-SET `description` = 'backtest_task(pending)：重放 data_history_order_book，驱动 yesno+onextwo；机会 backtest_arb_binary_opportunity，订单 orders(backtest_task_id)'
+SET `description` = 'backtest_task(pending)：重放 data_history_order_book，驱动 yesno+onextwo；机会 backtest_arb_binary_opportunity，订单 backtest_orders'
 WHERE `module` = 'less_one' AND `task_name` = 'backtest_replay';
 
 UPDATE `bot_schedule_config`

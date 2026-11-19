@@ -27,7 +27,7 @@ type Replay struct {
 	thresholdRepo    persistentrepo.ConfigStrategyThresholdRepo
 	feeRepo          persistentrepo.ConfigStrategyFeeRepo
 	btOppRepo        persistentrepo.BacktestArbBinaryOpportunityRepo
-	btOrderRepo      persistentrepo.ArbBinaryOrderRepo
+	btOrderRepo      persistentrepo.BacktestOrderRepo
 }
 
 func NewReplay(
@@ -39,7 +39,7 @@ func NewReplay(
 	thresholdRepo persistentrepo.ConfigStrategyThresholdRepo,
 	feeRepo persistentrepo.ConfigStrategyFeeRepo,
 	btOppRepo persistentrepo.BacktestArbBinaryOpportunityRepo,
-	btOrderRepo persistentrepo.ArbBinaryOrderRepo,
+	btOrderRepo persistentrepo.BacktestOrderRepo,
 ) *Replay {
 	return &Replay{
 		backtestTaskRepo: backtestTaskRepo,

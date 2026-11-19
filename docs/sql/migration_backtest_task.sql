@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS `backtest_arb_binary_order` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='回测模拟下单记录';
 
 INSERT INTO `bot_schedule_config` (`module`, `task_name`, `interval_seconds`, `exe_sort`, `concurrency`, `description`, `is_enabled`, `is_strategy_enabled`, `is_primary_machine_run`)
-SELECT 'less_one', 'backtest_replay', 3600, 37, 1, 'backtest_task(pending)：按秒重放 data_history_order_book 驱动 yesno+onextwo，机会写 backtest_arb_binary_opportunity、订单写 orders', 0, 1, 0
+SELECT 'less_one', 'backtest_replay', 3600, 37, 1, 'backtest_task(pending)：按秒重放 data_history_order_book 驱动 yesno+onextwo，机会写 backtest_arb_binary_opportunity、订单写 backtest_orders', 0, 1, 0
 FROM DUAL
 WHERE NOT EXISTS (
   SELECT 1 FROM `bot_schedule_config` WHERE `module` = 'less_one' AND `task_name` = 'backtest_replay'

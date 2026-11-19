@@ -27,7 +27,7 @@ type Ops struct {
 	BacktestMode      bool
 	BacktestTaskID    uint
 	BacktestOppRepo   func() persistentrepo.BacktestArbBinaryOpportunityRepo
-	BacktestOrderRepo func() persistentrepo.ArbBinaryOrderRepo
+	BacktestOrderRepo func() persistentrepo.BacktestOrderRepo
 	SnapshotNow       func() time.Time
 	SnapshotAtMs      func() int64
 }
