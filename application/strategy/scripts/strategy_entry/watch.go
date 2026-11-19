@@ -205,6 +205,8 @@ func (w *watch) servePoly() {
 func (w *watch) applyPoly(msg polyws.Message) {
 	recv := time.Now()
 	switch msg.Kind {
+	case "pong":
+		w.touchWS(appcommon.PlatformPolymarket)
 	case "pause":
 		w.write(event{Gen: msg.Gen, Platform: appcommon.PlatformPolymarket, Kind: "pause"})
 	case "book":

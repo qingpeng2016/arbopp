@@ -9,7 +9,7 @@ import (
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/book"
 )
 
-// Message 一条 market channel 推送。Kind 为 book 或 price_change。多档在 Changes。
+// Message 一条 market channel 推送。Kind 为 book、price_change、pong（对端 PING 回应）。多档在 Changes。
 type Message struct {
 	Gen     int
 	Kind    string
@@ -24,8 +24,11 @@ type Message struct {
 
 func Parse(raw []byte) ([]Message, error) {
 	raw = bytes.TrimSpace(raw)
-	if len(raw) == 0 || strings.EqualFold(string(raw), "PONG") || strings.EqualFold(string(raw), "PING") {
+	if len(raw) == 0 || strings.EqualFold(string(raw), "PING") {
 		return nil, nil
+	}
+	if strings.EqualFold(string(raw), "PONG") {
+		return []Message{{Kind: "pong"}}, nil
 	}
 	if raw[0] == '[' {
 		var arr []json.RawMessage

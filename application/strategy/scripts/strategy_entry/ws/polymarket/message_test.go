@@ -17,7 +17,7 @@ func TestParseBookAndLevel(t *testing.T) {
 
 func TestParsePong(t *testing.T) {
 	got, err := Parse([]byte("PONG"))
-	if err != nil || len(got) != 0 {
+	if err != nil || len(got) != 1 || got[0].Kind != "pong" {
 		t.Fatalf("pong: %+v %v", got, err)
 	}
 }
