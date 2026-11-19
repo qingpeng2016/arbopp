@@ -11,6 +11,7 @@ import (
 	"time"
 
 	appcommon "github.com/gph-tech/fgmm-strategy-bitfinex/application/common"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketmap"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/persist"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/notification"
 	httprepo "github.com/gph-tech/fgmm-strategy-bitfinex/domain/http/repository"
@@ -42,8 +43,9 @@ type Entry struct {
 	watches map[string]*running
 	flush   *persist.Flush
 
-	paramBox atomic.Value
-	credBox  atomic.Value
+	paramBox       atomic.Value
+	credBox        atomic.Value
+	wsStaggerBox   atomic.Value
 	// warnKalshiKey 没有 Kalshi 签名账户时只打一次日志。
 	warnKalshiKey atomic.Bool
 	detectLat       *DetectLatency
@@ -94,7 +96,19 @@ func NewEntry(
 	}
 	e.paramBox.Store(defaultParams())
 	e.credBox.Store(creds{})
+	e.wsStaggerBox.Store(marketmap.WsStaggerMs{MinMs: marketmap.DefaultWsStaggerMinMs, MaxMs: marketmap.DefaultWsStaggerMaxMs})
 	return e
+}
+
+func (e *Entry) wsStaggerBounds() marketmap.WsStaggerMs {
+	if e == nil {
+		return marketmap.WsStaggerMs{MinMs: marketmap.DefaultWsStaggerMinMs, MaxMs: marketmap.DefaultWsStaggerMaxMs}
+	}
+	v := e.wsStaggerBox.Load()
+	if v == nil {
+		return marketmap.WsStaggerMs{MinMs: marketmap.DefaultWsStaggerMinMs, MaxMs: marketmap.DefaultWsStaggerMaxMs}
+	}
+	return v.(marketmap.WsStaggerMs)
 }
 
 func (e *Entry) predictAPIKey() string {
@@ -204,6 +218,7 @@ func (e *Entry) reconcile(ctx context.Context) {
 	}
 	params := e.loadParams(ctx)
 	e.paramBox.Store(params)
+	e.wsStaggerBox.Store(e.loadWsStagger(ctx))
 	e.refreshCreds(ctx)
 
 	// 取比赛信息（同一个比赛多平台分为一组）

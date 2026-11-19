@@ -17,12 +17,23 @@ const (
 	KalshiPath = "/trade-api/ws/v2"
 )
 
-// StaggerConnect 各场次首次建连前随机等待 [0,2s]，错开同时握手。
-func StaggerConnect(ctx context.Context) {
+// StaggerConnect 各场次首次建连前在 [minMs,maxMs] 毫秒间随机等待，错开同时握手。
+func StaggerConnect(ctx context.Context, minMs, maxMs int) {
 	if ctx.Err() != nil {
 		return
 	}
-	delay := time.Duration(rand.IntN(2001)) * time.Millisecond
+	if minMs < 0 {
+		minMs = 0
+	}
+	if maxMs < minMs {
+		maxMs = minMs
+	}
+	span := maxMs - minMs
+	waitMs := minMs
+	if span > 0 {
+		waitMs += rand.IntN(span + 1)
+	}
+	delay := time.Duration(waitMs) * time.Millisecond
 	t := time.NewTimer(delay)
 	defer t.Stop()
 	select {

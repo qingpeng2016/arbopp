@@ -10,7 +10,7 @@
 | 二 | history_data_sync | 按需 | `data_task` 中 `status=pending` 的 `map_key`；PMData 拉 L2，完成后 `data_task.status=completed` | `data_task`、`data_platform`、`data_history_order_book`、`market`、`market_outcome` |
 | 二 | synthetic_history_sync | 按需 | `data_task.task_type=synthetic_l2`：每 outcome 1000 秒×1 条/秒，批插 100 秒；多平台 `snapshot_at_ms` 对齐 | `data_task`、`data_platform(synthetic)`、`data_history_order_book` |
 | 二 | backtest_replay | 按需 | `backtest_task.status=pending`：按 `snapshot_at_ms` 重放 `data_history_order_book`，驱动 `yesno`+`onextwo`（不发真实单）；机会 `backtest_arb_binary_opportunity`，订单 `orders`（`backtest_task_id`） | `backtest_task`、`data_history_order_book`、`backtest_arb_binary_opportunity`、`orders` |
-| 三 | strategy_entry | 20s | `watch_map_keys` 配置 map_key（每场 Poly+Kalshi 两条 market）；`max_groups`（默认 50）按成交额取前 N 组。WebSocket 比较卖一后发两笔 FAK；一腿成交会反向平掉。落库 `market_order_book`、`arb_binary_opportunity`、`arb_binary_order` | `market`、`market_outcome`、`config_strategy`、`config_strategy_threshold`、`account` |
+| 三 | strategy_entry | 20s | `watch_map_keys` 配置 map_key（每场 Poly+Kalshi 两条 market）；`max_groups`（默认 50）按成交额取前 N 组；`ws_connect_stagger_ms`（默认 `{"min_ms":0,"max_ms":2000}`）首场建连错峰。WebSocket 比较卖一后发两笔 FAK；一腿成交会反向平掉。落库 `market_order_book`、`arb_binary_opportunity`、`arb_binary_order` | `market`、`market_outcome`、`config_strategy`、`config_strategy_threshold`、`account` |
 | 五–六 | trade_execute | 事件/5s | 下单（FAK 两腿/三腿）+ **内嵌敞口处理**：部分成交/单腿失败在同一执行上下文里补腿、反向平仓、记台账，避免与另一定时任务并发改同一笔执行 | `account`、`arb_binary_opportunity`、执行/敞口表（规划） |
 | — | task_alert | 1–5m | 机会、敞口、拒单率等告警 | 日志、通知 |
 | — | report_daily | 1d | 机会数、成交率、滑点、复盘报表 | 各业务表 |

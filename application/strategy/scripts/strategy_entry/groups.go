@@ -205,6 +205,26 @@ func (e *Entry) loadMaxGroups(ctx context.Context) int {
 	return marketmap.ParseMaxGroups(cfg.ItemValue, defaultMaxGroups)
 }
 
+// loadWsStagger 读 config_strategy.strategy_entry.ws_connect_stagger_ms（毫秒）。
+func (e *Entry) loadWsStagger(ctx context.Context) marketmap.WsStaggerMs {
+	def := marketmap.WsStaggerMs{MinMs: marketmap.DefaultWsStaggerMinMs, MaxMs: marketmap.DefaultWsStaggerMaxMs}
+	if e.configStrategyRepo == nil {
+		return def
+	}
+	cfg, err := e.configStrategyRepo.FindOne(ctx, nil, map[string]interface{}{
+		"group_name = ?": marketmap.ConfigGroupStrategyEntry,
+		"item_key = ?":   marketmap.ConfigKeyWsConnectStaggerMs,
+		"is_enabled = ?": 1,
+	}, "")
+	if err != nil {
+		if err != gorm.ErrRecordNotFound {
+			notification.SendErrorLog(ctx, "strategy_entry-ws-stagger-read-failed", zap.Error(err))
+		}
+		return def
+	}
+	return marketmap.ParseWsStaggerMs(cfg.ItemValue)
+}
+
 // loadGroups 取出已核对场次，按成交额留下最多 max_groups 组（config_strategy）。
 func (e *Entry) loadGroups(ctx context.Context) ([]group, int, error) {
 	fixtures, err := marketmap.LoadVerifiedFixturesNew(ctx, e.marketRepo, e.configStrategyRepo, e.platformRepo)
