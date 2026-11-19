@@ -9,6 +9,14 @@ import (
 	cryptoPredictionEnum "github.com/gph-tech/fgmm-strategy-bitfinex/common/enum/crypto/prediction"
 )
 
+func TestBinaryArbWindowPrices(t *testing.T) {
+	_, asks := binaryArbLevelsJSON(string(cryptoPredictionEnum.PlatformPolymarket))
+	var al [][2]float64
+	if err := json.Unmarshal([]byte(asks), &al); err != nil || len(al) == 0 || al[0][0] != 0.38 {
+		t.Fatalf("poly ask: %s err=%v", asks, err)
+	}
+}
+
 func TestFakeBookPricesOnTick(t *testing.T) {
 	bids, asks := fakeBookAtSecond(500, string(cryptoPredictionEnum.PlatformPolymarket), 1)
 	if strings.Contains(bids, "00000000000") || strings.Contains(asks, "00000000000") {

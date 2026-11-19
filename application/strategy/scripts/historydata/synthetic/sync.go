@@ -180,12 +180,13 @@ func (j *Sync) buildSecondBatch(
 		return nil
 	}
 	rows := make([]*persistententity.HistoryDataOrderBook, 0, capN)
+	plan := buildArbPlan(outcomes)
 	for sec := fromSec; sec < toSec; sec++ {
 		tsMs := baseTs + int64(sec)*1000
 		utcDate := time.UnixMilli(tsMs).UTC()
 		utcDate = time.Date(utcDate.Year(), utcDate.Month(), utcDate.Day(), 0, 0, 0, 0, time.UTC)
 		for oi, oc := range outcomes {
-			bids, asks := fakeBookAtSecond(sec, oc.Platform, oi)
+			bids, asks := bookForOutcome(sec, oc, oi, plan)
 			symbol := strings.TrimSpace(oc.PlatformMarketOutcomeID)
 			if sp := historydata.PolymarketVendorSlug(oc); strings.EqualFold(oc.Platform, string(cryptoPredictionEnum.PlatformPolymarket)) {
 				symbol = sp
