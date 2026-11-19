@@ -186,12 +186,12 @@ type group struct {
 	MarketsByRowID map[uint]persistententity.Market
 }
 
-// loadMaxGroups 读 config_strategy.strategy_entry.max_groups。
-func (e *Entry) loadMaxGroups(ctx context.Context) int {
-	if e.configStrategyRepo == nil {
+// LoadMaxGroups 读 config_strategy.strategy_entry.max_groups（与实盘一致）。
+func LoadMaxGroups(ctx context.Context, configStrategyRepo persistentrepo.ConfigStrategyRepo) int {
+	if configStrategyRepo == nil {
 		return defaultMaxGroups
 	}
-	cfg, err := e.configStrategyRepo.FindOne(ctx, nil, map[string]interface{}{
+	cfg, err := configStrategyRepo.FindOne(ctx, nil, map[string]interface{}{
 		"group_name = ?": marketmap.ConfigGroupStrategyEntry,
 		"item_key = ?":   marketmap.ConfigKeyMaxGroups,
 		"is_enabled = ?": 1,
@@ -203,6 +203,40 @@ func (e *Entry) loadMaxGroups(ctx context.Context) int {
 		return defaultMaxGroups
 	}
 	return marketmap.ParseMaxGroups(cfg.ItemValue, defaultMaxGroups)
+}
+
+// loadMaxGroups 读 config_strategy.strategy_entry.max_groups。
+func (e *Entry) loadMaxGroups(ctx context.Context) int {
+	return LoadMaxGroups(ctx, e.configStrategyRepo)
+}
+
+// WatchGroupCounts 与 strategy_entry.loadGroups 同源的场次计数（stat_collect / 心跳应对场次）。
+type WatchGroupCounts struct {
+	Matched   int // 合规且有 outcome，未截 max_groups
+	Watchable int // 按成交额取前 max_groups，应对监控组数
+	MaxGroups int // 当前 max_groups 配置
+}
+
+// WatchGroupDeps loadGroups 所需仓储。
+type WatchGroupDeps struct {
+	MarketRepo         persistentrepo.MarketRepo
+	OutcomeRepo        persistentrepo.MarketOutcomeRepo
+	ConfigStrategyRepo persistentrepo.ConfigStrategyRepo
+	PlatformRepo       persistentrepo.PlatformRepo
+}
+
+// LoadWatchGroupCounts 与实盘 loadGroups 相同过滤；alertBadKeys=false 时仅计数（stat_collect）。
+func LoadWatchGroupCounts(ctx context.Context, d WatchGroupDeps, alertBadKeys bool) (WatchGroupCounts, error) {
+	_, matched, err := loadWatchGroups(ctx, d, alertBadKeys)
+	if err != nil {
+		return WatchGroupCounts{}, err
+	}
+	limit := LoadMaxGroups(ctx, d.ConfigStrategyRepo)
+	watchable := matched
+	if watchable > limit {
+		watchable = limit
+	}
+	return WatchGroupCounts{Matched: matched, Watchable: watchable, MaxGroups: limit}, nil
 }
 
 // loadWsStagger 读 config_strategy.strategy_entry.ws_connect_stagger_ms（毫秒）。
@@ -227,18 +261,28 @@ func (e *Entry) loadWsStagger(ctx context.Context) marketmap.WsStaggerMs {
 
 // loadGroups 取出已核对场次，按成交额留下最多 max_groups 组（config_strategy）。
 func (e *Entry) loadGroups(ctx context.Context) ([]group, int, error) {
-	fixtures, err := marketmap.LoadVerifiedFixturesNew(ctx, e.marketRepo, e.configStrategyRepo, e.platformRepo)
+	d := WatchGroupDeps{
+		MarketRepo:         e.marketRepo,
+		OutcomeRepo:        e.outcomeRepo,
+		ConfigStrategyRepo: e.configStrategyRepo,
+		PlatformRepo:       e.platformRepo,
+	}
+	return loadWatchGroups(ctx, d, true)
+}
+
+func loadWatchGroups(ctx context.Context, d WatchGroupDeps, alertBadKeys bool) ([]group, int, error) {
+	fixtures, err := marketmap.LoadVerifiedFixturesNew(ctx, d.MarketRepo, d.ConfigStrategyRepo, d.PlatformRepo)
 	if err != nil {
 		return nil, 0, err
 	}
-	if e.outcomeRepo == nil || len(fixtures) == 0 {
+	if d.OutcomeRepo == nil || len(fixtures) == 0 {
 		return nil, 0, nil
 	}
 	marketIDs := make([]uint, 0, len(fixtures))
 	for id := range fixtures {
 		marketIDs = append(marketIDs, id)
 	}
-	_, raw, err := e.outcomeRepo.List(ctx, nil, map[string]interface{}{
+	_, raw, err := d.OutcomeRepo.List(ctx, nil, map[string]interface{}{
 		"market_row_id IN ?": marketIDs,
 	}, "id asc", "")
 	if err != nil {
@@ -260,7 +304,9 @@ func (e *Entry) loadGroups(ctx context.Context) ([]group, int, error) {
 	runnableKeys := map[string]struct{}{}
 	for k, rows := range rowsByKey {
 		if dup, plat, ids := marketmap.MapKeyDuplicatePlatform(rows); dup {
-			alertMapKeyBad(ctx, "dup", k, plat, ids)
+			if alertBadKeys {
+				alertMapKeyBad(ctx, "dup", k, plat, ids)
+			}
 			continue
 		}
 		if !marketmap.MapKeyHasTwoPlatforms(rows) {
@@ -323,7 +369,7 @@ func (e *Entry) loadGroups(ctx context.Context) ([]group, int, error) {
 	}
 	sortGroups(list)
 	matched := len(list)
-	limit := e.loadMaxGroups(ctx)
+	limit := LoadMaxGroups(ctx, d.ConfigStrategyRepo)
 	if len(list) > limit {
 		list = list[:limit]
 	}

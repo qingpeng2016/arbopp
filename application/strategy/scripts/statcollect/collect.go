@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	strategyentry "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/dederi/logger"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/notification"
 	persistententity "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/entity"
@@ -32,12 +33,30 @@ const (
 
 // Collect 刷新 stat_kv：map_key 审计 + 各平台 JSON 汇总（场次/盘口/map_key 按子类）。
 type Collect struct {
-	db       *gorm.DB
-	statRepo persistentrepo.StatKVRepo
+	db                 *gorm.DB
+	statRepo           persistentrepo.StatKVRepo
+	marketRepo         persistentrepo.MarketRepo
+	outcomeRepo        persistentrepo.MarketOutcomeRepo
+	configStrategyRepo persistentrepo.ConfigStrategyRepo
+	platformRepo       persistentrepo.PlatformRepo
 }
 
-func NewCollect(db *gorm.DB, statRepo persistentrepo.StatKVRepo) *Collect {
-	return &Collect{db: db, statRepo: statRepo}
+func NewCollect(
+	db *gorm.DB,
+	statRepo persistentrepo.StatKVRepo,
+	marketRepo persistentrepo.MarketRepo,
+	outcomeRepo persistentrepo.MarketOutcomeRepo,
+	configStrategyRepo persistentrepo.ConfigStrategyRepo,
+	platformRepo persistentrepo.PlatformRepo,
+) *Collect {
+	return &Collect{
+		db:                 db,
+		statRepo:           statRepo,
+		marketRepo:         marketRepo,
+		outcomeRepo:        outcomeRepo,
+		configStrategyRepo: configStrategyRepo,
+		platformRepo:       platformRepo,
+	}
 }
 
 // Run 执行统计并写入 stat_kv。
@@ -59,6 +78,14 @@ func (c *Collect) Run(ctx context.Context) {
 		notification.SendErrorLog(ctx, "stat_collect-map_key_audit-failed", zap.Error(err))
 		return
 	}
+	watchCounts, err := c.loadWatchGroupCounts(ctx)
+	if err != nil {
+		notification.SendErrorLog(ctx, "stat_collect-watch_groups-failed", zap.Error(err))
+		return
+	}
+	audit.Watchable = int64(watchCounts.Watchable)
+	audit.Matched = int64(watchCounts.Matched)
+	audit.MaxGroups = int64(watchCounts.MaxGroups)
 	marketRows, err := c.loadMarketCounts(ctx)
 	if err != nil {
 		notification.SendErrorLog(ctx, "stat_collect-market_count-failed", zap.Error(err))
@@ -108,6 +135,9 @@ func (c *Collect) Run(ctx context.Context) {
 		zap.Int64("bad_dup", audit.BadDup),
 		zap.Int64("ok_groups", audit.OkGroups),
 		zap.Int64("total_map_keys", audit.TotalMapKeys),
+		zap.Int64("strategy_entry_matched", audit.Matched),
+		zap.Int64("strategy_entry_watchable", audit.Watchable),
+		zap.Int64("strategy_entry_max_groups", audit.MaxGroups),
 		zap.Int("market_count_rows", len(marketRows)),
 		zap.Int("outcome_count_rows", len(outcomeRows)),
 		zap.Int("map_key_count_rows", len(mapKeyRows)),
@@ -119,6 +149,21 @@ type mapKeyAudit struct {
 	BadDup       int64
 	OkGroups     int64
 	TotalMapKeys int64
+	Matched      int64
+	Watchable    int64
+	MaxGroups    int64
+}
+
+func (c *Collect) loadWatchGroupCounts(ctx context.Context) (strategyentry.WatchGroupCounts, error) {
+	if c.marketRepo == nil || c.outcomeRepo == nil {
+		return strategyentry.WatchGroupCounts{}, nil
+	}
+	return strategyentry.LoadWatchGroupCounts(ctx, strategyentry.WatchGroupDeps{
+		MarketRepo:         c.marketRepo,
+		OutcomeRepo:        c.outcomeRepo,
+		ConfigStrategyRepo: c.configStrategyRepo,
+		PlatformRepo:       c.platformRepo,
+	}, false)
 }
 
 func (c *Collect) loadMapKeyAudit(ctx context.Context) (mapKeyAudit, error) {
@@ -269,14 +314,20 @@ WHERE map_key IS NOT NULL
 
 func mapKeyAuditRows(a mapKeyAudit) []*persistententity.StatKV {
 	return []*persistententity.StatKV{
+		kvStat(groupMapKeyAudit, "watchable_groups", strconv.FormatInt(a.Watchable, 10), "int",
+			"strategy_entry 应对监控组数（与 loadGroups/max_groups 一致，对齐实盘在跑上限）", 1),
+		kvStat(groupMapKeyAudit, "matched_groups", strconv.FormatInt(a.Matched, 10), "int",
+			"strategy_entry 库内匹配组数（ACTIVE+核对+双平台+有 outcome，未截 max_groups）", 2),
+		kvStat(groupMapKeyAudit, "max_groups", strconv.FormatInt(a.MaxGroups, 10), "int",
+			"strategy_entry.max_groups 当前配置", 3),
 		kvStat(groupMapKeyAudit, "bad_lt2_platform_groups", strconv.FormatInt(a.BadLt2, 10), "int",
-			"map_key 平台数<2 的组数（audit D）", 1),
+			"宽口径：map_key 平台数<2 的组数（audit D）", 4),
 		kvStat(groupMapKeyAudit, "bad_dup_platform_groups", strconv.FormatInt(a.BadDup, 10), "int",
-			"map_key 同平台重复组数（audit D）", 2),
+			"宽口径：map_key 同平台重复组数（audit D）", 5),
 		kvStat(groupMapKeyAudit, "ok_groups", strconv.FormatInt(a.OkGroups, 10), "int",
-			"map_key 合规组数（audit D）", 3),
+			"宽口径：map_key 合规组数（audit D，不按 ACTIVE/核对）", 6),
 		kvStat(groupMapKeyAudit, "total_map_keys", strconv.FormatInt(a.TotalMapKeys, 10), "int",
-			"有 map_key 的组总数（audit D）", 4),
+			"宽口径：有 map_key 的组总数（audit D）", 7),
 	}
 }
 

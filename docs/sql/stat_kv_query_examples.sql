@@ -1,6 +1,6 @@
 -- stat_kv 查询示例（见 migration_stat_kv.sql 建表）
 
--- map_key 审计四指标（对应 audit_market_map_key_groups.sql 段 D）
+-- map_key 审计（前 3 项与 strategy_entry 应对场次同源；后 4 项为宽口径 audit D）
 SELECT item_key, item_value, description, updated_at
 FROM stat_kv
 WHERE group_name = 'map_key_audit'
