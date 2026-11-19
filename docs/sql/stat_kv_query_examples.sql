@@ -1,6 +1,6 @@
 -- stat_kv 查询示例（见 migration_stat_kv.sql 建表）
 
--- map_key 审计（前 3 项与 strategy_entry 应对场次同源；后 4 项为宽口径 audit D）
+-- map_key_audit：与 strategy_entry loadGroups 同源
 SELECT item_key, item_value, description, updated_at
 FROM stat_kv
 WHERE group_name = 'map_key_audit'
@@ -16,12 +16,6 @@ ORDER BY sort_no;
 SELECT item_key, item_value, updated_at
 FROM stat_kv
 WHERE group_name = 'outcome_count'
-ORDER BY sort_no;
-
--- 每平台 1 条 JSON：各子类 map_key 去重数 + __total__
-SELECT item_key, item_value, updated_at
-FROM stat_kv
-WHERE group_name = 'map_key_count'
 ORDER BY sort_no;
 
 -- MySQL 8：解析 JSON 中 Football 场次
