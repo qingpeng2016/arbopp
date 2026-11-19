@@ -1,0 +1,58 @@
+[
+  {
+    "sort_no": 1,
+    "sport_cn": "足球",
+    "sub_category": "Football",
+    "outcome_types": ["moneyline", "handicap", "total"],
+    "polymarket_concurrency": 5,
+    "predict_concurrency": 2
+  },
+  {
+    "sort_no": 2,
+    "sport_cn": "板球",
+    "sub_category": "Cricket",
+    "outcome_types": ["moneyline", "handicap", "total"],
+    "polymarket_concurrency": 3,
+    "predict_concurrency": 2
+  },
+  {
+    "sort_no": 3,
+    "sport_cn": "网球",
+    "sub_category": "Tennis",
+    "outcome_types": ["moneyline", "handicap", "total"],
+    "polymarket_concurrency": 3,
+    "predict_concurrency": 2
+  },
+  {
+    "sort_no": 4,
+    "sport_cn": "篮球",
+    "sub_category": "Basketball",
+    "outcome_types": ["moneyline", "handicap", "total"],
+    "polymarket_concurrency": 3,
+    "predict_concurrency": 2
+  },
+  {
+    "sort_no": 5,
+    "sport_cn": "美式足球",
+    "sub_category": "NFL",
+    "outcome_types": ["moneyline", "handicap", "total"],
+    "polymarket_concurrency": 3,
+    "predict_concurrency": 2
+  },
+  {
+    "sort_no": 6,
+    "sport_cn": "冰球",
+    "sub_category": "NHL",
+    "outcome_types": ["moneyline", "handicap", "total"],
+    "polymarket_concurrency": 3,
+    "predict_concurrency": 2
+  },
+  {
+    "sort_no": 7,
+    "sport_cn": "UFC",
+    "sub_category": "MMA",
+    "outcome_types": ["moneyline", "handicap", "total"],
+    "polymarket_concurrency": 3,
+    "predict_concurrency": 2
+  }
+]

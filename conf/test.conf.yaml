@@ -1,0 +1,35 @@
+server:
+  service_name: "prediction-arbitrage"
+  run_mode: ""
+  port: "0.0.0.0:8886"
+  product_name: "prediction-arbitrage"
+  env: "test"
+  machine_name: "machine-01"
+
+db:
+  user: "mm"
+  password: "2kHjniEMBGh7rRWz"
+  host: "127.0.0.1"
+  db_name: "fgmm_strategy_less_one"
+  max_idle_conn: 20
+  max_open_conn: 200
+  log_mode: false
+
+redis:
+  mode: standalone
+  username: ""
+  password: ""
+  host: "127.0.0.1"
+  port: 6379
+  db: 2
+  tls: false
+  pool_size: 200
+  min_idle: 50
+
+# 通知配置
+notification:
+  lark:
+    alert_webhook_url: "https://open.larksuite.com/open-apis/bot/v2/hook/a870bc3a-2c08-4b0d-9738-6f97652117d4"
+    notify_webhook_url: "https://open.larksuite.com/open-apis/bot/v2/hook/3ff44ed5-10fa-4dfd-9830-a2232c7def79"
+    service_name: "prediction-arbitrage"       # 服务名称
+    timeout: 10                # 请求超时时间(秒)

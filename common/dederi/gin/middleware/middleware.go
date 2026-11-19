@@ -1,0 +1,90 @@
+package middleware
+
+import (
+	"bytes"
+	"github.com/gin-gonic/gin"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/common/dederi/logger"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/common/dederi/trace"
+	"go.uber.org/zap"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+)
+
+func TraceRequestLog(c *gin.Context) {
+	// 记录请求开始时间
+	start := time.Now().UTC()
+
+	// 设置trace id
+	if c.GetHeader(trace.HeaderTraceID) == "" {
+		c.Set(trace.TraceID, trace.GenerateTraceId())
+	} else {
+		c.Set(trace.TraceID, c.GetHeader(trace.HeaderTraceID))
+	}
+
+	// 读取请求体
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	// 将请求体重置为原始状态
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
+
+	// 设置返回header
+	c.Header(trace.HeaderTraceID, trace.GetTraceIdByCtx(c))
+
+	// 继续执行后续的中间件和路由处理
+	c.Next()
+
+	// 打印请求数据
+	logger.InfoZ(c, "request log",
+		zap.String("method", c.Request.Method),
+		zap.String("path", c.Request.RequestURI),
+		zap.Any("header", c.Request.Header),
+		zap.String("request_body", string(body)),
+		zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+	)
+}
+
+// CORSMiddleware sets the CORS headers on the response.
+// Our custom CORS middleware.
+func CORSMiddleware(c *gin.Context) {
+	method := c.Request.Method
+	header := c.Request.Header.Get("Access-Control-Request-Headers")
+	c.Header("Access-Control-Allow-Origin", "*")
+	c.Header("Access-Control-Allow-Credentials", "true")
+	if method == "OPTIONS" {
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Headers", header)
+		c.Header("Access-Control-Max-Age", "86400")
+		c.AbortWithStatus(http.StatusNoContent)
+	}
+	c.Next()
+}
+
+// AuthKeyMiddleware 验证 auth_key header 的中间件
+func AuthKeyMiddleware(c *gin.Context) {
+	// Swagger 文档不需要认证
+	if strings.HasPrefix(c.Request.URL.Path, "/swagger") {
+		c.Next()
+		return
+	}
+
+	// 获取 auth_key header
+	authKey := c.GetHeader("auth_key")
+	expectedAuthKey := "qlfz6P3gNgFEclOFBvV0bpGTs9ffMZia"
+
+	// 验证 auth_key
+	if authKey != expectedAuthKey {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "Unauthorized: invalid auth_key",
+		})
+		return
+	}
+
+	c.Next()
+}

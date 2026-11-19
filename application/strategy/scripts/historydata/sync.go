@@ -1,0 +1,469 @@
+package historydata
+
+import (
+	"context"
+	"fmt"
+	"runtime/debug"
+	"strings"
+	"time"
+
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/historydata/pmdata"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketmap"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/common/dederi/logger"
+	cryptoPredictionEnum "github.com/gph-tech/fgmm-strategy-bitfinex/common/enum/crypto/prediction"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/common/notification"
+	persistententity "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/entity"
+	persistentrepo "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/repository"
+	"go.uber.org/zap"
+)
+
+const TaskName = "history_data_sync"
+
+const dataPlatformCodePMData = "pmdata"
+
+// Sync 从 data_platform 配置拉 PMData L2，写入 data_history_order_book。
+type Sync struct {
+	dataTaskRepo     persistentrepo.DataTaskRepo
+	platformRepo     persistentrepo.PlatformRepo
+	marketRepo       persistentrepo.MarketRepo
+	outcomeRepo      persistentrepo.MarketOutcomeRepo
+	dataPlatformRepo persistentrepo.DataPlatformRepo
+	historyRepo      persistentrepo.HistoryDataOrderBookRepo
+}
+
+func NewSync(
+	dataTaskRepo persistentrepo.DataTaskRepo,
+	platformRepo persistentrepo.PlatformRepo,
+	marketRepo persistentrepo.MarketRepo,
+	outcomeRepo persistentrepo.MarketOutcomeRepo,
+	dataPlatformRepo persistentrepo.DataPlatformRepo,
+	historyRepo persistentrepo.HistoryDataOrderBookRepo,
+) *Sync {
+	return &Sync{
+		dataTaskRepo:     dataTaskRepo,
+		platformRepo:     platformRepo,
+		marketRepo:       marketRepo,
+		outcomeRepo:      outcomeRepo,
+		dataPlatformRepo: dataPlatformRepo,
+		historyRepo:      historyRepo,
+	}
+}
+
+func (j *Sync) Run(ctx context.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			notification.SendErrorLog(ctx, "history_data_sync-Panic",
+				zap.Any("panic", r),
+				zap.String("stack", string(debug.Stack())))
+		}
+	}()
+	if j.dataPlatformRepo == nil || j.historyRepo == nil || j.marketRepo == nil || j.outcomeRepo == nil || j.dataTaskRepo == nil {
+		notification.SendErrorLog(ctx, "history_data_sync-skipped", zap.String("reason", "repo nil"))
+		return
+	}
+
+	dp, err := j.dataPlatformRepo.FindOne(ctx, nil, map[string]interface{}{
+		"code = ?":   dataPlatformCodePMData,
+		"status = ?": "ACTIVE",
+	}, "")
+	if err != nil {
+		notification.SendErrorLog(ctx, "history_data_sync-no-data-platform", zap.Error(err))
+		return
+	}
+	if strings.TrimSpace(dp.APIKey) == "" {
+		notification.SendErrorLog(ctx, "history_data_sync-skipped", zap.String("reason", "data_platform.api_key empty"))
+		return
+	}
+	extraRaw := ""
+	if dp.ExtraConfig != nil {
+		extraRaw = *dp.ExtraConfig
+	}
+	cfg := ParsePMDataExtraConfig(extraRaw)
+	client := pmdata.NewClient(dp.APIBaseURL, dp.APIKey)
+
+	j.reclaimStaleRunningTasks(ctx, 15*time.Minute)
+
+	_, tasks, err := j.dataTaskRepo.List(ctx, nil, map[string]interface{}{
+		"task_type = ?": persistententity.DataTaskTypeHistoryL2,
+		"status = ?":    persistententity.DataTaskStatusPending,
+	}, "id asc", "")
+	if err != nil {
+		notification.SendErrorLog(ctx, "history_data_sync-ListTasksFailed", zap.Error(err))
+		return
+	}
+	if len(tasks) == 0 {
+		logger.InfoZ(ctx, "history_data_sync-no-pending-tasks")
+		return
+	}
+	logger.InfoZ(ctx, "history_data_sync-batch-start", zap.Int("pending_tasks", len(tasks)))
+
+	var totalFiles, totalSnaps, totalFailed int
+	for i := range tasks {
+		t := tasks[i]
+		files, snaps, failed := j.runDataTask(ctx, client, dp, cfg, &t)
+		totalFiles += files
+		totalSnaps += snaps
+		totalFailed += failed
+	}
+
+	logger.InfoZ(ctx, "history_data_sync-Completed",
+		zap.Int("tasks", len(tasks)),
+		zap.Int("files_ok", totalFiles),
+		zap.Int("snapshots_upserted", totalSnaps),
+		zap.Int("failed", totalFailed))
+}
+
+func (j *Sync) runDataTask(
+	ctx context.Context,
+	client *pmdata.Client,
+	dp persistententity.DataPlatform,
+	cfg PMDataExtraConfig,
+	task *persistententity.DataTask,
+) (downloaded, snapshots, failed int) {
+	if task == nil {
+		return 0, 0, 0
+	}
+	mapKey := strings.TrimSpace(task.MapKey)
+	logger.InfoZ(ctx, "history_data_sync-task-start",
+		zap.Uint("task_id", task.ID),
+		zap.String("map_key", mapKey))
+	_ = j.dataTaskRepo.Update(ctx, nil, map[string]interface{}{"id = ?": task.ID}, map[string]interface{}{
+		"status":     persistententity.DataTaskStatusRunning,
+		"error_text": "",
+	})
+
+	fixtures, err := marketmap.LoadMarketsByMapKey(ctx, j.marketRepo, j.platformRepo, mapKey)
+	if err != nil {
+		j.failTask(ctx, task.ID, err)
+		return 0, 0, 1
+	}
+	if len(fixtures) == 0 {
+		j.failTask(ctx, task.ID, fmt.Errorf("no market rows for map_key %q", mapKey))
+		return 0, 0, 1
+	}
+
+	outcomes, err := marketmap.OutcomesForFixtureMarkets(ctx, j.outcomeRepo, fixtures)
+	if err != nil {
+		j.failTask(ctx, task.ID, err)
+		return 0, 0, 1
+	}
+	if len(outcomes) == 0 {
+		j.failTask(ctx, task.ID, fmt.Errorf("no market_outcome under map_key %q", mapKey))
+		return 0, 0, 1
+	}
+
+	for i := range outcomes {
+		oc := outcomes[i]
+		if !outcomeTypeAllowed(cfg.OutcomeTypes, oc.OutcomeType) {
+			continue
+		}
+		fx, ok := fixtures[oc.MarketRowID]
+		if !ok || fx.MapKey == nil {
+			continue
+		}
+		platform := strings.ToUpper(strings.TrimSpace(oc.Platform))
+		evStart, evEnd := "", ""
+		if fx.EventStartTime != nil {
+			evStart = *fx.EventStartTime
+		}
+		if fx.EventEndTime != nil {
+			evEnd = *fx.EventEndTime
+		}
+		dates := UTCDatesForFixture(mapKey, evStart, evEnd, cfg.UTCDaysBeforeEvent, cfg.UTCDaysAfterEvent)
+		dates = FilterUTCDatesByMinAge(dates, cfg.MinUTCAgeDays)
+		if len(dates) == 0 {
+			continue
+		}
+
+		switch platform {
+		case string(cryptoPredictionEnum.PlatformPolymarket):
+			slug := PolymarketVendorSlug(oc)
+			if slug == "" {
+				continue
+			}
+			for _, day := range dates {
+				d, s, f := j.ingestPolymarket(ctx, client, dp, cfg, mapKey, oc, slug, day)
+				downloaded += d
+				snapshots += s
+				failed += f
+			}
+		case string(cryptoPredictionEnum.PlatformPredict):
+			mid := predictVendorMarketID(oc)
+			if mid == "" {
+				continue
+			}
+			for _, day := range dates {
+				d, s, f := j.ingestPredict(ctx, client, dp, cfg, mapKey, oc, mid, day)
+				downloaded += d
+				snapshots += s
+				failed += f
+			}
+		}
+	}
+
+	status := persistententity.DataTaskStatusCompleted
+	errText := ""
+	if failed > 0 && downloaded == 0 {
+		status = persistententity.DataTaskStatusFailed
+		errText = fmt.Sprintf("all downloads failed (%d errors)", failed)
+	} else if failed > 0 {
+		errText = fmt.Sprintf("partial failures: %d", failed)
+	}
+	_ = j.dataTaskRepo.Update(ctx, nil, map[string]interface{}{"id = ?": task.ID}, map[string]interface{}{
+		"status":     status,
+		"error_text": errText,
+	})
+	task.Status = status
+	NotifyTaskFinished(ctx, task, downloaded, failed, errText)
+	logger.InfoZ(ctx, "history_data_sync-task-done",
+		zap.Uint("task_id", task.ID),
+		zap.String("map_key", mapKey),
+		zap.String("status", status),
+		zap.Int("files_ok", downloaded),
+		zap.Int("failed", failed))
+	return downloaded, snapshots, failed
+}
+
+func (j *Sync) failTask(ctx context.Context, id uint, err error) {
+	msg := trimErr(err, 500)
+	_ = j.dataTaskRepo.Update(ctx, nil, map[string]interface{}{"id = ?": id}, map[string]interface{}{
+		"status":     persistententity.DataTaskStatusFailed,
+		"error_text": msg,
+	})
+	notification.SendErrorLog(ctx, "history_data_sync-task-failed", zap.Uint("task_id", id), zap.Error(err))
+	row, findErr := j.dataTaskRepo.FindOne(ctx, nil, map[string]interface{}{"id = ?": id}, "")
+	if findErr == nil {
+		NotifyTaskFinished(ctx, &row, 0, 0, msg)
+	}
+}
+
+func (j *Sync) ingestPolymarket(
+	ctx context.Context,
+	client *pmdata.Client,
+	dp persistententity.DataPlatform,
+	cfg PMDataExtraConfig,
+	mapKey string,
+	oc persistententity.MarketOutcome,
+	slug string,
+	utcDay time.Time,
+) (filesOK, snapshots, failed int) {
+	if j.alreadyHave(ctx, dp.ID, oc.ID, utcDay, persistententity.HistoryRecordKindFile, 0) {
+		return 0, 0, 0
+	}
+	logger.InfoZ(ctx, "history_data_sync-download",
+		zap.String("exchange", "polymarket"),
+		zap.String("symbol", slug),
+		zap.String("utc_date", utcDay.Format("2006-01-02")),
+		zap.String("map_key", mapKey))
+	body, status, err := client.DownloadL2(ctx, pmdata.VendorExchangePolymarket(), cfg.DataType, slug, utcDay, cfg.PolymarketOutcome)
+	if err != nil {
+		if pmdata.IsNotFound(status) {
+			j.saveSkipped(ctx, dp, cfg, mapKey, oc, pmdata.VendorExchangePolymarket(), slug, utcDay, err)
+			return 0, 0, 0
+		}
+		if pmdata.IsForbidden(status, err) {
+			j.saveSkipped(ctx, dp, cfg, mapKey, oc, pmdata.VendorExchangePolymarket(), slug, utcDay, fmt.Errorf("pmdata free tier: data within 3 weeks forbidden; upgrade or set min_utc_age_days"))
+			return 0, 0, 0
+		}
+		j.saveFailedFile(ctx, dp, cfg, mapKey, oc, pmdata.VendorExchangePolymarket(), slug, utcDay, err)
+		return 0, 0, 1
+	}
+	path, sha, werr := pmdata.WriteLocalFile(cfg.StorageDir, pmdata.VendorExchangePolymarket(), cfg.DataType, utcDay, slug, body)
+	if werr != nil {
+		j.saveFailedFile(ctx, dp, cfg, mapKey, oc, pmdata.VendorExchangePolymarket(), slug, utcDay, werr)
+		return 0, 0, 1
+	}
+	row := j.baseRow(dp, cfg, mapKey, oc, pmdata.VendorExchangePolymarket(), slug, utcDay)
+	row.RecordKind = persistententity.HistoryRecordKindFile
+	row.SnapshotAtMs = 0
+	row.LocalFilePath = path
+	row.FileBytes = uint64(len(body))
+	row.FileSHA256 = sha
+	row.OrderBookBids = "[]"
+	row.OrderBookAsks = "[]"
+	row.IngestStatus = persistententity.HistoryIngestOK
+	row.ErrorText = fmt.Sprintf("polymarket l2 parquet; replay locally (%d bytes)", len(body))
+	if err := j.historyRepo.BatchUpsert(ctx, nil, []*persistententity.HistoryDataOrderBook{row}); err != nil {
+		notification.SendErrorLog(ctx, "history_data_sync-upsert-file", zap.Error(err), zap.String("slug", slug))
+		return 0, 0, 1
+	}
+	return 1, 0, 0
+}
+
+func (j *Sync) ingestPredict(
+	ctx context.Context,
+	client *pmdata.Client,
+	dp persistententity.DataPlatform,
+	cfg PMDataExtraConfig,
+	mapKey string,
+	oc persistententity.MarketOutcome,
+	marketID string,
+	utcDay time.Time,
+) (filesOK, snapshots, failed int) {
+	logger.InfoZ(ctx, "history_data_sync-download",
+		zap.String("exchange", "predict_fun"),
+		zap.String("symbol", marketID),
+		zap.String("utc_date", utcDay.Format("2006-01-02")),
+		zap.String("map_key", mapKey))
+	body, status, err := client.DownloadL2(ctx, pmdata.VendorExchangePredict(), cfg.DataType, marketID, utcDay, "")
+	if err != nil {
+		if pmdata.IsNotFound(status) {
+			j.saveSkipped(ctx, dp, cfg, mapKey, oc, pmdata.VendorExchangePredict(), marketID, utcDay, err)
+			return 0, 0, 0
+		}
+		if pmdata.IsForbidden(status, err) {
+			j.saveSkipped(ctx, dp, cfg, mapKey, oc, pmdata.VendorExchangePredict(), marketID, utcDay, err)
+			return 0, 0, 0
+		}
+		j.saveFailedFile(ctx, dp, cfg, mapKey, oc, pmdata.VendorExchangePredict(), marketID, utcDay, err)
+		return 0, 0, 1
+	}
+	path, sha, werr := pmdata.WriteLocalFile(cfg.StorageDir, pmdata.VendorExchangePredict(), cfg.DataType, utcDay, marketID, body)
+	if werr != nil {
+		j.saveFailedFile(ctx, dp, cfg, mapKey, oc, pmdata.VendorExchangePredict(), marketID, utcDay, werr)
+		return 0, 0, 1
+	}
+
+	fileRow := j.baseRow(dp, cfg, mapKey, oc, pmdata.VendorExchangePredict(), marketID, utcDay)
+	fileRow.RecordKind = persistententity.HistoryRecordKindFile
+	fileRow.SnapshotAtMs = 0
+	fileRow.LocalFilePath = path
+	fileRow.FileBytes = uint64(len(body))
+	fileRow.FileSHA256 = sha
+	fileRow.OrderBookBids = "[]"
+	fileRow.OrderBookAsks = "[]"
+	fileRow.IngestStatus = persistententity.HistoryIngestOK
+	if err := j.historyRepo.BatchUpsert(ctx, nil, []*persistententity.HistoryDataOrderBook{fileRow}); err != nil {
+		notification.SendErrorLog(ctx, "history_data_sync-upsert-predict-file", zap.Error(err))
+		return 0, 0, 1
+	}
+	filesOK = 1
+
+	snaps, perr := pmdata.ParsePredictL2Parquet(body, cfg.MaxSnapshotsPerDay)
+	if perr != nil {
+		notification.SendErrorLog(ctx, "history_data_sync-parse-predict-parquet",
+			zap.Error(perr), zap.String("market_id", marketID), zap.String("path", path))
+		return filesOK, 0, 0
+	}
+	var batch []*persistententity.HistoryDataOrderBook
+	for _, s := range snaps {
+		if j.alreadyHave(ctx, dp.ID, oc.ID, utcDay, persistententity.HistoryRecordKindSnapshot, s.TsMs) {
+			continue
+		}
+		row := j.baseRow(dp, cfg, mapKey, oc, pmdata.VendorExchangePredict(), marketID, utcDay)
+		row.RecordKind = persistententity.HistoryRecordKindSnapshot
+		row.SnapshotAtMs = s.TsMs
+		row.LocalFilePath = path
+		row.FileBytes = uint64(len(body))
+		row.FileSHA256 = sha
+		row.OrderBookBids = pmdata.LevelsJSON(s.Bids)
+		row.OrderBookAsks = pmdata.LevelsJSON(s.Asks)
+		row.IngestStatus = persistententity.HistoryIngestOK
+		batch = append(batch, row)
+	}
+	if len(batch) == 0 {
+		return filesOK, 0, 0
+	}
+	if err := j.historyRepo.BatchUpsert(ctx, nil, batch); err != nil {
+		notification.SendErrorLog(ctx, "history_data_sync-upsert-snapshots", zap.Error(err))
+		return filesOK, 0, 1
+	}
+	return filesOK, len(batch), 0
+}
+
+func (j *Sync) baseRow(
+	dp persistententity.DataPlatform,
+	cfg PMDataExtraConfig,
+	mapKey string,
+	oc persistententity.MarketOutcome,
+	vendorExchange, vendorSymbol string,
+	utcDay time.Time,
+) *persistententity.HistoryDataOrderBook {
+	utcDate := time.Date(utcDay.Year(), utcDay.Month(), utcDay.Day(), 0, 0, 0, 0, time.UTC)
+	return &persistententity.HistoryDataOrderBook{
+		DataPlatformID:  dp.ID,
+		MapKey:          mapKey,
+		MarketRowID:     oc.MarketRowID,
+		MarketOutcomeID: oc.ID,
+		VenuePlatform:   strings.ToUpper(strings.TrimSpace(oc.Platform)),
+		VendorExchange:  vendorExchange,
+		VendorSymbol:    vendorSymbol,
+		UTCDate:         utcDate,
+		DataType:        cfg.DataType,
+	}
+}
+
+func (j *Sync) alreadyHave(ctx context.Context, platformID, outcomeID uint, utcDay time.Time, kind string, snapshotMs int64) bool {
+	d := time.Date(utcDay.Year(), utcDay.Month(), utcDay.Day(), 0, 0, 0, 0, time.UTC)
+	_, err := j.historyRepo.FindOne(ctx, nil, map[string]interface{}{
+		"data_platform_id = ?":  platformID,
+		"market_outcome_id = ?": outcomeID,
+		"utc_date = ?":          d,
+		"record_kind = ?":       kind,
+		"snapshot_at_ms = ?":    snapshotMs,
+	}, "")
+	return err == nil
+}
+
+func (j *Sync) saveSkipped(ctx context.Context, dp persistententity.DataPlatform, cfg PMDataExtraConfig, mapKey string, oc persistententity.MarketOutcome, exchange, symbol string, utcDay time.Time, err error) {
+	row := j.baseRow(dp, cfg, mapKey, oc, exchange, symbol, utcDay)
+	row.RecordKind = persistententity.HistoryRecordKindFile
+	row.SnapshotAtMs = 0
+	row.IngestStatus = persistententity.HistoryIngestSkipped
+	row.OrderBookBids = "[]"
+	row.OrderBookAsks = "[]"
+	row.ErrorText = trimErr(err, 500)
+	_ = j.historyRepo.BatchUpsert(ctx, nil, []*persistententity.HistoryDataOrderBook{row})
+}
+
+func (j *Sync) saveFailedFile(ctx context.Context, dp persistententity.DataPlatform, cfg PMDataExtraConfig, mapKey string, oc persistententity.MarketOutcome, exchange, symbol string, utcDay time.Time, err error) {
+	row := j.baseRow(dp, cfg, mapKey, oc, exchange, symbol, utcDay)
+	row.RecordKind = persistententity.HistoryRecordKindFile
+	row.SnapshotAtMs = 0
+	row.IngestStatus = persistententity.HistoryIngestFailed
+	row.OrderBookBids = "[]"
+	row.OrderBookAsks = "[]"
+	row.ErrorText = trimErr(err, 500)
+	_ = j.historyRepo.BatchUpsert(ctx, nil, []*persistententity.HistoryDataOrderBook{row})
+	notification.SendErrorLog(ctx, "history_data_sync-download-failed",
+		zap.Error(err),
+		zap.String("exchange", exchange),
+		zap.String("symbol", symbol),
+		zap.String("map_key", mapKey))
+}
+
+func trimErr(err error, max int) string {
+	if err == nil {
+		return ""
+	}
+	s := err.Error()
+	if len(s) > max {
+		return s[:max]
+	}
+	return s
+}
+
+// reclaimStaleRunningTasks 进程中断后残留的 running 恢复为 pending。
+func (j *Sync) reclaimStaleRunningTasks(ctx context.Context, maxAge time.Duration) {
+	if j.dataTaskRepo == nil || maxAge <= 0 {
+		return
+	}
+	cutoff := time.Now().Add(-maxAge)
+	_, stale, err := j.dataTaskRepo.List(ctx, nil, map[string]interface{}{
+		"task_type = ?":      persistententity.DataTaskTypeHistoryL2,
+		"status = ?":         persistententity.DataTaskStatusRunning,
+		"updated_at < ?":     cutoff,
+	}, "id asc", "")
+	if err != nil || len(stale) == 0 {
+		return
+	}
+	for i := range stale {
+		_ = j.dataTaskRepo.Update(ctx, nil, map[string]interface{}{"id = ?": stale[i].ID}, map[string]interface{}{
+			"status":     persistententity.DataTaskStatusPending,
+			"error_text": "reclaimed stale running",
+		})
+		logger.InfoZ(ctx, "history_data_sync-reclaimed-stale",
+			zap.Uint("task_id", stale[i].ID),
+			zap.String("map_key", stale[i].MapKey))
+	}
+}

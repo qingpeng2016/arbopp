@@ -1,0 +1,5 @@
+-- Poly 大学篮球单场：keyset 用 tag 100396（NCAA）/ 102780（CWBB Games），不用 primary 101178/102003
+-- 应用方式：与 market_category_polymarket.json 同步后执行 install 脚本，或由运维用当前 JSON 全量 UPDATE config_json
+-- 示例（仅改 cbb/cwbb 两项，勿单独跑 JSON_REPLACE 覆盖整个 items 数组）：
+--   cbb  tag_ids: [100396]
+--   cwbb tag_ids: [102780, 100396]

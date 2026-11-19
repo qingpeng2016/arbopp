@@ -1,0 +1,4 @@
+-- 开启 Polymarket 足球 games 全量同步：将 docs/sql/polymarket_sports.json 整段写入 item_value。
+-- 需先部署含 sync_all_soccer_games 逻辑的 market_sync 代码，再执行 UPDATE。
+-- UPDATE config_strategy SET item_value = '<paste docs/sql/polymarket_sports.json>', updated_at = NOW()
+-- WHERE group_name = 'market_sync' AND item_key = 'polymarket_sports';

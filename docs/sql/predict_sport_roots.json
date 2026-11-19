@@ -1,0 +1,110 @@
+{
+  "api_base": "https://api.predict.fun/v1",
+  "by_sub_category": {
+    "Football": {
+      "sync_all_soccer": true,
+      "soccer_root_tag_id": "14",
+      "market_variants": [
+        "SPORTS_MATCH",
+        "SPORTS_TEAM_MATCH",
+        "SPORTS_PROPS"
+      ]
+    },
+    "Basketball": {
+      "market_variants": [
+        "SPORTS_MATCH",
+        "SPORTS_PROPS"
+      ],
+      "items": [
+        {
+          "name": "NBA",
+          "name_en": "NBA",
+          "name_desc": "NBA",
+          "sport_id": "nba",
+          "tag_ids": [
+            "78"
+          ]
+        },
+        {
+          "name": "NCAA篮球",
+          "name_en": "NCAA Basketball",
+          "name_desc": "NCAA Basketball",
+          "sport_id": "ncaab",
+          "tag_ids": [
+            "82"
+          ]
+        },
+        {
+          "name": "FIBA",
+          "name_en": "FIBA",
+          "name_desc": "FIBA",
+          "sport_id": "fiba",
+          "tag_ids": [
+            "98"
+          ]
+        }
+      ]
+    },
+    "NFL": {
+      "market_variants": [
+        "SPORTS_MATCH",
+        "SPORTS_PROPS"
+      ],
+      "items": [
+        {
+          "name": "NFL",
+          "name_en": "NFL",
+          "name_desc": "NFL",
+          "sport_id": "nfl",
+          "tag_ids": [
+            "45"
+          ]
+        }
+      ]
+    },
+    "Tennis": {
+      "sync_all_sub": true,
+      "sync_root_tag_id": "85",
+      "market_variants": [
+        "SPORTS_MATCH",
+        "SPORTS_PROPS"
+      ],
+      "items": []
+    },
+    "Cricket": {
+      "sync_all_sub": true,
+      "sync_root_tag_id": "97",
+      "market_variants": [
+        "SPORTS_MATCH",
+        "SPORTS_PROPS"
+      ],
+      "items": []
+    },
+    "NHL": {
+      "market_variants": [
+        "SPORTS_MATCH",
+        "SPORTS_PROPS"
+      ],
+      "items": [
+        {
+          "name": "NHL",
+          "name_en": "NHL",
+          "name_desc": "NHL",
+          "sport_id": "nhl",
+          "tag_ids": [
+            "79"
+          ]
+        }
+      ]
+    },
+    "MMA": {
+      "sync_all_sub": true,
+      "sync_root_tag_id": "177",
+      "market_variants": [
+        "SPORTS_MATCH",
+        "SPORTS_PROPS"
+      ],
+      "items": []
+    }
+  }
+}

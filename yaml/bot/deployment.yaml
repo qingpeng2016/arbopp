@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fg-marketmaker-bot
+  labels:
+    app: fg-marketmaker-bot
+spec:
+  replicas: ${REPLICA_BOT}
+  selector:
+    matchLabels:
+      app: fg-marketmaker-bot
+  template:
+    metadata:
+      labels:
+        app: fg-marketmaker-bot
+      annotations:
+        k8s.aliyun.com/pod-with-eip: "true"
+        k8s.aliyun.com/pod-eni: "true"
+    spec:
+      nodeSelector:
+        alibabacloud.com/nodepool-id: ${NODEGROUP_BOT}
+      containers:
+      - name: fg-marketmaker-bot
+        image: ${ECR_BOT}:${IMAGE_TAG}
+        ports:
+        - containerPort: 9994
+        env:
+          - name: MACHINE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+        envFrom:
+        - configMapRef:
+            name: fg-marketmaker-config
+        - secretRef:
+            name: fg-marketmaker-secrets
+        resources:
+          requests:
+            cpu: "${REQUEST_CPU_BOT}"
+            memory: "${REQUEST_MEMORY_BOT}"
+          limits:
+            cpu: "${LIMIT_CPU_BOT}"
+            memory: "${LIMIT_MEMORY_BOT}"
+      imagePullSecrets:
+      - name: acr-secret
