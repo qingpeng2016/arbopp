@@ -17,6 +17,7 @@ import (
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/strategy/onextwo"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/strategy/yesno"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/watchgroup"
+	entryws "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/ws"
 	kalshiws "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/ws/kalshi"
 	polyws "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/ws/polymarket"
 	predictws "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/ws/predict"
@@ -192,6 +193,7 @@ func (w *watch) servePoly() {
 	if len(assets) == 0 || w.entry.poly == nil {
 		return
 	}
+	entryws.StaggerConnect(w.Ctx)
 	polyws.Run(w.Ctx, assets, w.MapKey, polyws.Session{
 		Begin: func() (context.Context, int) { return w.beginConn(appcommon.PlatformPolymarket) },
 		Apply: w.applyPoly,
@@ -226,6 +228,7 @@ func (w *watch) servePredict() {
 	if len(ids) == 0 || key == "" {
 		return
 	}
+	entryws.StaggerConnect(w.Ctx)
 	predictws.Run(w.Ctx, key, w.Outcomes, w.MapKey, predictws.Session{
 		Begin:    func() (context.Context, int) { return w.beginConn(appcommon.PlatformPredict) },
 		Apply:    w.applyPredict,
@@ -290,6 +293,7 @@ func (w *watch) serveKalshi() {
 	if len(tickers) == 0 || w.entry.kalshi == nil {
 		return
 	}
+	entryws.StaggerConnect(w.Ctx)
 	kalshiws.Run(w.Ctx, w.entry.kalshi, tickers, w.MapKey, func() httpentity.KalshiAccount {
 		return w.entry.credsNow().kalshi
 	}, func() bool {

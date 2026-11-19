@@ -2,6 +2,7 @@ package ws
 
 import (
 	"context"
+	"math/rand/v2"
 	"net/http"
 	"sync"
 	"time"
@@ -15,6 +16,20 @@ const (
 	// KalshiPath 参与 RSA-PSS 签名，必须和握手路径一致。
 	KalshiPath = "/trade-api/ws/v2"
 )
+
+// StaggerConnect 各场次首次建连前随机等待 [0,2s]，错开同时握手。
+func StaggerConnect(ctx context.Context) {
+	if ctx.Err() != nil {
+		return
+	}
+	delay := time.Duration(rand.IntN(2001)) * time.Millisecond
+	t := time.NewTimer(delay)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+	case <-t.C:
+	}
+}
 
 func Dial(ctx context.Context, rawURL string, header http.Header) (*websocket.Conn, error) {
 	d := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
