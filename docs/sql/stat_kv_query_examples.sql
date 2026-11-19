@@ -18,6 +18,12 @@ FROM stat_kv
 WHERE group_name = 'outcome_count'
 ORDER BY sort_no;
 
+-- 每平台 1 条 JSON：各子类 map_key 去重数 + __total__
+SELECT item_key, item_value, updated_at
+FROM stat_kv
+WHERE group_name = 'map_key_count'
+ORDER BY sort_no;
+
 -- MySQL 8：解析 JSON 中 Football 场次
 -- SELECT item_key, item_value->>'$.Football' AS football_markets
 -- FROM stat_kv WHERE group_name = 'market_count';

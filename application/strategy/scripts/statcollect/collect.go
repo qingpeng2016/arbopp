@@ -25,12 +25,13 @@ const (
 	groupMapKeyAudit  = "map_key_audit"
 	groupMarketCount  = "market_count"
 	groupOutcomeCount = "outcome_count"
+	groupMapKeyCount  = "map_key_count"
 	groupStatMeta     = "stat_meta"
 
 	jsonTotalKey = "__total__"
 )
 
-// Collect 刷新 stat_kv：strategy_entry 场次计数 + 各平台 market/outcome 汇总。
+// Collect 刷新 stat_kv：strategy_entry 场次计数 + 各平台 market/outcome/map_key 汇总。
 type Collect struct {
 	db                 *gorm.DB
 	statRepo           persistentrepo.StatKVRepo
@@ -91,26 +92,29 @@ func (c *Collect) Run(ctx context.Context) {
 		notification.SendErrorLog(ctx, "stat_collect-outcome_count-failed", zap.Error(err))
 		return
 	}
+	mapKeyRows, err := c.loadMapKeyCounts(ctx)
+	if err != nil {
+		notification.SendErrorLog(ctx, "stat_collect-map_key_count-failed", zap.Error(err))
+		return
+	}
 	auditRows := mapKeyAuditRows(audit)
 
 	err = c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := c.statRepo.DeleteByGroup(ctx, tx, groupMapKeyAudit); err != nil {
 			return err
 		}
-		if err := c.statRepo.DeleteByGroup(ctx, tx, "map_key_count"); err != nil {
-			return err
-		}
 		if err := c.statRepo.UpsertBatch(ctx, tx, auditRows); err != nil {
 			return err
 		}
-		for _, g := range []string{groupMarketCount, groupOutcomeCount} {
+		for _, g := range []string{groupMarketCount, groupOutcomeCount, groupMapKeyCount} {
 			if err := c.statRepo.DeleteByGroup(ctx, tx, g); err != nil {
 				return err
 			}
 		}
-		all := make([]*persistententity.StatKV, 0, len(marketRows)+len(outcomeRows))
+		all := make([]*persistententity.StatKV, 0, len(marketRows)+len(outcomeRows)+len(mapKeyRows))
 		all = append(all, marketRows...)
 		all = append(all, outcomeRows...)
+		all = append(all, mapKeyRows...)
 		if err := c.statRepo.BatchCreate(ctx, tx, all); err != nil {
 			return err
 		}
@@ -129,6 +133,7 @@ func (c *Collect) Run(ctx context.Context) {
 		zap.Int64("watchable_groups", audit.Watchable),
 		zap.Int("market_count_rows", len(marketRows)),
 		zap.Int("outcome_count_rows", len(outcomeRows)),
+		zap.Int("map_key_count_rows", len(mapKeyRows)),
 		zap.Int64("elapsed_ms", time.Since(start).Milliseconds()))
 }
 
@@ -164,7 +169,7 @@ SELECT
 FROM market
 GROUP BY UPPER(TRIM(platform)), COALESCE(NULLIF(TRIM(sub_category), ''), '_unknown')
 ORDER BY platform, sub_category`
-	return c.loadPlatformJSONCounts(ctx, q, groupMarketCount,
+	return c.loadPlatformJSONCounts(ctx, q, groupMarketCount, false,
 		"各子类 market 场次；item_value 为 JSON，含 __total__")
 }
 
@@ -177,11 +182,26 @@ SELECT
 FROM market_outcome
 GROUP BY UPPER(TRIM(platform)), COALESCE(NULLIF(TRIM(sub_category), ''), '_unknown')
 ORDER BY platform, sub_category`
-	return c.loadPlatformJSONCounts(ctx, q, groupOutcomeCount,
+	return c.loadPlatformJSONCounts(ctx, q, groupOutcomeCount, false,
 		"各子类 market_outcome 盘口；item_value 为 JSON，含 __total__")
 }
 
-func (c *Collect) loadPlatformJSONCounts(ctx context.Context, q, group string, description string) ([]*persistententity.StatKV, error) {
+func (c *Collect) loadMapKeyCounts(ctx context.Context) ([]*persistententity.StatKV, error) {
+	const q = `
+SELECT
+    UPPER(TRIM(platform)) AS platform,
+    COALESCE(NULLIF(TRIM(sub_category), ''), '_unknown') AS sub_category,
+    COUNT(DISTINCT TRIM(map_key)) AS cnt
+FROM market
+WHERE map_key IS NOT NULL
+  AND TRIM(map_key) <> ''
+GROUP BY UPPER(TRIM(platform)), COALESCE(NULLIF(TRIM(sub_category), ''), '_unknown')
+ORDER BY platform, sub_category`
+	return c.loadPlatformJSONCounts(ctx, q, groupMapKeyCount, true,
+		"各子类非空 map_key 去重数；item_value 为 JSON，含 __total__")
+}
+
+func (c *Collect) loadPlatformJSONCounts(ctx context.Context, q, group string, distinctTotal bool, description string) ([]*persistententity.StatKV, error) {
 	var rows []platformSubCountRow
 	if err := c.db.WithContext(ctx).Raw(q).Scan(&rows).Error; err != nil {
 		return nil, err
@@ -208,10 +228,19 @@ func (c *Collect) loadPlatformJSONCounts(ctx context.Context, q, group string, d
 	for i, plat := range plats {
 		subs := byPlatform[plat]
 		var total int64
-		for _, n := range subs {
-			total += n
+		if distinctTotal {
+			var err error
+			total, err = c.platformDistinctMapKeyTotal(ctx, plat)
+			if err != nil {
+				return nil, err
+			}
+			subs[jsonTotalKey] = total
+		} else {
+			for _, n := range subs {
+				total += n
+			}
+			subs[jsonTotalKey] = total
 		}
-		subs[jsonTotalKey] = total
 		val, err := json.Marshal(subs)
 		if err != nil {
 			return nil, err
@@ -220,6 +249,20 @@ func (c *Collect) loadPlatformJSONCounts(ctx context.Context, q, group string, d
 		out = append(out, kvStat(group, plat, string(val), "json", desc, i+1))
 	}
 	return out, nil
+}
+
+func (c *Collect) platformDistinctMapKeyTotal(ctx context.Context, platform string) (int64, error) {
+	const q = `
+SELECT COUNT(DISTINCT TRIM(map_key)) AS cnt
+FROM market
+WHERE map_key IS NOT NULL
+  AND TRIM(map_key) <> ''
+  AND UPPER(TRIM(platform)) = ?`
+	var row struct {
+		Cnt int64 `gorm:"column:cnt"`
+	}
+	err := c.db.WithContext(ctx).Raw(q, strings.ToUpper(strings.TrimSpace(platform))).Scan(&row).Error
+	return row.Cnt, err
 }
 
 func mapKeyAuditRows(a mapKeyAudit) []*persistententity.StatKV {
