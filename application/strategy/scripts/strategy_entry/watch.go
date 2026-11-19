@@ -418,12 +418,15 @@ func (w *watch) write(e event) {
 	start := recvAtOrNow(e.RecvAt)
 	if w.yesno != nil {
 		w.yesno.OnBookUpdate(outcomeID)
+		if w.entry != nil {
+			w.entry.recordDetectLatencyYesno(w.MapKey, time.Since(start))
+		}
 	}
 	if w.onextwo != nil {
 		w.onextwo.OnBookUpdate(outcomeID)
-	}
-	if w.entry != nil {
-		w.entry.recordDetectLatency(w.MapKey, time.Since(start))
+		if w.entry != nil {
+			w.entry.recordDetectLatencyOnextwo(w.MapKey, time.Since(start))
+		}
 	}
 }
 

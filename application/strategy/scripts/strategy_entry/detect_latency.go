@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"math"
-	"sort"
 	"sync"
 	"time"
 
@@ -16,8 +15,9 @@ import (
 )
 
 const (
-	statGroupDetectLatency = "strategy_entry_detect_latency"
-	statKeyDetectLatency   = "ws_to_arb_check_ms"
+	statGroupDetectLatency     = "strategy_entry_detect_latency"
+	statKeyDetectLatencyYesno  = "ws_to_arb_check_ms_yesno"
+	statKeyDetectLatencyOnextwo = "ws_to_arb_check_ms_onextwo"
 )
 
 // mapLatencyStats 单场 map_key：WS 收到消息 → 套利检测结束的耗时（毫秒）。
@@ -92,42 +92,68 @@ func roundMs(v float64) float64 {
 	return math.Round(v*1000) / 1000
 }
 
-func (e *Entry) recordDetectLatency(mapKey string, elapsed time.Duration) {
-	if e == nil || e.detectLat == nil {
+func (e *Entry) recordDetectLatencyYesno(mapKey string, elapsed time.Duration) {
+	if e == nil || e.detectLatYesno == nil {
 		return
 	}
-	e.detectLat.Record(mapKey, elapsed)
+	e.detectLatYesno.Record(mapKey, elapsed)
+}
+
+func (e *Entry) recordDetectLatencyOnextwo(mapKey string, elapsed time.Duration) {
+	if e == nil || e.detectLatOnextwo == nil {
+		return
+	}
+	e.detectLatOnextwo.Record(mapKey, elapsed)
 }
 
 func (e *Entry) flushDetectLatencyStat(ctx context.Context) {
-	if e == nil || e.statRepo == nil || e.detectLat == nil {
+	if e == nil || e.statRepo == nil {
 		return
 	}
-	payload := e.detectLat.snapshot()
-	keys := make([]string, 0, len(payload.ByMapKey))
-	for k := range payload.ByMapKey {
-		keys = append(keys, k)
+	rows := make([]*persistententity.StatKV, 0, 2)
+	for _, spec := range []struct {
+		key  string
+		desc string
+		lat  *DetectLatency
+	}{
+		{statKeyDetectLatencyYesno, "strategy_entry yesno：各 map_key WS收包→二元检测耗时(ms)", e.detectLatYesno},
+		{statKeyDetectLatencyOnextwo, "strategy_entry onextwo：各 map_key WS收包→1X2检测耗时(ms)", e.detectLatOnextwo},
+	} {
+		if spec.lat == nil {
+			continue
+		}
+		payload := spec.lat.snapshot()
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			notification.SendErrorLog(ctx, "strategy_entry-detect-latency-marshal", zap.String("item_key", spec.key), zap.Error(err))
+			continue
+		}
+		rows = append(rows, &persistententity.StatKV{
+			GroupName:   statGroupDetectLatency,
+			ItemKey:     spec.key,
+			ItemValue:   string(raw),
+			ValueType:   "json",
+			Description: spec.desc,
+			SortNo:      0,
+			IsEnabled:   1,
+		})
 	}
-	sort.Strings(keys)
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		notification.SendErrorLog(ctx, "strategy_entry-detect-latency-marshal", zap.Error(err))
+	if len(rows) == 0 {
 		return
 	}
-	row := &persistententity.StatKV{
-		GroupName:   statGroupDetectLatency,
-		ItemKey:     statKeyDetectLatency,
-		ItemValue:   string(raw),
-		ValueType:   "json",
-		Description: "strategy_entry：各 map_key WS收包→套利检测耗时(ms) 最快/最慢，心跳周期刷入",
-		SortNo:      0,
-		IsEnabled:   1,
-	}
-	if err := e.statRepo.UpsertBatch(ctx, nil, []*persistententity.StatKV{row}); err != nil {
+	if err := e.statRepo.UpsertBatch(ctx, nil, rows); err != nil {
 		notification.SendErrorLog(ctx, "strategy_entry-detect-latency-stat_kv", zap.Error(err))
 		return
 	}
+	yesnoN, onextwoN := 0, 0
+	if e.detectLatYesno != nil {
+		yesnoN = len(e.detectLatYesno.snapshot().ByMapKey)
+	}
+	if e.detectLatOnextwo != nil {
+		onextwoN = len(e.detectLatOnextwo.snapshot().ByMapKey)
+	}
 	logger.GetLogger().Info("strategy_entry-detect-latency-flushed",
-		zap.Int("map_keys", len(keys)),
+		zap.Int("yesno_map_keys", yesnoN),
+		zap.Int("onextwo_map_keys", onextwoN),
 		zap.String("group", statGroupDetectLatency))
 }

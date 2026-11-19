@@ -48,7 +48,8 @@ type Entry struct {
 	wsStaggerBox   atomic.Value
 	// warnKalshiKey 没有 Kalshi 签名账户时只打一次日志。
 	warnKalshiKey atomic.Bool
-	detectLat       *DetectLatency
+	detectLatYesno  *DetectLatency
+	detectLatOnextwo *DetectLatency
 }
 
 type running struct {
@@ -92,7 +93,8 @@ func NewEntry(
 		kalshi:             kalshi,
 		predict:            predict,
 		watches:            map[string]*running{},
-		detectLat:          NewDetectLatency(),
+		detectLatYesno:     NewDetectLatency(),
+		detectLatOnextwo:   NewDetectLatency(),
 	}
 	e.paramBox.Store(defaultParams())
 	e.credBox.Store(creds{})

@@ -31,5 +31,7 @@ ORDER BY sort_no;
 -- 元信息
 SELECT * FROM stat_kv WHERE group_name = 'stat_meta';
 
--- strategy_entry WS→套利检测耗时（每 5 分钟心跳刷一次）
--- SELECT item_value FROM stat_kv WHERE group_name = 'strategy_entry_detect_latency' AND item_key = 'ws_to_arb_check_ms';
+-- strategy_entry WS→套利检测耗时（每 5 分钟心跳刷一次；yesno / onextwo 各一条）
+-- SELECT item_key, updated_at, LEFT(item_value, 120) FROM stat_kv
+-- WHERE group_name = 'strategy_entry_detect_latency'
+--   AND item_key IN ('ws_to_arb_check_ms_yesno', 'ws_to_arb_check_ms_onextwo');
