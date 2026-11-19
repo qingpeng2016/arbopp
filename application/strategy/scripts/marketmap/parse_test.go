@@ -36,6 +36,10 @@ func TestOutcomeTeamFromName(t *testing.T) {
 	if !ok || normalizeTeam(team) != "arsenal" {
 		t.Fatalf("kalshi em dash: got %q ok=%v", team, ok)
 	}
+	team, ok = outcomeTeamFromName("Will Instituto AC Córdoba vs. CA Huracán end in a draw?")
+	if !ok || team != "draw" {
+		t.Fatalf("predict draw: got %q ok=%v", team, ok)
+	}
 }
 
 func TestKalshiSlugDate(t *testing.T) {

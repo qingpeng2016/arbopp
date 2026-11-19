@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/gph-tech/fgmm-strategy-bitfinex/common/dederi/logger"
 	persistentrepo "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/repository"
+	"go.uber.org/zap"
 )
 
 const progressFlushStep = 10
@@ -63,6 +65,11 @@ func (p *taskProgress) maybeFlush(ctx context.Context) {
 	}
 	p.lastWritten = bucket
 	text := fmt.Sprintf("progress=%d%% replayed=%d/%d", bucket, p.done, p.total)
+	logger.InfoZ(ctx, "backtest_replay-progress",
+		zap.Uint("task_id", p.taskID),
+		zap.Int("bucket_pct", bucket),
+		zap.Int("replayed", p.done),
+		zap.Int("total", p.total))
 	_ = p.repo.Update(ctx, nil, map[string]interface{}{"id = ?": p.taskID}, map[string]interface{}{
 		"progress":   uint8(bucket),
 		"error_text": trimErrText(text, 500),

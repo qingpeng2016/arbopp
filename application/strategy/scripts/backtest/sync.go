@@ -138,6 +138,11 @@ func (j *Replay) runTask(ctx context.Context, task *persistententity.BacktestTas
 		j.failTask(ctx, task, fmt.Errorf("no history snapshots for map_key %q", mapKey))
 		return
 	}
+	logger.InfoZ(ctx, "backtest_replay-history-loaded",
+		zap.Uint("task_id", task.ID),
+		zap.Int("snapshots", len(snaps)),
+		zap.Int("outcomes", len(outcomes)),
+		zap.Int("fixtures", len(fixtures)))
 
 	_ = j.btOrderRepo.DeleteWhere(ctx, nil, map[string]interface{}{"backtest_task_id = ?": task.ID})
 	_ = j.btOppRepo.DeleteWhere(ctx, nil, map[string]interface{}{"backtest_task_id = ?": task.ID})
@@ -154,11 +159,19 @@ func (j *Replay) runTask(ctx context.Context, task *persistententity.BacktestTas
 	prog := newTaskProgress(j.backtestTaskRepo, task.ID, len(tsList))
 	prog.flushStart(ctx)
 
+	logger.InfoZ(ctx, "backtest_replay-loop-start",
+		zap.Uint("task_id", task.ID),
+		zap.Int("seconds", len(tsList)),
+		zap.Bool("run_onextwo", runOneX2))
+	loopStart := time.Now()
+
 	replayed := 0
 	for _, tsMs := range tsList {
+		sec0 := time.Now()
 		replayAt := time.UnixMilli(tsMs).UTC()
 		sess.SetReplayTime(replayAt)
 		batch := rowsAtTs(snaps, tsMs)
+		secIdx := parseSecFromBatch(batch)
 		// 先写入本秒各平台 YES 视角 L2（内存互补维护 NO，见 replay.applySnapshot）。
 		groupTouch := make(map[string]uint, len(batch))
 		for _, row := range batch {
@@ -193,7 +206,21 @@ func (j *Replay) runTask(ctx context.Context, task *persistententity.BacktestTas
 		}
 		replayed++
 		prog.advance(ctx)
+		if runOneX2 && (replayed <= 1 || replayed%10 == 0 || replayed == len(tsList)) {
+			logger.InfoZ(ctx, "backtest_replay-tick",
+				zap.Uint("task_id", task.ID),
+				zap.Int("replayed", replayed),
+				zap.Int("total", len(tsList)),
+				zap.Int("sec_index", secIdx),
+				zap.Int64("snapshot_at_ms", tsMs),
+				zap.Duration("tick_cost", time.Since(sec0)))
+		}
 	}
+
+	logger.InfoZ(ctx, "backtest_replay-loop-end",
+		zap.Uint("task_id", task.ID),
+		zap.Int("replayed", replayed),
+		zap.Duration("loop_cost", time.Since(loopStart)))
 
 	extra := fmt.Sprintf("%d snapshots", len(snaps))
 	prog.flushDone(ctx, extra)

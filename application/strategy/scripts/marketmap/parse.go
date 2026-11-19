@@ -16,6 +16,7 @@ var (
 	reBeat           = regexp.MustCompile(`(?i)^will\s+(.+?)\s+beat\s+(.+?)\??\s*$`)
 	reKalshiWins     = regexp.MustCompile(`(?i)^(.+?)\s+wins?\s*$`)
 	reKalshiTie      = regexp.MustCompile(`(?i)^tie\s+is\s+the\s+result\s*$`)
+	reEndInDraw      = regexp.MustCompile(`(?i)end in a (?:draw|tie)\??\s*$`)
 	reSlugISODate    = regexp.MustCompile(`(\d{4}-\d{2}-\d{2})`)
 	reKalshiSlugDate = regexp.MustCompile(`(?i)(\d{2})(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)(\d{2})`)
 )
@@ -123,6 +124,9 @@ func outcomeTeamFromName(name string) (string, bool) {
 		return "", false
 	}
 	if reKalshiTie.MatchString(name) {
+		return "draw", true
+	}
+	if reEndInDraw.MatchString(name) {
 		return "draw", true
 	}
 	if m := reKalshiWins.FindStringSubmatch(name); len(m) >= 2 {
