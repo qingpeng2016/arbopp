@@ -43,12 +43,12 @@ type Entry struct {
 	watches map[string]*running
 	flush   *persist.Flush
 
-	paramBox       atomic.Value
-	credBox        atomic.Value
-	wsStaggerBox   atomic.Value
+	paramBox     atomic.Value
+	credBox      atomic.Value
+	wsStaggerBox atomic.Value
 	// warnKalshiKey 没有 Kalshi 签名账户时只打一次日志。
-	warnKalshiKey atomic.Bool
-	detectLatYesno  *DetectLatency
+	warnKalshiKey    atomic.Bool
+	detectLatYesno   *DetectLatency
 	detectLatOnextwo *DetectLatency
 }
 
@@ -195,8 +195,8 @@ func (e *Entry) loop(ctx context.Context) {
 	e.flush = persist.Start(e.bookRepo, e.oppRepo)
 	defer e.flush.Stop()
 	e.reconcile(ctx)
-	tick := time.NewTicker(10 * time.Second)
-	hb := time.NewTicker(5 * time.Minute)
+	tick := time.NewTicker(20 * time.Second)
+	hb := time.NewTicker(2 * time.Minute)
 	defer tick.Stop()
 	defer hb.Stop()
 	for {
