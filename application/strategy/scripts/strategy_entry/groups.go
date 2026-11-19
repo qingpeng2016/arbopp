@@ -225,18 +225,32 @@ type WatchGroupDeps struct {
 	PlatformRepo       persistentrepo.PlatformRepo
 }
 
-// LoadWatchGroupCounts 与实盘 loadGroups 相同过滤；alertBadKeys=false 时仅计数（stat_collect）。
-func LoadWatchGroupCounts(ctx context.Context, d WatchGroupDeps, alertBadKeys bool) (WatchGroupCounts, error) {
-	_, matched, err := loadWatchGroups(ctx, d, alertBadKeys)
-	if err != nil {
-		return WatchGroupCounts{}, err
+func runnableKeysFromFixtures(ctx context.Context, fixtures map[uint]persistententity.Market, alertBadKeys bool) map[string]struct{} {
+	rowsByKey := map[string][]persistententity.Market{}
+	for _, fx := range fixtures {
+		if fx.MapKey == nil || fx.MapVerified != 1 {
+			continue
+		}
+		k := strings.TrimSpace(*fx.MapKey)
+		if k == "" {
+			continue
+		}
+		rowsByKey[k] = append(rowsByKey[k], fx)
 	}
-	limit := LoadMaxGroups(ctx, d.ConfigStrategyRepo)
-	watchable := matched
-	if watchable > limit {
-		watchable = limit
+	runnableKeys := map[string]struct{}{}
+	for k, rows := range rowsByKey {
+		if dup, plat, ids := marketmap.MapKeyDuplicatePlatform(rows); dup {
+			if alertBadKeys {
+				alertMapKeyBad(ctx, "dup", k, plat, ids)
+			}
+			continue
+		}
+		if !marketmap.MapKeyHasTwoPlatforms(rows) {
+			continue
+		}
+		runnableKeys[k] = struct{}{}
 	}
-	return WatchGroupCounts{Matched: matched, Watchable: watchable, MaxGroups: limit}, nil
+	return runnableKeys
 }
 
 // loadWsStagger 读 config_strategy.strategy_entry.ws_connect_stagger_ms（毫秒）。
@@ -289,31 +303,7 @@ func loadWatchGroups(ctx context.Context, d WatchGroupDeps, alertBadKeys bool) (
 		return nil, 0, err
 	}
 
-	// 按 map_key 聚合 ACTIVE 父场次，筛掉平台不足 2 或同平台重复组。
-	rowsByKey := map[string][]persistententity.Market{}
-	for _, fx := range fixtures {
-		if fx.MapKey == nil || fx.MapVerified != 1 {
-			continue
-		}
-		k := strings.TrimSpace(*fx.MapKey)
-		if k == "" {
-			continue
-		}
-		rowsByKey[k] = append(rowsByKey[k], fx)
-	}
-	runnableKeys := map[string]struct{}{}
-	for k, rows := range rowsByKey {
-		if dup, plat, ids := marketmap.MapKeyDuplicatePlatform(rows); dup {
-			if alertBadKeys {
-				alertMapKeyBad(ctx, "dup", k, plat, ids)
-			}
-			continue
-		}
-		if !marketmap.MapKeyHasTwoPlatforms(rows) {
-			continue
-		}
-		runnableKeys[k] = struct{}{}
-	}
+	runnableKeys := runnableKeysFromFixtures(ctx, fixtures, alertBadKeys)
 
 	// 获取所有市场的outcomes盘口信息（多平台的）
 	outcomes := marketmap.FilterOutcomesUnderVerifiedFixtures(raw, fixtures)

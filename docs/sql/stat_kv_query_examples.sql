@@ -1,6 +1,6 @@
 -- stat_kv 查询示例（见 migration_stat_kv.sql 建表）
 
--- map_key_audit：与 strategy_entry loadGroups 同源
+-- map_key_audit：应对场次 + audit D 违规计数（不含 total_map_keys / ok_groups）
 SELECT item_key, item_value, description, updated_at
 FROM stat_kv
 WHERE group_name = 'map_key_audit'

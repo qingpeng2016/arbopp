@@ -31,7 +31,7 @@ const (
 	jsonTotalKey = "__total__"
 )
 
-// Collect 刷新 stat_kv：strategy_entry 场次计数 + 各平台 market/outcome/map_key 汇总。
+// Collect 刷新 stat_kv：map_key 审计 + 各平台 JSON 汇总（market/outcome/map_key 按子类）。
 type Collect struct {
 	db                 *gorm.DB
 	statRepo           persistentrepo.StatKVRepo
@@ -73,14 +73,10 @@ func (c *Collect) Run(ctx context.Context) {
 		return
 	}
 	start := time.Now()
-	watchCounts, err := c.loadWatchGroupCounts(ctx)
+	badOnly, err := c.loadMapKeyAuditBadOnly(ctx)
 	if err != nil {
-		notification.SendErrorLog(ctx, "stat_collect-watch_groups-failed", zap.Error(err))
+		notification.SendErrorLog(ctx, "stat_collect-map_key_audit-failed", zap.Error(err))
 		return
-	}
-	audit := mapKeyAudit{
-		Watchable: int64(watchCounts.Watchable),
-		Matched:   int64(watchCounts.Matched),
 	}
 	marketRows, err := c.loadMarketCounts(ctx)
 	if err != nil {
@@ -97,15 +93,9 @@ func (c *Collect) Run(ctx context.Context) {
 		notification.SendErrorLog(ctx, "stat_collect-map_key_count-failed", zap.Error(err))
 		return
 	}
-	auditRows := mapKeyAuditRows(audit)
 
+	// 快路径 SQL 先落库；应对场次计数放在后面，避免前面全量 outcome 拖死整轮。
 	err = c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := c.statRepo.DeleteByGroup(ctx, tx, groupMapKeyAudit); err != nil {
-			return err
-		}
-		if err := c.statRepo.UpsertBatch(ctx, tx, auditRows); err != nil {
-			return err
-		}
 		for _, g := range []string{groupMarketCount, groupOutcomeCount, groupMapKeyCount} {
 			if err := c.statRepo.DeleteByGroup(ctx, tx, g); err != nil {
 				return err
@@ -116,6 +106,33 @@ func (c *Collect) Run(ctx context.Context) {
 		all = append(all, outcomeRows...)
 		all = append(all, mapKeyRows...)
 		if err := c.statRepo.BatchCreate(ctx, tx, all); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		notification.SendErrorLog(ctx, "stat_collect-persist-counts-failed", zap.Error(err))
+		return
+	}
+
+	watchCounts, watchErr := c.loadWatchGroupCounts(ctx)
+	if watchErr != nil {
+		notification.SendErrorLog(ctx, "stat_collect-watch_groups-failed", zap.Error(watchErr))
+		watchCounts = strategyentry.WatchGroupCounts{}
+	}
+	audit := mapKeyAudit{
+		Watchable: int64(watchCounts.Watchable),
+		Matched:   int64(watchCounts.Matched),
+		BadLt2:    badOnly.BadLt2,
+		BadDup:    badOnly.BadDup,
+	}
+	auditRows := mapKeyAuditRows(audit)
+
+	err = c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := c.statRepo.DeleteByGroup(ctx, tx, groupMapKeyAudit); err != nil {
+			return err
+		}
+		if err := c.statRepo.UpsertBatch(ctx, tx, auditRows); err != nil {
 			return err
 		}
 		metaRows := []*persistententity.StatKV{
@@ -131,6 +148,9 @@ func (c *Collect) Run(ctx context.Context) {
 	logger.InfoZ(ctx, "stat_collect-done",
 		zap.Int64("matched_groups", audit.Matched),
 		zap.Int64("watchable_groups", audit.Watchable),
+		zap.Int64("bad_lt2", audit.BadLt2),
+		zap.Int64("bad_dup", audit.BadDup),
+		zap.Bool("watch_groups_ok", watchErr == nil),
 		zap.Int("market_count_rows", len(marketRows)),
 		zap.Int("outcome_count_rows", len(outcomeRows)),
 		zap.Int("map_key_count_rows", len(mapKeyRows)),
@@ -140,18 +160,96 @@ func (c *Collect) Run(ctx context.Context) {
 type mapKeyAudit struct {
 	Matched   int64
 	Watchable int64
+	BadLt2    int64
+	BadDup    int64
 }
 
+func (c *Collect) loadMapKeyAuditBadOnly(ctx context.Context) (mapKeyAudit, error) {
+	const q = `
+SELECT
+    COALESCE(SUM(CASE WHEN platform_cnt < 2 THEN 1 ELSE 0 END), 0) AS bad_lt2_platform_groups,
+    COALESCE(SUM(CASE WHEN market_rows > platform_cnt THEN 1 ELSE 0 END), 0) AS bad_dup_platform_groups
+FROM (
+    SELECT
+        map_key,
+        COUNT(*) AS market_rows,
+        COUNT(DISTINCT UPPER(TRIM(platform))) AS platform_cnt
+    FROM market
+    WHERE map_key IS NOT NULL
+      AND TRIM(map_key) <> ''
+    GROUP BY map_key
+) t`
+	var row struct {
+		BadLt2 int64 `gorm:"column:bad_lt2_platform_groups"`
+		BadDup int64 `gorm:"column:bad_dup_platform_groups"`
+	}
+	if err := c.db.WithContext(ctx).Raw(q).Scan(&row).Error; err != nil {
+		return mapKeyAudit{}, err
+	}
+	return mapKeyAudit{BadLt2: row.BadLt2, BadDup: row.BadDup}, nil
+}
+
+// loadWatchGroupCounts 与 loadGroups 同源；纯 SQL，不加载 market / market_outcome 行。
 func (c *Collect) loadWatchGroupCounts(ctx context.Context) (strategyentry.WatchGroupCounts, error) {
-	if c.marketRepo == nil || c.outcomeRepo == nil {
+	if c.db == nil {
 		return strategyentry.WatchGroupCounts{}, nil
 	}
-	return strategyentry.LoadWatchGroupCounts(ctx, strategyentry.WatchGroupDeps{
-		MarketRepo:         c.marketRepo,
-		OutcomeRepo:        c.outcomeRepo,
-		ConfigStrategyRepo: c.configStrategyRepo,
-		PlatformRepo:       c.platformRepo,
-	}, false)
+	matched, err := c.countMatchedGroupsSQL(ctx)
+	if err != nil {
+		return strategyentry.WatchGroupCounts{}, err
+	}
+	limit := strategyentry.LoadMaxGroups(ctx, c.configStrategyRepo)
+	watchable := matched
+	if watchable > limit {
+		watchable = limit
+	}
+	return strategyentry.WatchGroupCounts{
+		Matched:   matched,
+		Watchable: watchable,
+		MaxGroups: limit,
+	}, nil
+}
+
+func (c *Collect) countMatchedGroupsSQL(ctx context.Context) (int, error) {
+	const q = `
+SELECT COUNT(*) AS cnt FROM (
+	SELECT TRIM(m.map_key) AS map_key
+	FROM market m
+	INNER JOIN market_outcome o ON o.market_row_id = m.id
+	INNER JOIN (
+		SELECT TRIM(map_key) AS map_key
+		FROM market
+		WHERE status = 'ACTIVE'
+		  AND map_verified = 1
+		  AND map_key IS NOT NULL
+		  AND TRIM(map_key) <> ''
+		  AND (
+		    NOT EXISTS (SELECT 1 FROM platform WHERE status = 'ACTIVE' LIMIT 1)
+		    OR UPPER(TRIM(platform)) IN (
+		      SELECT UPPER(TRIM(slug)) FROM platform WHERE status = 'ACTIVE'
+		    )
+		  )
+		GROUP BY TRIM(map_key)
+		HAVING COUNT(DISTINCT UPPER(TRIM(platform))) >= 2
+		   AND COUNT(*) = COUNT(DISTINCT UPPER(TRIM(platform)))
+	) rk ON rk.map_key = TRIM(m.map_key)
+	WHERE m.status = 'ACTIVE'
+	  AND m.map_verified = 1
+	  AND (
+	    NOT EXISTS (SELECT 1 FROM platform WHERE status = 'ACTIVE' LIMIT 1)
+	    OR UPPER(TRIM(m.platform)) IN (
+	      SELECT UPPER(TRIM(slug)) FROM platform WHERE status = 'ACTIVE'
+	    )
+	  )
+	GROUP BY TRIM(m.map_key)
+) t`
+	var row struct {
+		Cnt int64 `gorm:"column:cnt"`
+	}
+	if err := c.db.WithContext(ctx).Raw(q).Scan(&row).Error; err != nil {
+		return 0, err
+	}
+	return int(row.Cnt), nil
 }
 
 type platformSubCountRow struct {
@@ -271,6 +369,10 @@ func mapKeyAuditRows(a mapKeyAudit) []*persistententity.StatKV {
 			"strategy_entry 应对监控组数（与 loadGroups/max_groups 一致）", 1),
 		kvStat(groupMapKeyAudit, "matched_groups", strconv.FormatInt(a.Matched, 10), "int",
 			"strategy_entry 库内匹配组数（未截 max_groups）", 2),
+		kvStat(groupMapKeyAudit, "bad_lt2_platform_groups", strconv.FormatInt(a.BadLt2, 10), "int",
+			"map_key 平台数<2 的组数（audit D）", 3),
+		kvStat(groupMapKeyAudit, "bad_dup_platform_groups", strconv.FormatInt(a.BadDup, 10), "int",
+			"map_key 同平台重复组数（audit D）", 4),
 	}
 }
 
