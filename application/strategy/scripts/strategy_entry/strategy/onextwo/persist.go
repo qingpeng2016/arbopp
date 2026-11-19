@@ -3,6 +3,7 @@ package onextwo
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"time"
 
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/strategy/yesno"
@@ -41,6 +42,36 @@ func (r *Runner) persistDeps() persistDeps {
 		d.order = ops.OrderRepo()
 	}
 	return d
+}
+
+func NotifyGrab(ctx context.Context, mapKey string, hit GrabHit) {
+	title := "strategy_entry 跨所下单"
+	mode := "live"
+	if hit.DryRun {
+		title = "strategy_entry 套利命中（未发单）"
+		mode = "dry_run"
+	}
+	pick := hit.Pick
+	tripleSide := "NO"
+	if pick.BuyYes {
+		tripleSide = "YES"
+	}
+	fields := []notification.FieldPair{
+		{Key: "mode", Value: mode},
+		{Key: "strategy", Value: pick.Kind},
+		{Key: "map_key", Value: mapKey},
+		{Key: "triple_side", Value: tripleSide},
+		{Key: "qty", Value: strconv.FormatFloat(pick.Qty, 'f', -1, 64)},
+		{Key: "per_share", Value: strconv.FormatFloat(pick.Per, 'f', -1, 64)},
+	}
+	for i, leg := range pick.Legs {
+		px := pick.Prices[i]
+		fields = append(fields,
+			notification.FieldPair{Key: "leg" + strconv.Itoa(i+1), Value: leg.Platform + " " + tripleSide},
+			notification.FieldPair{Key: "leg" + strconv.Itoa(i+1) + "_ask", Value: strconv.FormatFloat(px, 'f', -1, 64)},
+		)
+	}
+	_ = notification.GetGlobalNotificationManager().SendInfoAlert(ctx, title, fields)
 }
 
 func SaveGrabHit(ctx context.Context, d persistDeps, mapKey string, hit GrabHit) {

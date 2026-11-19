@@ -30,9 +30,11 @@ func (r *Runner) grabOne(outcomeID uint) {
 	hit := GrabHit{Pick: pick, Limits: lim, DryRun: true}
 	ctx := r.w.Context()
 	mapKey := r.w.MapKey
-	go func(ctx context.Context, mapKey string, hit GrabHit) {
-		SaveGrabHit(ctx, r.persistDeps(), mapKey, hit)
-	}(ctx, mapKey, hit)
+	deps := r.persistDeps()
+	go func(ctx context.Context, mapKey string, hit GrabHit, d persistDeps) {
+		NotifyGrab(ctx, mapKey, hit)
+		SaveGrabHit(ctx, d, mapKey, hit)
+	}(ctx, mapKey, hit, deps)
 }
 
 // OnBookUpdateAfterReplay 回测：本 snapshot 全部盘口写入后试一次 1X2（避免同一毫秒重复落库）。

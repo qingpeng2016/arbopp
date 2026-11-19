@@ -196,7 +196,7 @@ func (e *Entry) loop(ctx context.Context) {
 	defer e.flush.Stop()
 	e.reconcile(ctx)
 	tick := time.NewTicker(20 * time.Second)
-	hb := time.NewTicker(2 * time.Minute)
+	hb := time.NewTicker(5 * time.Minute)
 	defer tick.Stop()
 	defer hb.Stop()
 	for {
