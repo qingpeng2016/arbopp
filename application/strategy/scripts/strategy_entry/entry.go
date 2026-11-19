@@ -233,7 +233,7 @@ func (e *Entry) reconcile(ctx context.Context) {
 	for _, g := range groups {
 		want[g.MapKey] = g
 	}
-	// 已有市场：进行可能会关闭
+	// 已有市场：进行可能会关闭1
 	e.mu.Lock()
 	removed := 0
 	for k, rw := range e.watches {
