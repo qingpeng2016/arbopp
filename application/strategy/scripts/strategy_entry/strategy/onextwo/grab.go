@@ -2,9 +2,6 @@ package onextwo
 
 import (
 	"context"
-
-	"github.com/gph-tech/fgmm-strategy-bitfinex/common/dederi/logger"
-	"go.uber.org/zap"
 )
 
 // GrabHit 1X2 命中。
