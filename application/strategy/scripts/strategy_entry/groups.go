@@ -14,6 +14,7 @@ import (
 	persistentrepo "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/repository"
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // creds 下单身份。在对账协程里刷新，回调里只读。
@@ -29,9 +30,9 @@ type creds struct {
 }
 
 const (
-	TaskName             = "strategy_entry"
-	maxGroups            = 50
-	thresholdMaxCost     = "binary_yes_no_max_cost"
+	TaskName         = "strategy_entry"
+	defaultMaxGroups = 50
+	thresholdMaxCost = "binary_yes_no_max_cost"
 	thresholdOrderAmount = "binary_yes_no_order_amount"
 	thresholdLevelFactor = "binary_yes_no_level_factor"
 	threshold1X2YesMax   = "1x2_yes_triple_max_cost"
@@ -185,7 +186,26 @@ type group struct {
 	MarketsByRowID map[uint]persistententity.Market
 }
 
-// loadGroups 取出已核对场次，按成交额留下最多 10 组。
+// loadMaxGroups 读 config_strategy.strategy_entry.max_groups。
+func (e *Entry) loadMaxGroups(ctx context.Context) int {
+	if e.configStrategyRepo == nil {
+		return defaultMaxGroups
+	}
+	cfg, err := e.configStrategyRepo.FindOne(ctx, nil, map[string]interface{}{
+		"group_name = ?": marketmap.ConfigGroupStrategyEntry,
+		"item_key = ?":   marketmap.ConfigKeyMaxGroups,
+		"is_enabled = ?": 1,
+	}, "")
+	if err != nil {
+		if err != gorm.ErrRecordNotFound {
+			notification.SendErrorLog(ctx, "strategy_entry-max-groups-read-failed", zap.Error(err))
+		}
+		return defaultMaxGroups
+	}
+	return marketmap.ParseMaxGroups(cfg.ItemValue, defaultMaxGroups)
+}
+
+// loadGroups 取出已核对场次，按成交额留下最多 max_groups 组（config_strategy）。
 func (e *Entry) loadGroups(ctx context.Context) ([]group, int, error) {
 	fixtures, err := marketmap.LoadVerifiedFixturesNew(ctx, e.marketRepo, e.configStrategyRepo, e.platformRepo)
 	if err != nil {
@@ -283,8 +303,9 @@ func (e *Entry) loadGroups(ctx context.Context) ([]group, int, error) {
 	}
 	sortGroups(list)
 	matched := len(list)
-	if len(list) > maxGroups {
-		list = list[:maxGroups]
+	limit := e.loadMaxGroups(ctx)
+	if len(list) > limit {
+		list = list[:limit]
 	}
 	return list, matched, nil
 }
