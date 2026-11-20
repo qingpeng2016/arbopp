@@ -98,7 +98,8 @@ func booksToRows(markets []persistententity.MarketOutcome, books []httpentity.Or
 		if f, ok := fixtures[m.MarketRowID]; ok {
 			fx = &f
 		}
-		out = append(out, common.RowFromOutcome(&m, fx, string(bidsJSON), string(asksJSON), token))
+		snap := common.SnapshotSecondOrNow(common.SnapshotSecondFromPolyTimestamp(book.Timestamp))
+		out = append(out, common.RowFromOutcomeAt(&m, fx, string(bidsJSON), string(asksJSON), token, snap))
 	}
 	return out, missed
 }

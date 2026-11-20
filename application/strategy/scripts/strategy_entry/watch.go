@@ -483,6 +483,38 @@ func (w *watch) polyYesTokensTouched(changes []book.PolyChange) map[string]struc
 }
 
 // enqueueBookPersistWS 将 WS 盘口推入 Redis，由 ws_book_flush 批量写 market_order_book_ws。
+func eventSnapshotSecond(e event) int64 {
+	return eventSnapshotMs(e) / 1000
+}
+
+func eventSnapshotMs(e event) int64 {
+	if !e.TS.IsZero() {
+		return e.TS.UnixMilli()
+	}
+	if !e.RecvAt.IsZero() {
+		return e.RecvAt.UnixMilli()
+	}
+	return time.Now().UnixMilli()
+}
+
+// snapshotSecondForWSRow 行上已有接口时间（如 Predict）则优先，否则用 WS 事件时间。
+func snapshotSecondForWSRow(row *persistententity.OrderBook, eventSec int64) int64 {
+	if row != nil && row.SnapshotSecond > 0 {
+		return row.SnapshotSecond
+	}
+	if eventSec > 0 {
+		return eventSec
+	}
+	return time.Now().Unix()
+}
+
+func snapshotMsForWSRow(row *persistententity.OrderBook, e event) int64 {
+	if row != nil && row.SnapshotSecond > 0 {
+		return row.SnapshotSecond * 1000
+	}
+	return eventSnapshotMs(e)
+}
+
 func (w *watch) enqueueBookPersistWS(e event) {
 	if w.entry == nil || w.entry.wsBookQueue == nil {
 		return
@@ -491,7 +523,7 @@ func (w *watch) enqueueBookPersistWS(e event) {
 	if len(rows) == 0 {
 		return
 	}
-	snap := time.Now().Unix()
+	snap := eventSnapshotSecond(e)
 	q := w.entry.wsBookQueue
 	for _, row := range rows {
 		if row == nil {
@@ -499,11 +531,15 @@ func (w *watch) enqueueBookPersistWS(e event) {
 		}
 		dup := cloneOrderBookRow(row)
 		w.enrichBookRow(dup)
+		if dup.SnapshotSecond <= 0 {
+			dup.SnapshotSecond = snap
+		}
 		wsRow := persistententity.OrderBookWSCopy(dup)
 		if wsRow == nil {
 			continue
 		}
-		wsRow.SnapshotSecond = snap
+		wsRow.SnapshotSecond = snapshotSecondForWSRow(dup, snap)
+		wsRow.SnapshotAtMs = snapshotMsForWSRow(dup, e)
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		err := q.Push(ctx, wsRow)
 		cancel()
@@ -598,29 +634,53 @@ func (w *watch) outcomeForBookRow(row *persistententity.OrderBook) *persistenten
 func (w *watch) orderBookRowsFromEvent(e event) []*persistententity.OrderBook {
 	switch e.Kind {
 	case "poly_all_book":
-		return w.bookRowsForPolyToken(e.ID)
+		return w.bookRowsForPolyTokenAllSides(e.ID)
 	case "poly_price_change":
 		var rows []*persistententity.OrderBook
-		seen := make(map[string]struct{}, len(e.Changes))
+		seenIdx := make(map[int]struct{}, len(e.Changes))
 		for _, ch := range e.Changes {
 			token := strings.TrimSpace(ch.ID)
 			if token == "" {
 				continue
 			}
-			if _, dup := seen[token]; dup {
+			idx, ok := w.ByToken[token]
+			if !ok {
 				continue
 			}
-			seen[token] = struct{}{}
-			rows = append(rows, w.bookRowsForPolyToken(token)...)
+			if _, dup := seenIdx[idx]; dup {
+				continue
+			}
+			seenIdx[idx] = struct{}{}
+			rows = append(rows, w.bookRowsForPolyOutcome(idx)...)
 		}
 		return rows
 	case "kalshi_all_book", "kalshi_price_change":
 		return w.bookRowsForKalshiTicker(e.ID)
 	case "predict_all_book":
-		return w.bookRowsForPredictMarket(e.ID)
+		return w.bookRowsForPredictMarket(e)
 	default:
 		return nil
 	}
+}
+
+func (w *watch) bookRowsForPolyTokenAllSides(token string) []*persistententity.OrderBook {
+	idx, ok := w.ByToken[strings.TrimSpace(token)]
+	if !ok {
+		return nil
+	}
+	return w.bookRowsForPolyOutcome(idx)
+}
+
+func (w *watch) bookRowsForPolyOutcome(outcomeIndex int) []*persistententity.OrderBook {
+	if outcomeIndex < 0 || outcomeIndex >= len(w.Outcomes) {
+		return nil
+	}
+	oc := &w.Outcomes[outcomeIndex]
+	var rows []*persistententity.OrderBook
+	for _, token := range []string{oc.YesTokenID, oc.NoTokenID} {
+		rows = append(rows, w.bookRowsForPolyToken(token)...)
+	}
+	return rows
 }
 
 func (w *watch) bookRowsForPolyToken(token string) []*persistententity.OrderBook {
@@ -640,8 +700,8 @@ func (w *watch) bookRowsForPolyToken(token string) []*persistententity.OrderBook
 	return []*persistententity.OrderBook{row}
 }
 
-func (w *watch) bookRowsForPredictMarket(marketID string) []*persistententity.OrderBook {
-	marketID = strings.TrimSpace(marketID)
+func (w *watch) bookRowsForPredictMarket(e event) []*persistententity.OrderBook {
+	marketID := strings.TrimSpace(e.ID)
 	idx, ok := w.ByPredict[marketID]
 	if !ok {
 		return nil
@@ -650,10 +710,14 @@ func (w *watch) bookRowsForPredictMarket(marketID string) []*persistententity.Or
 	if !ok {
 		return nil
 	}
-	return w.predictPersistRows(&w.Outcomes[idx], b.Bids, b.Asks)
+	ms := int64(0)
+	if !e.TS.IsZero() {
+		ms = e.TS.UnixMilli()
+	}
+	return w.predictPersistRows(&w.Outcomes[idx], b.Bids, b.Asks, ms)
 }
 
-func (w *watch) predictPersistRows(oc *persistententity.MarketOutcome, yesBids, yesAsks []book.Level) []*persistententity.OrderBook {
+func (w *watch) predictPersistRows(oc *persistententity.MarketOutcome, yesBids, yesAsks []book.Level, updateTimestampMs int64) []*persistententity.OrderBook {
 	if w == nil || oc == nil {
 		return nil
 	}
@@ -661,7 +725,7 @@ func (w *watch) predictPersistRows(oc *persistententity.MarketOutcome, yesBids, 
 	if m, ok := w.MarketsByRowID[oc.MarketRowID]; ok {
 		fx = &m
 	}
-	rows := obcommon.PredictBookRowsWithFixture(oc, fx, yesBids, yesAsks)
+	rows := obcommon.PredictBookRowsWithFixture(oc, fx, yesBids, yesAsks, updateTimestampMs)
 	if len(rows) == 0 {
 		return nil
 	}
@@ -736,7 +800,7 @@ func (w *watch) bookRowsForHit(aIndex, bIndex int) []*persistententity.OrderBook
 			continue
 		}
 		if strings.EqualFold(oc.Platform, appcommon.PlatformPredict) {
-			rows = append(rows, w.predictPersistRows(&w.Outcomes[idx], bk.Bids, bk.Asks)...)
+			rows = append(rows, w.predictPersistRows(&w.Outcomes[idx], bk.Bids, bk.Asks, 0)...)
 			continue
 		}
 		hitOc := &w.Outcomes[idx]

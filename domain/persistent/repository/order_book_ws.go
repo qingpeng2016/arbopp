@@ -8,5 +8,5 @@ import (
 )
 
 type OrderBookWSRepo interface {
-	BatchUpsert(ctx context.Context, tx *gorm.DB, list []*entity.OrderBookWS) error
+	BatchCreate(ctx context.Context, tx *gorm.DB, list []*entity.OrderBookWS) error
 }

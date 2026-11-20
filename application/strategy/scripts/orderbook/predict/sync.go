@@ -83,7 +83,7 @@ func booksToRows(markets []persistententity.MarketOutcome, books []httpentity.Pr
 		if f, ok := fixtures[m.MarketRowID]; ok {
 			fx = &f
 		}
-		out = append(out, common.PredictBookRowsWithFixture(&m, fx, yesBids, yesAsks)...)
+		out = append(out, common.PredictBookRowsWithFixture(&m, fx, yesBids, yesAsks, book.UpdateTimestampMs)...)
 	}
 	return out, missed
 }

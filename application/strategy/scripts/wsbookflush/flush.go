@@ -47,12 +47,11 @@ func (f *Flush) Run(ctx context.Context) {
 		if len(batch) == 0 {
 			break
 		}
-		batch = wsbookqueue.DedupeBatch(batch)
 		writeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		err = f.repo.BatchUpsert(writeCtx, nil, batch)
+		err = f.repo.BatchCreate(writeCtx, nil, batch)
 		cancel()
 		if err != nil {
-			notification.SendErrorLog(ctx, "ws_book_flush-upsert-failed",
+			notification.SendErrorLog(ctx, "ws_book_flush-insert-failed",
 				zap.Error(err), zap.Int("rows", len(batch)))
 			return
 		}

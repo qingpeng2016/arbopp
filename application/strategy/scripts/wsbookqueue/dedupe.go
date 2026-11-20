@@ -1,12 +1,13 @@
 package wsbookqueue
 
 import (
+	"strconv"
 	"strings"
 
 	persistententity "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/entity"
 )
 
-// DedupeBatch 同批内按 (platform, outcome, token) 保留 snapshot_second 最大的一条。
+// DedupeBatch 同批内按 (platform, outcome, token, snapshot_second) 去重，保留最后一条。
 func DedupeBatch(list []*persistententity.OrderBookWS) []*persistententity.OrderBookWS {
 	if len(list) <= 1 {
 		return list
@@ -17,10 +18,7 @@ func DedupeBatch(list []*persistententity.OrderBookWS) []*persistententity.Order
 			continue
 		}
 		k := dedupeKey(row)
-		prev, ok := best[k]
-		if !ok || row.SnapshotSecond >= prev.SnapshotSecond {
-			best[k] = row
-		}
+		best[k] = row
 	}
 	out := make([]*persistententity.OrderBookWS, 0, len(best))
 	for _, row := range best {
@@ -32,5 +30,6 @@ func DedupeBatch(list []*persistententity.OrderBookWS) []*persistententity.Order
 func dedupeKey(b *persistententity.OrderBookWS) string {
 	return strings.ToUpper(strings.TrimSpace(b.Platform)) + "\x00" +
 		strings.TrimSpace(b.PlatformMarketOutcomeID) + "\x00" +
-		strings.TrimSpace(b.TokenID)
+		strings.TrimSpace(b.TokenID) + "\x00" +
+		strconv.FormatInt(b.SnapshotSecond, 10)
 }

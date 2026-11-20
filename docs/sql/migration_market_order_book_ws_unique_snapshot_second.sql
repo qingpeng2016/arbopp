@@ -1,0 +1,1 @@
+-- 已废弃：请改跑 migration_market_order_book_ws_history.sql（INSERT 历史快照，无 token 唯一键）
