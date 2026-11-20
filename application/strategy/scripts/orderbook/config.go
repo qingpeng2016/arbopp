@@ -50,5 +50,6 @@ func (j *OrderBook) resolveFetchConfig(ctx context.Context) fetchopt.FetchConfig
 		zap.Int("poly_batch_concurrency", poly.BatchConcurrency),
 		zap.Int("kalshi_batch_size", kal.BatchSize),
 		zap.Int("kalshi_batch_concurrency", kal.BatchConcurrency))
-	return fetchopt.FetchConfig{Polymarket: poly, Kalshi: kal}
+	pred := parsed.Predict.Normalized(appcommon.PlatformPredict)
+	return fetchopt.FetchConfig{Polymarket: poly, Kalshi: kal, Predict: pred}
 }

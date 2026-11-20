@@ -15,9 +15,12 @@ import (
 )
 
 const (
-	groupMapKeyAudit           = "map_key_audit"
-	itemKeyMarketRunningCount  = "market_running_count_strategy"
+	groupMapKeyAudit          = "map_key_audit"
+	itemKeyMarketRunningCount = "market_running_count_strategy"
 )
+
+func GroupMapKeyAudit() string          { return groupMapKeyAudit }
+func ItemKeyMarketRunningCountStrategy() string { return itemKeyMarketRunningCount }
 
 // Group 在跑 map_key 及关联 market.id（写入 stat_kv description）。
 type Group struct {

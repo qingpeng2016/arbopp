@@ -19,6 +19,17 @@ func NewStatKVImpl(db *gorm.DB) repository.StatKVRepo {
 	return &StatKVImpl{db: db}
 }
 
+func (r *StatKVImpl) FindOne(ctx context.Context, tx *gorm.DB, groupName, itemKey string) (entity.StatKV, error) {
+	if tx == nil {
+		tx = r.db
+	}
+	var e entity.StatKV
+	err := tx.WithContext(ctx).Model(entity.StatKV{}).
+		Where("group_name = ? AND item_key = ? AND is_enabled = ?", strings.TrimSpace(groupName), strings.TrimSpace(itemKey), 1).
+		First(&e).Error
+	return e, err
+}
+
 func (r *StatKVImpl) UpsertBatch(ctx context.Context, tx *gorm.DB, list []*entity.StatKV) error {
 	if tx == nil {
 		tx = r.db

@@ -125,6 +125,9 @@ func (s *Scheduler) Handle() {
 			if jobName == scheduleModule+"-"+strategyentry.TaskName && s.strategyEntry != nil {
 				s.strategyEntry.Stop()
 			}
+			if jobName == scheduleModule+"-orderbook" && s.orderBook != nil {
+				s.orderBook.StopPoll()
+			}
 			s.ns.RemoveByTags(jobName)
 			delete(s.jobMap, jobName)
 			delete(s.configMap, jobName)
@@ -241,6 +244,9 @@ func (s *Scheduler) Stop() error {
 	if s.strategyEntry != nil {
 		s.strategyEntry.Stop()
 	}
+	if s.orderBook != nil {
+		s.orderBook.StopPoll()
+	}
 	s.ns.Stop()
 	return nil
 }
@@ -259,7 +265,7 @@ func (s *Scheduler) getHandleFunc(module, taskName string) func() {
 	case "orderbook":
 		return func() {
 			if s.orderBook != nil {
-				s.orderBook.RunProbe(context.Background())
+				s.orderBook.RunPoll(context.Background())
 			}
 		}
 	case "orderbook_sync":

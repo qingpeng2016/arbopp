@@ -26,9 +26,15 @@ type OrderBook struct {
 	platformRepo       persistentrepo.PlatformRepo
 	marketRepo         persistentrepo.MarketRepo
 	outcomeRepo        persistentrepo.MarketOutcomeRepo
+	statRepo           persistentrepo.StatKVRepo
 	kalshiSyncer       *kalshi.Syncer
 	polySyncer         *polymarket.Syncer
 	predictSyncer      *predict.Syncer
+
+	pollMu   sync.Mutex
+	pollRun  bool
+	pollStop context.CancelFunc
+	pollDone chan struct{}
 }
 
 func NewOrderBook(
@@ -40,12 +46,14 @@ func NewOrderBook(
 	orderBookRepo persistentrepo.OrderBookRepo,
 	configStrategyRepo persistentrepo.ConfigStrategyRepo,
 	platformRepo persistentrepo.PlatformRepo,
+	statRepo persistentrepo.StatKVRepo,
 ) *OrderBook {
 	return &OrderBook{
 		configStrategyRepo: configStrategyRepo,
 		platformRepo:       platformRepo,
 		marketRepo:         marketRepo,
 		outcomeRepo:        outcomeRepo,
+		statRepo:           statRepo,
 		kalshiSyncer: &kalshi.Syncer{
 			API:   kalshiRepo,
 			Books: orderBookRepo,

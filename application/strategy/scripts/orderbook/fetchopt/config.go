@@ -26,7 +26,7 @@ const (
 	defaultBatchConcurrency = 1
 	maxPolyBatch            = 500
 	maxPredictBatch         = 100
-	maxBatchConcurrency     = 16
+	maxBatchConcurrency     = 32
 )
 
 func DefaultFetchConfig() FetchConfig {
