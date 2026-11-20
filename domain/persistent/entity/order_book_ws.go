@@ -23,8 +23,7 @@ type OrderBookWS struct {
 	SelectionID             *string   `gorm:"column:selection_id;type:varchar(255)"`
 	OrderBookAsks           string    `gorm:"column:order_book_asks;type:text;not null"`
 	OrderBookBids           string    `gorm:"column:order_book_bids;type:text;not null"`
-	SnapshotSecond          int64     `gorm:"column:snapshot_second;type:bigint;not null;default:0"`
-	SnapshotAtMs            int64     `gorm:"column:snapshot_at_ms;type:bigint;not null;default:0"`
+	SnapshotAtMs int64 `gorm:"column:snapshot_at_ms;type:bigint;not null;default:0"` // 快照毫秒（WS 事件时间）
 	CreatedAt               time.Time `gorm:"column:created_at;type:datetime;not null;default:CURRENT_TIMESTAMP"`
 	UpdatedAt               time.Time `gorm:"column:updated_at;type:datetime;not null;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"`
 }
@@ -48,8 +47,7 @@ func OrderBookWSCopy(b *OrderBook) *OrderBookWS {
 		TokenID:                 b.TokenID,
 		OrderBookAsks:           b.OrderBookAsks,
 		OrderBookBids:           b.OrderBookBids,
-		SnapshotSecond:          b.SnapshotSecond,
-		SnapshotAtMs:            b.SnapshotAtMs,
+		SnapshotAtMs: b.SnapshotAtMs,
 	}
 	if b.MapKey != nil {
 		v := *b.MapKey

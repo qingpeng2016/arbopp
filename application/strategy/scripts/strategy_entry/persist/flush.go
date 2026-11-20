@@ -98,11 +98,9 @@ func (f *Flush) flushBooks() {
 		return
 	}
 	snapMs := time.Now().UnixMilli()
-	snap := snapMs / 1000
 	rows := make([]*persistententity.OrderBook, 0, len(f.latest))
 	for _, row := range f.latest {
 		dup := *row
-		dup.SnapshotSecond = snap
 		dup.SnapshotAtMs = snapMs
 		rows = append(rows, &dup)
 	}

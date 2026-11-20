@@ -483,10 +483,6 @@ func (w *watch) polyYesTokensTouched(changes []book.PolyChange) map[string]struc
 }
 
 // enqueueBookPersistWS 将 WS 盘口推入 Redis，由 ws_book_flush 批量写 market_order_book_ws。
-func eventSnapshotSecond(e event) int64 {
-	return eventSnapshotMs(e) / 1000
-}
-
 func eventSnapshotMs(e event) int64 {
 	if !e.TS.IsZero() {
 		return e.TS.UnixMilli()
@@ -497,20 +493,9 @@ func eventSnapshotMs(e event) int64 {
 	return time.Now().UnixMilli()
 }
 
-// snapshotSecondForWSRow 行上已有接口时间（如 Predict）则优先，否则用 WS 事件时间。
-func snapshotSecondForWSRow(row *persistententity.OrderBook, eventSec int64) int64 {
-	if row != nil && row.SnapshotSecond > 0 {
-		return row.SnapshotSecond
-	}
-	if eventSec > 0 {
-		return eventSec
-	}
-	return time.Now().Unix()
-}
-
 func snapshotMsForWSRow(row *persistententity.OrderBook, e event) int64 {
-	if row != nil && row.SnapshotSecond > 0 {
-		return row.SnapshotSecond * 1000
+	if row != nil && row.SnapshotAtMs > 0 {
+		return row.SnapshotAtMs
 	}
 	return eventSnapshotMs(e)
 }
@@ -523,7 +508,6 @@ func (w *watch) enqueueBookPersistWS(e event) {
 	if len(rows) == 0 {
 		return
 	}
-	snap := eventSnapshotSecond(e)
 	q := w.entry.wsBookQueue
 	for _, row := range rows {
 		if row == nil {
@@ -531,14 +515,13 @@ func (w *watch) enqueueBookPersistWS(e event) {
 		}
 		dup := cloneOrderBookRow(row)
 		w.enrichBookRow(dup)
-		if dup.SnapshotSecond <= 0 {
-			dup.SnapshotSecond = snap
+		if dup.SnapshotAtMs <= 0 {
+			dup.SnapshotAtMs = eventSnapshotMs(e)
 		}
 		wsRow := persistententity.OrderBookWSCopy(dup)
 		if wsRow == nil {
 			continue
 		}
-		wsRow.SnapshotSecond = snapshotSecondForWSRow(dup, snap)
 		wsRow.SnapshotAtMs = snapshotMsForWSRow(dup, e)
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		err := q.Push(ctx, wsRow)
@@ -729,8 +712,7 @@ func (w *watch) predictPersistRows(oc *persistententity.MarketOutcome, yesBids, 
 	if snapMs <= 0 {
 		snapMs = time.Now().UnixMilli()
 	}
-	snapSec := snapMs / 1000
-	rows := obcommon.PredictBookRowsWithFixture(oc, fx, yesBids, yesAsks, snapSec, snapMs)
+	rows := obcommon.PredictBookRowsWithFixture(oc, fx, yesBids, yesAsks, snapMs)
 	if len(rows) == 0 {
 		return nil
 	}

@@ -7,16 +7,16 @@ import (
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/book"
 )
 
-// SnapshotSecondFromUnixMs 毫秒时间戳 → Unix 秒；无效时返回 0。
-func SnapshotSecondFromUnixMs(ms int64) int64 {
+// SnapshotAtMsFromUnixMs 毫秒时间戳；无效时返回 0。
+func SnapshotAtMsFromUnixMs(ms int64) int64 {
 	if ms <= 0 {
 		return 0
 	}
-	return ms / 1000
+	return ms
 }
 
-// SnapshotSecondFromPolyTimestamp CLOB/WS 的 timestamp（秒、毫秒或 RFC3339）。
-func SnapshotSecondFromPolyTimestamp(raw string) int64 {
+// SnapshotAtMsFromPolyTimestamp CLOB/WS 的 timestamp（秒、毫秒或 RFC3339）→ 毫秒。
+func SnapshotAtMsFromPolyTimestamp(raw string) int64 {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return 0
@@ -24,35 +24,28 @@ func SnapshotSecondFromPolyTimestamp(raw string) int64 {
 	n := book.ParseNum(raw)
 	if n <= 0 {
 		if t, err := time.Parse(time.RFC3339Nano, raw); err == nil {
-			return t.Unix()
+			return t.UnixMilli()
 		}
 		if t, err := time.Parse(time.RFC3339, raw); err == nil {
-			return t.Unix()
+			return t.UnixMilli()
 		}
 		return 0
 	}
 	if n < 1e12 {
-		return int64(n)
+		return int64(n) * 1000
 	}
-	return int64(n) / 1000
+	return int64(n)
 }
 
-// SnapshotSecondOrNow 接口无时间戳时 fallback 为本地拉取秒。
-func SnapshotSecondOrNow(sec int64) int64 {
-	if sec > 0 {
-		return sec
+// SnapshotAtMsOrNow 无有效时间戳时用本机毫秒。
+func SnapshotAtMsOrNow(atMs int64) int64 {
+	if atMs > 0 {
+		return atMs
 	}
-	return time.Now().Unix()
+	return time.Now().UnixMilli()
 }
 
-// RestFetchSnapshot REST 拉盘口：本机时刻（秒 + 毫秒），不用平台陈旧 timestamp。
-func RestFetchSnapshot() (sec, atMs int64) {
-	atMs = time.Now().UnixMilli()
-	return atMs / 1000, atMs
-}
-
-// RestFetchSnapshotSecond 兼容调用方只要秒。
-func RestFetchSnapshotSecond() int64 {
-	sec, _ := RestFetchSnapshot()
-	return sec
+// RestFetchSnapshotAtMs REST 拉盘口写入快照毫秒（本机拉取时刻）。
+func RestFetchSnapshotAtMs() int64 {
+	return time.Now().UnixMilli()
 }

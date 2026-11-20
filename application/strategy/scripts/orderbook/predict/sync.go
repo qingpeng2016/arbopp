@@ -47,8 +47,8 @@ func (s *Syncer) syncChunk(ctx context.Context, ch fetchChunk, fixtures map[uint
 	if err != nil {
 		return 0, len(ch.markets), err
 	}
-	snapSec, snapMs := common.RestFetchSnapshot()
-	rows, batchMissed := booksToRows(ch.markets, books, fixtures, snapSec, snapMs)
+	snapMs := common.RestFetchSnapshotAtMs()
+	rows, batchMissed := booksToRows(ch.markets, books, fixtures, snapMs)
 	missed = batchMissed
 	if len(rows) == 0 {
 		return 0, missed, nil
@@ -59,7 +59,7 @@ func (s *Syncer) syncChunk(ctx context.Context, ch fetchChunk, fixtures map[uint
 	return len(rows), missed, nil
 }
 
-func booksToRows(markets []persistententity.MarketOutcome, books []httpentity.PredictOrderbook, fixtures map[uint]persistententity.Market, snapshotSecond, snapshotAtMs int64) ([]*persistententity.OrderBook, int) {
+func booksToRows(markets []persistententity.MarketOutcome, books []httpentity.PredictOrderbook, fixtures map[uint]persistententity.Market, snapshotAtMs int64) ([]*persistententity.OrderBook, int) {
 	byID := make(map[string]httpentity.PredictOrderbook, len(books))
 	for i := range books {
 		id := strconv.FormatInt(books[i].MarketID, 10)
@@ -84,7 +84,7 @@ func booksToRows(markets []persistententity.MarketOutcome, books []httpentity.Pr
 		if f, ok := fixtures[m.MarketRowID]; ok {
 			fx = &f
 		}
-		out = append(out, common.PredictBookRowsWithFixture(&m, fx, yesBids, yesAsks, snapshotSecond, snapshotAtMs)...)
+		out = append(out, common.PredictBookRowsWithFixture(&m, fx, yesBids, yesAsks, snapshotAtMs)...)
 	}
 	return out, missed
 }
