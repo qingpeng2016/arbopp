@@ -14,7 +14,7 @@ import (
 // NewDB 创建到mysql的链接
 func NewDB(source *conf.Mysql, replicas ...*conf.Mysql) *gorm.DB {
 	db, err := gorm.Open(mysql.New(mysql.Config{
-		DSN: fmt.Sprintf("%s:%s@tcp(%s)/%s?charset=utf8&parseTime=True&loc=Local",
+		DSN: fmt.Sprintf("%s:%s@tcp(%s)/%s?charset=utf8&parseTime=True&loc=UTC",
 			source.User,
 			source.Password,
 			source.Host,
@@ -37,7 +37,7 @@ func NewDB(source *conf.Mysql, replicas ...*conf.Mysql) *gorm.DB {
 			if replica == nil {
 				continue
 			}
-			dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s?charset=utf8&parseTime=True&loc=Local",
+			dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s?charset=utf8&parseTime=True&loc=UTC",
 				replica.User,
 				replica.Password,
 				replica.Host,

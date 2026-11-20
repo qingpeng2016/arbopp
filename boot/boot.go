@@ -1,6 +1,8 @@
 package boot
 
 import (
+	"time"
+
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/backtest"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/historydata"
@@ -11,6 +13,7 @@ import (
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/statcollect"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/taskalert"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/common/constants"
 	log2 "github.com/gph-tech/fgmm-strategy-bitfinex/common/dederi/logger"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/notification"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/conf"
@@ -23,6 +26,7 @@ import (
 )
 
 func init() {
+	time.Local = constants.UtcLocation
 	log2.NewLogger("fgmm", "./log", zapcore.DebugLevel)
 }
 
