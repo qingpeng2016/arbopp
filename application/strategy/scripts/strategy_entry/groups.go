@@ -2,9 +2,11 @@ package strategyentry
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	appcommon "github.com/gph-tech/fgmm-strategy-bitfinex/application/common"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketmap"
@@ -30,21 +32,23 @@ type creds struct {
 }
 
 const (
-	TaskName         = "strategy_entry"
-	defaultMaxGroups = 50
-	thresholdMaxCost = "binary_yes_no_max_cost"
-	thresholdOrderAmount = "binary_yes_no_order_amount"
-	thresholdLevelFactor = "binary_yes_no_level_factor"
-	threshold1X2YesMax   = "1x2_yes_triple_max_cost"
-	threshold1X2NoMax    = "1x2_no_triple_max_cost"
-	defaultMaxCost       = 0.95
-	default1X2YesMax     = 0.95
-	default1X2NoMax      = 1.90
-	defaultOrderAmount   = 100.0
-	defaultLevelFactor   = 2.0
-	defaultPolySports    = 0.05
-	defaultKalshiSports  = 0.07
-	defaultPredictSports = 0.02
+	TaskName                     = "strategy_entry"
+	defaultMaxGroups             = 50
+	thresholdMaxCost             = "binary_yes_no_max_cost"
+	thresholdOrderAmount         = "binary_yes_no_order_amount"
+	thresholdLevelFactor         = "binary_yes_no_level_factor"
+	threshold1X2YesMax           = "1x2_yes_triple_max_cost"
+	threshold1X2NoMax            = "1x2_no_triple_max_cost"
+	defaultMaxCost               = 0.95
+	default1X2YesMax             = 0.95
+	default1X2NoMax              = 1.90
+	defaultOrderAmount           = 100.0
+	defaultLevelFactor           = 2.0
+	defaultPolySports            = 0.05
+	defaultKalshiSports          = 0.07
+	defaultPredictSports         = 0.02
+	configKeyPreEventScanMinutes = "pre_event_scan_minutes"
+	defaultPreEventScanMinutes   = 30
 )
 
 // Params 5.2 的可配置门槛。手续费按平台和运动放在 fees 里，比较时只读。
@@ -225,7 +229,44 @@ type WatchGroupDeps struct {
 	PlatformRepo       persistentrepo.PlatformRepo
 }
 
-func runnableKeysFromFixtures(ctx context.Context, fixtures map[uint]persistententity.Market, alertBadKeys bool) map[string]struct{} {
+// mapKeyWithinPreEventScan preEventScanMinutes>0 时：同 map_key 最早 event_start_time <= now+N 分钟（UTC）才纳入；0 不滤。
+func mapKeyWithinPreEventScan(rows []persistententity.Market, now time.Time, preEventScanMinutes int) bool {
+	if preEventScanMinutes <= 0 {
+		return true
+	}
+	var start time.Time
+	hasStart := false
+	layouts := []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05", "2006-01-02T15:04:05Z"}
+	for i := range rows {
+		if rows[i].EventStartTime == nil {
+			continue
+		}
+		raw := strings.TrimSpace(*rows[i].EventStartTime)
+		if raw == "" {
+			continue
+		}
+		var t time.Time
+		parsed := false
+		for _, layout := range layouts {
+			if pt, err := time.Parse(layout, raw); err == nil {
+				t, parsed = pt.UTC(), true
+				break
+			}
+		}
+		if !parsed {
+			continue
+		}
+		if !hasStart || t.Before(start) {
+			start, hasStart = t, true
+		}
+	}
+	if !hasStart {
+		return false
+	}
+	return !start.After(now.UTC().Add(time.Duration(preEventScanMinutes) * time.Minute))
+}
+
+func runnableKeysFromFixtures(ctx context.Context, fixtures map[uint]persistententity.Market, alertBadKeys bool, now time.Time, preEventScanMinutes int) map[string]struct{} {
 	rowsByKey := map[string][]persistententity.Market{}
 	for _, fx := range fixtures {
 		if fx.MapKey == nil || fx.MapVerified != 1 {
@@ -246,6 +287,9 @@ func runnableKeysFromFixtures(ctx context.Context, fixtures map[uint]persistente
 			continue
 		}
 		if !marketmap.MapKeyHasTwoPlatforms(rows) {
+			continue
+		}
+		if !mapKeyWithinPreEventScan(rows, now, preEventScanMinutes) {
 			continue
 		}
 		runnableKeys[k] = struct{}{}
@@ -303,7 +347,21 @@ func loadWatchGroups(ctx context.Context, d WatchGroupDeps, alertBadKeys bool) (
 		return nil, 0, err
 	}
 
-	runnableKeys := runnableKeysFromFixtures(ctx, fixtures, alertBadKeys)
+	preEventScanMinutes := defaultPreEventScanMinutes
+	if d.ConfigStrategyRepo != nil {
+		if cfg, err := d.ConfigStrategyRepo.FindOne(ctx, nil, map[string]interface{}{
+			"group_name = ?": marketmap.ConfigGroupStrategyEntry,
+			"item_key = ?":   configKeyPreEventScanMinutes,
+			"is_enabled = ?": 1,
+		}, ""); err == nil {
+			if n, err := strconv.Atoi(strings.TrimSpace(cfg.ItemValue)); err == nil {
+				preEventScanMinutes = n
+			}
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			notification.SendErrorLog(ctx, "strategy_entry-pre-event-scan-minutes-read-failed", zap.Error(err))
+		}
+	}
+	runnableKeys := runnableKeysFromFixtures(ctx, fixtures, alertBadKeys, time.Now().UTC(), preEventScanMinutes)
 
 	// 获取所有市场的outcomes盘口信息（多平台的）
 	outcomes := marketmap.FilterOutcomesUnderVerifiedFixtures(raw, fixtures)
