@@ -3,7 +3,7 @@
 CREATE TABLE IF NOT EXISTS `data_task` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `ingest_source` varchar(16) NOT NULL DEFAULT 'pmdata' COMMENT 'pmdata=history_data_sync；synthetic=synthetic_history_sync',
-  `map_key` varchar(192) NOT NULL DEFAULT '' COMMENT 'market.map_key',
+  `map_key` varchar(192) NOT NULL DEFAULT '' COMMENT 'pmdata 可填场次 slug；synthetic/回测仍可用 v1|联赛|slug',
   `params` text NULL COMMENT 'JSON 任务覆盖，见 migration_data_task_ingest_source.sql 说明',
   `status` varchar(24) NOT NULL DEFAULT 'pending' COMMENT 'pending|running|completed|failed',
   `error_text` varchar(512) NOT NULL DEFAULT '',

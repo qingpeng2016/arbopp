@@ -85,6 +85,7 @@ func main() {
 		}
 
 		params := map[string]interface{}{
+			"fixture_slug":     fixtureSlug,
 			"min_utc_age_days": 21,
 			"utc_days_before":  1,
 			"utc_days_after":   1,
@@ -100,11 +101,11 @@ func main() {
 		ps := string(pj)
 		task := persistententity.DataTask{
 			IngestSource: persistententity.DataTaskIngestPmdata,
-			MapKey:       mapKey,
+			MapKey:       fixtureSlug,
 			Params:       &ps,
 			Status:       persistententity.DataTaskStatusPending,
 		}
-		_ = tx.Where("ingest_source = ? AND map_key = ?", persistententity.DataTaskIngestPmdata, mapKey).
+		_ = tx.Where("ingest_source = ? AND (map_key = ? OR map_key = ?)", persistententity.DataTaskIngestPmdata, fixtureSlug, mapKey).
 			Delete(&persistententity.DataTask{})
 		return tx.Create(&task).Error
 	}); err != nil {
@@ -112,7 +113,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Println("OK seeded", mapKey)
+	fmt.Println("OK seeded task map_key=", fixtureSlug, "market map_key=", mapKey)
 	fmt.Println("  POLYMARKET", polyURL)
 	fmt.Println("  PREDICT", predURL)
 	fmt.Println("  data_task pending params:", fixtureDay)

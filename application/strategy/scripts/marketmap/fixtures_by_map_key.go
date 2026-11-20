@@ -34,3 +34,30 @@ func LoadMarketsByMapKey(ctx context.Context, repo persistentrepo.MarketRepo, pl
 	}
 	return out, nil
 }
+
+// LoadMarketsByFixtureSlug 按场次 slug 加载（PMData 任务 map_key 可直接写 slug，不必 v1|联赛|slug）。
+func LoadMarketsByFixtureSlug(ctx context.Context, repo persistentrepo.MarketRepo, platformRepo persistentrepo.PlatformRepo, slug string) (map[uint]persistententity.Market, error) {
+	slug = strings.ToLower(strings.TrimSpace(slug))
+	if repo == nil || slug == "" {
+		return map[uint]persistententity.Market{}, nil
+	}
+	platIN, err := activePlatformIN(ctx, platformRepo)
+	if err != nil {
+		return nil, err
+	}
+	where := map[string]interface{}{
+		"slug = ?": slug,
+	}
+	if len(platIN) > 0 {
+		where["platform IN ?"] = platIN
+	}
+	_, rows, err := repo.List(ctx, nil, where, "platform asc, id asc", "")
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[uint]persistententity.Market, len(rows))
+	for i := range rows {
+		out[rows[i].ID] = rows[i]
+	}
+	return out, nil
+}
