@@ -3,6 +3,7 @@ package historydata
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 
 // DataTaskParams data_task.params（JSON，可选）。
 type DataTaskParams struct {
-	FixtureSlug   string            `json:"fixture_slug"` // 场次 slug；可与 data_task.map_key 相同，不必 v1|联赛|slug
+	FixtureSlug   string            `json:"fixture_slug"` // pmdata 必填：按 market.slug 找 Poly/Predict
 	UTCDaysBefore *int               `json:"utc_days_before"`
 	UTCDaysAfter  *int               `json:"utc_days_after"`
 	MinUTCAgeDays *int               `json:"min_utc_age_days"`
@@ -76,44 +77,31 @@ func utcDatesFromTaskParams(p DataTaskParams, hasParams bool) ([]time.Time, bool
 	return out, true
 }
 
-// FixtureSlugForTask PMData：map_key 可直接写 epl-xxx-2026-10-17；兼容旧 v1|联赛|slug。
-func FixtureSlugForTask(taskMapKey string, p DataTaskParams, hasParams bool) string {
-	if hasParams && strings.TrimSpace(p.FixtureSlug) != "" {
-		return strings.TrimSpace(p.FixtureSlug)
+// PMDataFixtureSlug history_data_sync 只认 params.fixture_slug（不认 data_task.map_key）。
+func PMDataFixtureSlug(p DataTaskParams, hasParams bool) (string, error) {
+	if !hasParams {
+		return "", fmt.Errorf("pmdata task requires params JSON")
 	}
-	mk := strings.TrimSpace(taskMapKey)
-	if mk == "" {
-		return ""
+	slug := strings.TrimSpace(p.FixtureSlug)
+	if slug == "" {
+		return "", fmt.Errorf("params.fixture_slug is required for history_data_sync")
 	}
-	if strings.HasPrefix(mk, "v1|") {
-		if i := strings.LastIndex(mk, "|"); i >= 0 && i+1 < len(mk) {
-			return mk[i+1:]
-		}
-	}
-	return mk
+	return slug, nil
 }
 
-// LoadHistoryFixtures 先 map_key，再 slug。
-func LoadHistoryFixtures(
+// LoadPMDataFixtures 按 fixture_slug 加载 market；history 落库 map_key 优先用 market.map_key，否则用 slug。
+func LoadPMDataFixtures(
 	ctx context.Context,
 	marketRepo persistentrepo.MarketRepo,
 	platformRepo persistentrepo.PlatformRepo,
-	taskMapKey, fixtureSlug string,
+	fixtureSlug string,
 ) (map[uint]persistententity.Market, string, error) {
-	storageKey := strings.TrimSpace(taskMapKey)
-	fixtures, err := marketmap.LoadMarketsByMapKey(ctx, marketRepo, platformRepo, storageKey)
+	fixtureSlug = strings.TrimSpace(fixtureSlug)
+	fixtures, err := marketmap.LoadMarketsByFixtureSlug(ctx, marketRepo, platformRepo, fixtureSlug)
 	if err != nil {
 		return nil, "", err
 	}
-	if len(fixtures) == 0 && fixtureSlug != "" {
-		fixtures, err = marketmap.LoadMarketsByFixtureSlug(ctx, marketRepo, platformRepo, fixtureSlug)
-		if err != nil {
-			return nil, "", err
-		}
-	}
-	if len(fixtures) == 0 {
-		return fixtures, storageKey, nil
-	}
+	storageKey := fixtureSlug
 	for _, fx := range fixtures {
 		if fx.MapKey != nil && strings.TrimSpace(*fx.MapKey) != "" {
 			storageKey = strings.TrimSpace(*fx.MapKey)

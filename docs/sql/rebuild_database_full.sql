@@ -436,7 +436,7 @@ CREATE TABLE IF NOT EXISTS `data_history_order_book` (
 CREATE TABLE IF NOT EXISTS `data_task` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `ingest_source` varchar(16) NOT NULL DEFAULT 'pmdata' COMMENT 'pmdata|synthetic',
-  `map_key` varchar(192) NOT NULL DEFAULT '' COMMENT '场次 map_key；PMData 据此解析各平台 slug/market_id',
+  `map_key` varchar(192) NOT NULL DEFAULT '' COMMENT 'synthetic 用 v1|联赛|slug；pmdata 留空，见 params.fixture_slug',
   `params` text NULL COMMENT 'JSON：pmdata 可 utc_dates/min_utc_age_days 等；synthetic 可扩展',
   `status` varchar(24) NOT NULL DEFAULT 'pending' COMMENT 'pending|running|completed|failed',
   `error_text` varchar(512) NOT NULL DEFAULT '',

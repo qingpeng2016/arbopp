@@ -12,7 +12,7 @@ const (
 	DataTaskStatusFailed    = "failed"
 )
 
-// DataTask 按 map_key 的历史订单簿拉取/伪造任务（回测用 backtest_task）。
+// DataTask：pmdata 靠 params（fixture_slug 等）；synthetic 靠 map_key。回测用 backtest_task。
 type DataTask struct {
 	ID           uint      `gorm:"primaryKey;column:id;type:bigint unsigned;not null;autoIncrement"`
 	IngestSource string    `gorm:"column:ingest_source;type:varchar(16);not null;default:pmdata"`

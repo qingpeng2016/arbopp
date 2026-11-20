@@ -123,17 +123,19 @@ func (j *Sync) runDataTask(
 	if task == nil {
 		return 0, 0, 0
 	}
-	taskMapKey := strings.TrimSpace(task.MapKey)
 	taskParamsRaw := ""
 	if task.Params != nil {
 		taskParamsRaw = strings.TrimSpace(*task.Params)
 	}
 	tp, hasTaskParams := ParseDataTaskParams(taskParamsRaw)
 	cfg = ApplyPMDataExtra(cfg, tp, hasTaskParams)
-	fixtureSlug := FixtureSlugForTask(taskMapKey, tp, hasTaskParams)
+	fixtureSlug, err := PMDataFixtureSlug(tp, hasTaskParams)
+	if err != nil {
+		j.failTask(ctx, task.ID, err)
+		return 0, 0, 1
+	}
 	logger.InfoZ(ctx, "history_data_sync-task-start",
 		zap.Uint("task_id", task.ID),
-		zap.String("map_key", taskMapKey),
 		zap.String("fixture_slug", fixtureSlug),
 		zap.Bool("task_params", hasTaskParams))
 	_ = j.dataTaskRepo.Update(ctx, nil, map[string]interface{}{"id = ?": task.ID}, map[string]interface{}{
@@ -141,13 +143,13 @@ func (j *Sync) runDataTask(
 		"error_text": "",
 	})
 
-	fixtures, mapKey, err := LoadHistoryFixtures(ctx, j.marketRepo, j.platformRepo, taskMapKey, fixtureSlug)
+	fixtures, mapKey, err := LoadPMDataFixtures(ctx, j.marketRepo, j.platformRepo, fixtureSlug)
 	if err != nil {
 		j.failTask(ctx, task.ID, err)
 		return 0, 0, 1
 	}
 	if len(fixtures) == 0 {
-		j.failTask(ctx, task.ID, fmt.Errorf("no market rows for map_key %q fixture_slug %q", taskMapKey, fixtureSlug))
+		j.failTask(ctx, task.ID, fmt.Errorf("no market rows for params.fixture_slug %q (check market.slug)", fixtureSlug))
 		return 0, 0, 1
 	}
 
@@ -167,7 +169,7 @@ func (j *Sync) runDataTask(
 			continue
 		}
 		fx, ok := fixtures[oc.MarketRowID]
-		if !ok || fx.MapKey == nil {
+		if !ok {
 			continue
 		}
 		platform := strings.ToUpper(strings.TrimSpace(oc.Platform))

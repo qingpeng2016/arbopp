@@ -101,19 +101,19 @@ func main() {
 		ps := string(pj)
 		task := persistententity.DataTask{
 			IngestSource: persistententity.DataTaskIngestPmdata,
-			MapKey:       fixtureSlug,
+			MapKey:       "",
 			Params:       &ps,
 			Status:       persistententity.DataTaskStatusPending,
 		}
-		_ = tx.Where("ingest_source = ? AND (map_key = ? OR map_key = ?)", persistententity.DataTaskIngestPmdata, fixtureSlug, mapKey).
-			Delete(&persistententity.DataTask{})
+		_ = tx.Exec(`DELETE FROM data_task WHERE ingest_source = ? AND params LIKE ?`,
+			persistententity.DataTaskIngestPmdata, "%"+fixtureSlug+"%")
 		return tx.Create(&task).Error
 	}); err != nil {
 		fmt.Println("ERR tx:", err)
 		os.Exit(1)
 	}
 
-	fmt.Println("OK seeded task map_key=", fixtureSlug, "market map_key=", mapKey)
+	fmt.Println("OK seeded pmdata task params.fixture_slug=", fixtureSlug, "market map_key=", mapKey)
 	fmt.Println("  POLYMARKET", polyURL)
 	fmt.Println("  PREDICT", predURL)
 	fmt.Println("  data_task pending params:", fixtureDay)
