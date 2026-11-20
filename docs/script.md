@@ -26,3 +26,21 @@
 3. **同一逻辑盘**：`competition` 相同 + slug 对齐场次（Poly `epl-ast-sun-2026-11-21-*` ↔ Kalshi `kxeplgame-26nov21avlsun`）+ 标题解析 **胜出方**（`Will X win` / `X wins` / 平局）。
 4. 生成 `map_key`：`v1|{联赛}|{场次slug}|{球队slug}`；slug/队名匹配后，若两边均有 **`event_start_time`**，须 **UTC 同日** 且相差 ≤18h 才成对；仅 **≥2 平台** 时写入并 **`map_verified=1`**。
 5. 已是 `map_verified=1` 的行不参与扫描；错配需人工改回 `0` 后重跑。
+
+### 空库重建（含配置）
+
+库被删或新环境时，在仓库根目录：
+
+```bash
+export MYSQL_HOST=... MYSQL_USER=... MYSQL_PWD=...
+./docs/sql/rebuild_database.sh your_database_name
+```
+
+或分步执行：
+
+1. `docs/sql/rebuild_database_full.sql` — 表结构 + 阈值 + platform/bot/data 种子  
+2. `docs/sql/config_market_category_install.sql` — **market_sync 联赛 JSON**（必跑）  
+3. `docs/sql/config_strategy_fee.sql` — **手续费**（`config_strategy_fee`：Poly 0.05 / Kalshi 0.07 各运动）  
+4. `docs/sql/predict_market_sync.sql` — Predict 平台 + **PREDICT 手续费 0.02** 占位（可选）
+
+然后：`account` 凭据、`platform`（PREDICT 改 ACTIVE）→ **market_sync** → **market_map** → **strategy_entry**。
