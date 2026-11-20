@@ -1,6 +1,8 @@
 package entity
 
-import "time"
+import (
+	"time"
+)
 
 const (
 	HistoryRecordKindFile     = "file"
@@ -25,7 +27,7 @@ type HistoryDataOrderBook struct {
 	VenuePlatform    string    `gorm:"column:venue_platform;type:varchar(32);not null;default:''"`
 	VendorExchange   string    `gorm:"column:vendor_exchange;type:varchar(32);not null;default:''"`
 	VendorSymbol     string    `gorm:"column:vendor_symbol;type:varchar(255);not null;default:''"`
-	UTCDate          time.Time `gorm:"column:utc_date;type:date;not null"`
+	UTCDate          string `gorm:"column:utc_date;not null"`
 	DataType         string    `gorm:"column:data_type;type:varchar(32);not null;default:l2"`
 	Source           string    `gorm:"column:source;type:varchar(16);not null;default:pmdata"`
 	RecordKind       string    `gorm:"column:record_kind;type:varchar(16);not null;default:snapshot"`

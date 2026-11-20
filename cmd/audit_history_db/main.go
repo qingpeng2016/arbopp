@@ -46,15 +46,15 @@ ORDER BY venue_platform, record_kind`, mapKey).Scan(&rows).Error; err != nil {
 	}
 	var snaps []snap
 	if err := db.Raw(`
-SELECT venue_platform, market_outcome_id, DATE_FORMAT(utc_date,'%Y-%m-%d') AS day_utc,
+SELECT venue_platform, market_outcome_id, DATE_FORMAT(`+"`utc_date`"+`,'%Y-%m-%d') AS day_utc,
   COUNT(*) AS snap_n,
   MAX(LENGTH(order_book_bids)) AS max_bid_len,
   MIN(LEFT(order_book_bids, 100)) AS bid_sample,
   MIN(LEFT(order_book_asks, 100)) AS ask_sample
 FROM data_history_order_book
 WHERE map_key = ? AND record_kind = 'snapshot'
-GROUP BY venue_platform, market_outcome_id, utc_date
-ORDER BY venue_platform, market_outcome_id, utc_date`, mapKey).Scan(&snaps).Error; err != nil {
+GROUP BY venue_platform, market_outcome_id, `+"`utc_date`"+`
+ORDER BY venue_platform, market_outcome_id, `+"`utc_date`"+``, mapKey).Scan(&snaps).Error; err != nil {
 		fmt.Println("ERR snaps:", err)
 		os.Exit(1)
 	}

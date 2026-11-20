@@ -183,8 +183,7 @@ func (j *Sync) buildSecondBatch(
 	plan := buildArbPlan(outcomes)
 	for sec := fromSec; sec < toSec; sec++ {
 		tsMs := baseTs + int64(sec)*1000
-		utcDate := time.UnixMilli(tsMs).UTC()
-		utcDate = time.Date(utcDate.Year(), utcDate.Month(), utcDate.Day(), 0, 0, 0, 0, time.UTC)
+		utcDate := persistententity.CalendarDateFrom(time.UnixMilli(tsMs).UTC()).String()
 		for oi, oc := range outcomes {
 			bids, asks := bookForOutcome(sec, oc, oi, plan)
 			symbol := strings.TrimSpace(oc.PlatformMarketOutcomeID)

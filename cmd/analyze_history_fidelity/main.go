@@ -73,7 +73,7 @@ func main() {
 	var rows []row
 	err := db.Raw(`SELECT id, venue_platform, snapshot_at_ms, order_book_bids, local_file_path
 		FROM data_history_order_book
-		WHERE map_key=? AND record_kind='snapshot' AND utc_date=? AND venue_platform IN ('POLYMARKET','PREDICT')
+		WHERE map_key=? AND record_kind='snapshot' AND `+"`utc_date`"+`=? AND venue_platform IN ('POLYMARKET','PREDICT')
 		ORDER BY snapshot_at_ms DESC LIMIT 5`, mapKey, day).Scan(&rows).Error
 	if err != nil {
 		fmt.Println("DB skip:", err)

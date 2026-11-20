@@ -88,6 +88,19 @@ func (r *HistoryDataOrderBookImpl) BatchUpsert(ctx context.Context, tx *gorm.DB,
 	}).CreateInBatches(list, 100).Error
 }
 
+func (r *HistoryDataOrderBookImpl) PatchUTCDateForPath(ctx context.Context, tx *gorm.DB, outcomeID uint, localPath, recordKind, utcDate string) error {
+	if tx == nil {
+		tx = r.db
+	}
+	if outcomeID == 0 || localPath == "" || recordKind == "" || utcDate == "" {
+		return nil
+	}
+	return tx.WithContext(ctx).Exec(
+		"UPDATE `data_history_order_book` SET `utc_date`=? WHERE `market_outcome_id`=? AND `local_file_path`=? AND `record_kind`=?",
+		utcDate, outcomeID, localPath, recordKind,
+	).Error
+}
+
 func (r *HistoryDataOrderBookImpl) DeleteWhere(ctx context.Context, tx *gorm.DB, where map[string]interface{}) error {
 	if tx == nil {
 		tx = r.db

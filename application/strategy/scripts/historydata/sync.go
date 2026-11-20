@@ -310,6 +310,7 @@ func (j *Sync) ingestPolymarket(
 		return filesOK, 0, 1
 	}
 	n, f := j.upsertL2Snapshots(ctx, dp, cfg, mapKey, oc, pmdata.VendorExchangePolymarket(), slug, utcDay, path, sha, body, snaps)
+	j.patchUTCDateAfterIngest(ctx, oc.ID, utcDay, path)
 	logger.InfoZ(ctx, "history_data_sync-polymarket-snapshots",
 		zap.String("slug", slug),
 		zap.String("utc_date", utcDay.Format("2006-01-02")),
@@ -367,6 +368,7 @@ func (j *Sync) ingestPredict(
 		return filesOK, 0, 1
 	}
 	n, f := j.upsertL2Snapshots(ctx, dp, cfg, mapKey, oc, pmdata.VendorExchangePredict(), marketID, utcDay, path, sha, body, snaps)
+	j.patchUTCDateAfterIngest(ctx, oc.ID, utcDay, path)
 	logger.InfoZ(ctx, "history_data_sync-predict-snapshots",
 		zap.String("market_id", marketID),
 		zap.String("utc_date", utcDay.Format("2006-01-02")),
@@ -438,7 +440,7 @@ func (j *Sync) existingFileHistoryRow(ctx context.Context, dpID uint, oc persist
 	if j.historyRepo == nil {
 		return nil, fmt.Errorf("history repo nil")
 	}
-	d := time.Date(utcDay.Year(), utcDay.Month(), utcDay.Day(), 0, 0, 0, 0, time.UTC)
+	d := persistententity.CalendarDateFrom(utcDay).String()
 	cond := map[string]interface{}{
 		"market_outcome_id = ?": oc.ID,
 		"utc_date = ?":          d,
@@ -516,7 +518,7 @@ func (j *Sync) existingSnapshotMs(ctx context.Context, platformID, outcomeID uin
 	if j.historyRepo == nil {
 		return out, fmt.Errorf("history repo nil")
 	}
-	d := time.Date(utcDay.Year(), utcDay.Month(), utcDay.Day(), 0, 0, 0, 0, time.UTC)
+	d := persistententity.CalendarDateFrom(utcDay).String()
 	_, rows, err := j.historyRepo.List(ctx, nil, map[string]interface{}{
 		"data_platform_id = ?":  platformID,
 		"market_outcome_id = ?": outcomeID,
@@ -534,6 +536,22 @@ func (j *Sync) existingSnapshotMs(ctx context.Context, platformID, outcomeID uin
 	return out, nil
 }
 
+func (j *Sync) patchUTCDateAfterIngest(ctx context.Context, outcomeID uint, utcDay time.Time, localPath string) {
+	if j.historyRepo == nil {
+		return
+	}
+	day := persistententity.CalendarDateFrom(utcDay).String()
+	if day == "" {
+		return
+	}
+	for _, kind := range []string{persistententity.HistoryRecordKindFile, persistententity.HistoryRecordKindSnapshot} {
+		if err := j.historyRepo.PatchUTCDateForPath(ctx, nil, outcomeID, localPath, kind, day); err != nil {
+			notification.SendErrorLog(ctx, "history_data_sync-patch-utc-date",
+				zap.Error(err), zap.Uint("outcome_id", outcomeID), zap.String("path", localPath), zap.String("record_kind", kind))
+		}
+	}
+}
+
 func (j *Sync) baseRow(
 	dp persistententity.DataPlatform,
 	cfg PMDataExtraConfig,
@@ -542,7 +560,7 @@ func (j *Sync) baseRow(
 	vendorExchange, vendorSymbol string,
 	utcDay time.Time,
 ) *persistententity.HistoryDataOrderBook {
-	utcDate := time.Date(utcDay.Year(), utcDay.Month(), utcDay.Day(), 0, 0, 0, 0, time.UTC)
+	utcDate := persistententity.CalendarDateFrom(utcDay).String()
 	return &persistententity.HistoryDataOrderBook{
 		DataPlatformID:  dp.ID,
 		MapKey:          mapKey,
@@ -557,7 +575,7 @@ func (j *Sync) baseRow(
 }
 
 func (j *Sync) alreadyHave(ctx context.Context, platformID, outcomeID uint, utcDay time.Time, kind string, snapshotMs int64) bool {
-	d := time.Date(utcDay.Year(), utcDay.Month(), utcDay.Day(), 0, 0, 0, 0, time.UTC)
+	d := persistententity.CalendarDateFrom(utcDay).String()
 	_, err := j.historyRepo.FindOne(ctx, nil, map[string]interface{}{
 		"data_platform_id = ?":  platformID,
 		"market_outcome_id = ?": outcomeID,
