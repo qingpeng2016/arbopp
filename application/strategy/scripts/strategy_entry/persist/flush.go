@@ -97,19 +97,21 @@ func (f *Flush) flushBooks() {
 		f.mu.Unlock()
 		return
 	}
-	snap := time.Now().Unix()
+	snapMs := time.Now().UnixMilli()
+	snap := snapMs / 1000
 	rows := make([]*persistententity.OrderBook, 0, len(f.latest))
 	for _, row := range f.latest {
 		dup := *row
 		dup.SnapshotSecond = snap
+		dup.SnapshotAtMs = snapMs
 		rows = append(rows, &dup)
 	}
 	f.latest = map[string]*persistententity.OrderBook{}
 	f.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := f.books.BatchUpsert(ctx, nil, rows); err != nil {
-		notification.SendErrorLog(ctx, "strategy_entry-BookUpsertFailed",
+	if err := f.books.BatchCreate(ctx, nil, rows); err != nil {
+		notification.SendErrorLog(ctx, "strategy_entry-BookCreateFailed",
 			zap.Error(err), zap.Int("rows", len(rows)))
 	}
 }

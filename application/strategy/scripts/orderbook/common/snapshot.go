@@ -45,7 +45,14 @@ func SnapshotSecondOrNow(sec int64) int64 {
 	return time.Now().Unix()
 }
 
-// RestFetchSnapshotSecond REST 拉盘口写入 market_order_book 的快照秒（拉取时刻，不用平台返回的陈旧 timestamp）。
+// RestFetchSnapshot REST 拉盘口：本机时刻（秒 + 毫秒），不用平台陈旧 timestamp。
+func RestFetchSnapshot() (sec, atMs int64) {
+	atMs = time.Now().UnixMilli()
+	return atMs / 1000, atMs
+}
+
+// RestFetchSnapshotSecond 兼容调用方只要秒。
 func RestFetchSnapshotSecond() int64 {
-	return time.Now().Unix()
+	sec, _ := RestFetchSnapshot()
+	return sec
 }

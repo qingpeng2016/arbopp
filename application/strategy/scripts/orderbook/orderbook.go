@@ -21,7 +21,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// OrderBook 拉取已核对市场的订单簿并写入 market_order_book（批量 API + BatchUpsert）。
+// OrderBook 拉取在跑场次订单簿，INSERT 历史快照到 market_order_book（批量 API + BatchCreate）。
 type OrderBook struct {
 	configStrategyRepo persistentrepo.ConfigStrategyRepo
 	platformRepo       persistentrepo.PlatformRepo

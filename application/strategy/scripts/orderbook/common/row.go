@@ -9,11 +9,12 @@ import (
 
 // RowFromOutcome 由 market_outcome + 盘口 JSON 写 market_order_book 行。
 func RowFromOutcome(m *persistententity.MarketOutcome, fx *persistententity.Market, bidsJSON, asksJSON, tokenID string) *persistententity.OrderBook {
-	return RowFromOutcomeAt(m, fx, bidsJSON, asksJSON, tokenID, time.Now().Unix())
+	ms := time.Now().UnixMilli()
+	return RowFromOutcomeAt(m, fx, bidsJSON, asksJSON, tokenID, ms/1000, ms)
 }
 
-// RowFromOutcomeAt 同上，快照秒由调用方指定（同批拉盘可共用一秒）。
-func RowFromOutcomeAt(m *persistententity.MarketOutcome, fx *persistententity.Market, bidsJSON, asksJSON, tokenID string, snapshotSecond int64) *persistententity.OrderBook {
+// RowFromOutcomeAt 同上；snapshotAtMs≤0 时用 snapshotSecond×1000。
+func RowFromOutcomeAt(m *persistententity.MarketOutcome, fx *persistententity.Market, bidsJSON, asksJSON, tokenID string, snapshotSecond, snapshotAtMs int64) *persistententity.OrderBook {
 	if m == nil {
 		return nil
 	}
@@ -32,12 +33,23 @@ func RowFromOutcomeAt(m *persistententity.MarketOutcome, fx *persistententity.Ma
 		OrderBookBids:           bidsJSON,
 		OrderBookAsks:           asksJSON,
 		SnapshotSecond:          snapshotSecond,
+		SnapshotAtMs:            snapshotAtMsOrDefault(snapshotSecond, snapshotAtMs),
 	}
 	if m.SelectionID != nil {
 		row.SelectionID = m.SelectionID
 	}
 	EnrichOrderBookFromOutcome(row, m, fx, tokenID)
 	return row
+}
+
+func snapshotAtMsOrDefault(snapshotSecond, snapshotAtMs int64) int64 {
+	if snapshotAtMs > 0 {
+		return snapshotAtMs
+	}
+	if snapshotSecond > 0 {
+		return snapshotSecond * 1000
+	}
+	return time.Now().UnixMilli()
 }
 
 // ApplyOrderBookFixtureMeta 写 map_key / 联赛等冗余列（来自 outcome + 父场次 market）。

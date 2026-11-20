@@ -109,6 +109,7 @@ func (r *OrderBookImpl) BatchCreate(ctx context.Context, tx *gorm.DB, list []*en
 	return tx.WithContext(ctx).Model(entity.OrderBook{}).CreateInBatches(list, 100).Error
 }
 
+// BatchUpsert 遗留：历史快照请用 BatchCreate（表无 token 唯一键）。
 func (r *OrderBookImpl) BatchUpsert(ctx context.Context, tx *gorm.DB, list []*entity.OrderBook) error {
 	if tx == nil {
 		tx = r.db

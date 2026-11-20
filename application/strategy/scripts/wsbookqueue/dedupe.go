@@ -7,7 +7,7 @@ import (
 	persistententity "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/entity"
 )
 
-// DedupeBatch 同批内按 (platform, outcome, token, snapshot_second) 去重，保留最后一条。
+// DedupeBatch 同批内按 (platform, outcome, token, snapshot_at_ms) 去重（当前 flush 未调用；保留备用）。
 func DedupeBatch(list []*persistententity.OrderBookWS) []*persistententity.OrderBookWS {
 	if len(list) <= 1 {
 		return list
@@ -31,5 +31,5 @@ func dedupeKey(b *persistententity.OrderBookWS) string {
 	return strings.ToUpper(strings.TrimSpace(b.Platform)) + "\x00" +
 		strings.TrimSpace(b.PlatformMarketOutcomeID) + "\x00" +
 		strings.TrimSpace(b.TokenID) + "\x00" +
-		strconv.FormatInt(b.SnapshotSecond, 10)
+		strconv.FormatInt(b.SnapshotAtMs, 10)
 }

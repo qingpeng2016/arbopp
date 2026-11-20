@@ -12,28 +12,33 @@ import (
 
 // PredictBookRows 由 YES 视角盘口写 Predict 的 YES/NO 两行（token_id 对应该侧 outcome）。
 func PredictBookRows(m *persistententity.MarketOutcome, yesBids, yesAsks []book.Level) []*persistententity.OrderBook {
-	return predictBookRows(m, nil, yesBids, yesAsks, time.Now().Unix())
+	ms := time.Now().UnixMilli()
+	return predictBookRows(m, nil, yesBids, yesAsks, ms/1000, ms)
 }
 
 // PredictBookRowsWithFixture orderbook_sync 写库时带上父场次冗余字段。
-func PredictBookRowsWithFixture(m *persistententity.MarketOutcome, fx *persistententity.Market, yesBids, yesAsks []book.Level, snapshotSecond int64) []*persistententity.OrderBook {
-	return predictBookRows(m, fx, yesBids, yesAsks, snapshotSecond)
+func PredictBookRowsWithFixture(m *persistententity.MarketOutcome, fx *persistententity.Market, yesBids, yesAsks []book.Level, snapshotSecond, snapshotAtMs int64) []*persistententity.OrderBook {
+	return predictBookRows(m, fx, yesBids, yesAsks, snapshotSecond, snapshotAtMs)
 }
 
-func predictBookRows(m *persistententity.MarketOutcome, fx *persistententity.Market, yesBids, yesAsks []book.Level, snapshotSecond int64) []*persistententity.OrderBook {
+func predictBookRows(m *persistententity.MarketOutcome, fx *persistententity.Market, yesBids, yesAsks []book.Level, snapshotSecond, snapshotAtMs int64) []*persistententity.OrderBook {
 	if m == nil {
 		return nil
 	}
 	yesTok := strings.TrimSpace(m.YesTokenID)
 	noTok := strings.TrimSpace(m.NoTokenID)
 	snap := SnapshotSecondOrNow(snapshotSecond)
+	ms := snapshotAtMs
+	if ms <= 0 {
+		ms = snap * 1000
+	}
 	var rows []*persistententity.OrderBook
 	if yesTok != "" {
-		rows = append(rows, RowFromOutcomeAt(m, fx, levelsJSON(yesBids), levelsJSON(yesAsks), yesTok, snap))
+		rows = append(rows, RowFromOutcomeAt(m, fx, levelsJSON(yesBids), levelsJSON(yesAsks), yesTok, snap, ms))
 	}
 	if noTok != "" && noTok != yesTok {
 		noBids, noAsks := book.NoBookFromYesBook(yesBids, yesAsks)
-		rows = append(rows, RowFromOutcomeAt(m, fx, levelsJSON(noBids), levelsJSON(noAsks), noTok, snap))
+		rows = append(rows, RowFromOutcomeAt(m, fx, levelsJSON(noBids), levelsJSON(noAsks), noTok, snap, ms))
 	}
 	return rows
 }

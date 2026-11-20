@@ -18,7 +18,7 @@ func TestBooksToRowsAllOutcomes(t *testing.T) {
 		{MarketID: 4211675, Asks: [][]float64{{0.97, 200}}, Bids: [][]float64{{0.01, 600}}},
 		{MarketID: 4211677, Asks: [][]float64{{0.5, 10}}, Bids: [][]float64{{0.49, 8}}},
 	}
-	rows, missed := booksToRows(markets, books, nil, 1)
+	rows, missed := booksToRows(markets, books, nil, 1, 1000)
 	if len(rows) != 4 || missed != 1 {
 		t.Fatalf("rows=%d missed=%d", len(rows), missed)
 	}

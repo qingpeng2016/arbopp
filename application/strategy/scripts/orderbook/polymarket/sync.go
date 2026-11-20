@@ -14,7 +14,7 @@ import (
 	persistentrepo "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/repository"
 )
 
-// Syncer Polymarket CLOB 盘口拉取并写入 market_order_book。
+// Syncer Polymarket CLOB 盘口拉取，INSERT 历史快照到 market_order_book。
 type Syncer struct {
 	API   httprepo.PolymarketRepo
 	Books persistentrepo.OrderBookRepo
@@ -54,19 +54,19 @@ func (s *Syncer) syncChunk(ctx context.Context, ch fetchChunk, fixtures map[uint
 	if resp != nil {
 		books = resp.OrderBooks
 	}
-	snap := common.RestFetchSnapshotSecond()
-	rows, batchMissed := booksToRows(ch.markets, books, fixtures, snap)
+	snapSec, snapMs := common.RestFetchSnapshot()
+	rows, batchMissed := booksToRows(ch.markets, books, fixtures, snapSec, snapMs)
 	missed = batchMissed
 	if len(rows) == 0 {
 		return 0, missed, nil
 	}
-	if err := s.Books.BatchUpsert(ctx, nil, rows); err != nil {
+	if err := s.Books.BatchCreate(ctx, nil, rows); err != nil {
 		return 0, missed, err
 	}
 	return len(rows), missed, nil
 }
 
-func booksToRows(markets []persistententity.MarketOutcome, books []httpentity.OrderBookResponse, fixtures map[uint]persistententity.Market, snapshotSecond int64) ([]*persistententity.OrderBook, int) {
+func booksToRows(markets []persistententity.MarketOutcome, books []httpentity.OrderBookResponse, fixtures map[uint]persistententity.Market, snapshotSecond, snapshotAtMs int64) ([]*persistententity.OrderBook, int) {
 	byAsset := make(map[string]httpentity.OrderBookResponse, len(books))
 	for _, b := range books {
 		id := strings.TrimSpace(b.AssetID)
@@ -99,7 +99,7 @@ func booksToRows(markets []persistententity.MarketOutcome, books []httpentity.Or
 		if f, ok := fixtures[m.MarketRowID]; ok {
 			fx = &f
 		}
-		out = append(out, common.RowFromOutcomeAt(&m, fx, string(bidsJSON), string(asksJSON), token, snapshotSecond))
+		out = append(out, common.RowFromOutcomeAt(&m, fx, string(bidsJSON), string(asksJSON), token, snapshotSecond, snapshotAtMs))
 	}
 	return out, missed
 }

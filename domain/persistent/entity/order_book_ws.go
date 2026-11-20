@@ -49,6 +49,7 @@ func OrderBookWSCopy(b *OrderBook) *OrderBookWS {
 		OrderBookAsks:           b.OrderBookAsks,
 		OrderBookBids:           b.OrderBookBids,
 		SnapshotSecond:          b.SnapshotSecond,
+		SnapshotAtMs:            b.SnapshotAtMs,
 	}
 	if b.MapKey != nil {
 		v := *b.MapKey

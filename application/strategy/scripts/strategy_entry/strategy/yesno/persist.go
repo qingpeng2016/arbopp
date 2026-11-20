@@ -128,8 +128,8 @@ func SaveGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit GrabHit)
 	}
 	if d.BookRepo != nil && d.BookRows != nil {
 		if rows := d.BookRows(a, b); len(rows) > 0 {
-			if err := d.BookRepo.BatchUpsert(runCtx, nil, rows); err != nil {
-				notification.SendErrorLog(runCtx, "strategy_entry-BookUpsertFailed", zap.Error(err), zap.Int("rows", len(rows)))
+			if err := d.BookRepo.BatchCreate(runCtx, nil, rows); err != nil {
+				notification.SendErrorLog(runCtx, "strategy_entry-BookCreateFailed", zap.Error(err), zap.Int("rows", len(rows)))
 			}
 		}
 	}
