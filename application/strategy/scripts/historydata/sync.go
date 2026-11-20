@@ -314,7 +314,9 @@ func (j *Sync) ingestPolymarket(
 		zap.String("slug", slug),
 		zap.String("utc_date", utcDay.Format("2006-01-02")),
 		zap.Int("parsed", len(snaps)),
-		zap.Int("inserted", n))
+		zap.Int("inserted", n),
+		zap.Int("max_bid_levels", pmdata.MaxBookDepth(snaps, true)),
+		zap.Int("max_ask_levels", pmdata.MaxBookDepth(snaps, false)))
 	return filesOK, n, f
 }
 
@@ -365,6 +367,13 @@ func (j *Sync) ingestPredict(
 		return filesOK, 0, 1
 	}
 	n, f := j.upsertL2Snapshots(ctx, dp, cfg, mapKey, oc, pmdata.VendorExchangePredict(), marketID, utcDay, path, sha, body, snaps)
+	logger.InfoZ(ctx, "history_data_sync-predict-snapshots",
+		zap.String("market_id", marketID),
+		zap.String("utc_date", utcDay.Format("2006-01-02")),
+		zap.Int("parsed", len(snaps)),
+		zap.Int("inserted", n),
+		zap.Int("max_bid_levels", pmdata.MaxBookDepth(snaps, true)),
+		zap.Int("max_ask_levels", pmdata.MaxBookDepth(snaps, false)))
 	return filesOK, n, f
 }
 

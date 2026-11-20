@@ -118,13 +118,29 @@ func zipLevels(prices, sizes []float64) []BookLevel {
 	return out
 }
 
+func snapshotDepth(s PredictSnapshot) int {
+	return len(s.Bids) + len(s.Asks)
+}
+
+// MaxBookDepth 返回序列中 bid/ask 最大档位数（写库后用于对日志）。
+func MaxBookDepth(snaps []PredictSnapshot, bids bool) int {
+	max := 0
+	for _, s := range snaps {
+		n := len(s.Asks)
+		if bids {
+			n = len(s.Bids)
+		}
+		if n > max {
+			max = n
+		}
+	}
+	return max
+}
+
+// downsampleByMinute 每分钟一桶；同分钟内优先保留档位更深的快照（避免 Poly price_change 盖住 book 全簿）。
 func downsampleByMinute(snaps []PredictSnapshot) []PredictSnapshot {
 	if len(snaps) <= 1 {
 		return snaps
-	}
-	type bucket struct {
-		ts int64
-		s  PredictSnapshot
 	}
 	seen := make(map[int64]PredictSnapshot)
 	var order []int64
@@ -133,10 +149,17 @@ func downsampleByMinute(snaps []PredictSnapshot) []PredictSnapshot {
 			continue
 		}
 		b := s.TsMs / (60 * 1000)
-		if _, ok := seen[b]; !ok {
+		cur, ok := seen[b]
+		if !ok {
 			order = append(order, b)
+			seen[b] = s
+			continue
 		}
-		seen[b] = s
+		if snapshotDepth(s) > snapshotDepth(cur) {
+			seen[b] = s
+		} else if snapshotDepth(s) == snapshotDepth(cur) && s.TsMs >= cur.TsMs {
+			seen[b] = s
+		}
 	}
 	out := make([]PredictSnapshot, 0, len(order))
 	for _, b := range order {
