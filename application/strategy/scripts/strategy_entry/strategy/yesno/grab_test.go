@@ -28,12 +28,12 @@ func TestGrabOneSkipsWhenCannotTrade(t *testing.T) {
 		Outcomes: []persistententity.MarketOutcome{
 			{
 				ID: 1, Platform: appcommon.PlatformPolymarket, Competition: &comp,
-				Name: &polyName, Slug: &slug,
+				OutcomeName: &polyName, Slug: &slug,
 				PlatformMarketOutcomeID: "pm", YesTokenID: yesTok, NoTokenID: noTok,
 			},
 			{
 				ID: 2, Platform: appcommon.PlatformKalshi, Competition: &comp,
-				Name: &kalshiName, PlatformMarketOutcomeID: kTicker,
+				OutcomeName: &kalshiName, PlatformMarketOutcomeID: kTicker,
 			},
 		},
 		Books: store,

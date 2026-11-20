@@ -14,6 +14,8 @@ type OrderBookWS struct {
 	MarketRowID             uint      `gorm:"column:market_row_id;type:bigint unsigned;not null;default:0"`
 	PlatformMarketID        string    `gorm:"column:platform_market_id;type:varchar(255);not null;default:''"`
 	MarketName              *string   `gorm:"column:market_name;type:text"`
+	OutcomeName             *string   `gorm:"column:outcome_name;type:text"`
+	TokenName               *string   `gorm:"column:token_name;type:varchar(255)"`
 	MarketURL               string    `gorm:"column:market_url;type:varchar(255);default:''"`
 	PlatformMarketOutcomeID string    `gorm:"column:platform_market_outcome_id;type:varchar(255);not null;default:''"`
 	MarketAddress           string    `gorm:"column:market_address;type:varchar(255);default:''"`
@@ -68,6 +70,14 @@ func OrderBookWSCopy(b *OrderBook) *OrderBookWS {
 	if b.MarketName != nil {
 		v := *b.MarketName
 		out.MarketName = &v
+	}
+	if b.OutcomeName != nil {
+		v := *b.OutcomeName
+		out.OutcomeName = &v
+	}
+	if b.TokenName != nil {
+		v := *b.TokenName
+		out.TokenName = &v
 	}
 	if b.SelectionID != nil {
 		v := *b.SelectionID

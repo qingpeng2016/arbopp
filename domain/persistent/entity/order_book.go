@@ -14,6 +14,8 @@ type OrderBook struct {
 	MarketRowID      uint    `gorm:"column:market_row_id;type:bigint unsigned;not null;default:0"` // 父场次 market.id
 	PlatformMarketID string  `gorm:"column:platform_market_id;type:varchar(255);not null;default:''"`
 	MarketName       *string `gorm:"column:market_name;type:text"`
+	OutcomeName      *string `gorm:"column:outcome_name;type:text"`
+	TokenName        *string `gorm:"column:token_name;type:varchar(255)"`
 	MarketURL               string `gorm:"column:market_url;type:varchar(255);default:''"`
 	PlatformMarketOutcomeID string `gorm:"column:platform_market_outcome_id;type:varchar(255);not null;default:''"` // 平台盘口 ID
 	MarketAddress string    `gorm:"column:market_address;type:varchar(255);default:''"`

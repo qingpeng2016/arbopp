@@ -41,8 +41,8 @@ func parseMarketRow(m *persistententity.MarketOutcome, canonicalFixture map[stri
 		return out
 	}
 	name := ""
-	if m.Name != nil {
-		name = strings.TrimSpace(*m.Name)
+	if m.OutcomeName != nil {
+		name = strings.TrimSpace(*m.OutcomeName)
 	}
 	if name == "" {
 		return out

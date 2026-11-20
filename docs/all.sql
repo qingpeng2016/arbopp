@@ -175,7 +175,7 @@ CREATE TABLE IF NOT EXISTS `market_outcome` (
   `platform` varchar(32) NOT NULL DEFAULT '',
   `market_row_id` bigint unsigned NOT NULL DEFAULT 0 COMMENT '父场次 market.id',
   `platform_market_id` varchar(255) NOT NULL DEFAULT '' COMMENT '父场次平台 ID，对应 market.platform_market_id',
-  `name` varchar(2000) DEFAULT NULL,
+  `outcome_name` varchar(2000) DEFAULT NULL COMMENT '子盘口名称（question/title）',
   `desc` varchar(2000) DEFAULT NULL,
   `platform_market_outcome_id` varchar(255) NOT NULL DEFAULT '' COMMENT '平台盘口 ID',
   `market_address` varchar(255) DEFAULT NULL,

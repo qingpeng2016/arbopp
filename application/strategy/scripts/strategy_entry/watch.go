@@ -550,6 +550,14 @@ func cloneOrderBookRow(src *persistententity.OrderBook) *persistententity.OrderB
 		v := *src.MarketName
 		dup.MarketName = &v
 	}
+	if src.OutcomeName != nil {
+		v := *src.OutcomeName
+		dup.OutcomeName = &v
+	}
+	if src.TokenName != nil {
+		v := *src.TokenName
+		dup.TokenName = &v
+	}
 	if src.SelectionID != nil {
 		v := *src.SelectionID
 		dup.SelectionID = &v
@@ -569,7 +577,7 @@ func (w *watch) enrichBookRow(row *persistententity.OrderBook) {
 	if m, ok := w.MarketsByRowID[oc.MarketRowID]; ok {
 		fx = &m
 	}
-	obcommon.ApplyOrderBookFixtureMeta(row, oc, fx)
+	obcommon.EnrichOrderBookFromOutcome(row, oc, fx, row.TokenID)
 }
 
 func (w *watch) outcomeForBookRow(row *persistententity.OrderBook) *persistententity.MarketOutcome {
@@ -628,7 +636,8 @@ func (w *watch) bookRowsForPolyToken(token string) []*persistententity.OrderBook
 	if !ok {
 		return nil
 	}
-	row := bookRow(&w.Outcomes[idx], b.Bids, b.Asks, strings.TrimSpace(token))
+	oc := &w.Outcomes[idx]
+	row := bookRow(oc, w.fixtureForOutcome(oc), b.Bids, b.Asks, strings.TrimSpace(token))
 	if row == nil {
 		return nil
 	}
@@ -680,7 +689,8 @@ func (w *watch) bookRowsForKalshiTicker(ticker string) []*persistententity.Order
 	if !ok {
 		return nil
 	}
-	row := bookRow(&w.Outcomes[idx], b.Bids, b.Asks, ticker)
+	oc := &w.Outcomes[idx]
+	row := bookRow(oc, w.fixtureForOutcome(oc), b.Bids, b.Asks, ticker)
 	if row == nil {
 		return nil
 	}
@@ -706,7 +716,8 @@ func (w *watch) bookRowsForHit(aIndex, bIndex int) []*persistententity.OrderBook
 				if !ok {
 					continue
 				}
-				rows = append(rows, bookRow(&w.Outcomes[idx], bk.Bids, bk.Asks, token))
+				tokOc := &w.Outcomes[idx]
+				rows = append(rows, bookRow(tokOc, w.fixtureForOutcome(tokOc), bk.Bids, bk.Asks, token))
 			}
 			continue
 		}
@@ -732,7 +743,8 @@ func (w *watch) bookRowsForHit(aIndex, bIndex int) []*persistententity.OrderBook
 			rows = append(rows, w.predictPersistRows(&w.Outcomes[idx], bk.Bids, bk.Asks)...)
 			continue
 		}
-		rows = append(rows, bookRow(&w.Outcomes[idx], bk.Bids, bk.Asks, bookID))
+		hitOc := &w.Outcomes[idx]
+		rows = append(rows, bookRow(hitOc, w.fixtureForOutcome(hitOc), bk.Bids, bk.Asks, bookID))
 	}
 	return rows
 }
@@ -783,7 +795,8 @@ func (w *watch) savePoly(token string) {
 	if !ok {
 		return
 	}
-	w.entry.flush.Book(bookRow(&w.Outcomes[idx], b.Bids, b.Asks, token))
+	oc := &w.Outcomes[idx]
+	w.entry.flush.Book(bookRow(oc, w.fixtureForOutcome(oc), b.Bids, b.Asks, token))
 }
 
 // saveKalshi 把这个 ticker 的盘口交给异步落库。
@@ -796,7 +809,8 @@ func (w *watch) saveKalshi(ticker string) {
 	if !ok {
 		return
 	}
-	w.entry.flush.Book(bookRow(&w.Outcomes[idx], b.Bids, b.Asks, ticker))
+	oc := &w.Outcomes[idx]
+	w.entry.flush.Book(bookRow(oc, w.fixtureForOutcome(oc), b.Bids, b.Asks, ticker))
 }
 
 // booksJSON 单 outcome 时只写 side 1；两边时写 side 1 + side 2。
@@ -922,7 +936,7 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 }
 
 // bookRow 把内存盘口收成一行待落库的订单簿。
-func bookRow(m *persistententity.MarketOutcome, bids, asks []book.Level, tokenID string) *persistententity.OrderBook {
+func bookRow(m *persistententity.MarketOutcome, fx *persistententity.Market, bids, asks []book.Level, tokenID string) *persistententity.OrderBook {
 	if m == nil {
 		return nil
 	}
@@ -934,7 +948,6 @@ func bookRow(m *persistententity.MarketOutcome, bids, asks []book.Level, tokenID
 		Platform:                strings.ToUpper(strings.TrimSpace(m.Platform)),
 		MarketRowID:             m.MarketRowID,
 		PlatformMarketID:        strings.TrimSpace(m.PlatformMarketID),
-		MarketName:              m.Name,
 		MarketURL:               strings.TrimSpace(m.MarketURL),
 		PlatformMarketOutcomeID: strings.TrimSpace(m.PlatformMarketOutcomeID),
 		MarketAddress:           addr,
@@ -945,7 +958,18 @@ func bookRow(m *persistententity.MarketOutcome, bids, asks []book.Level, tokenID
 	if m.SelectionID != nil {
 		row.SelectionID = m.SelectionID
 	}
+	obcommon.EnrichOrderBookFromOutcome(row, m, fx, tokenID)
 	return row
+}
+
+func (w *watch) fixtureForOutcome(oc *persistententity.MarketOutcome) *persistententity.Market {
+	if w == nil || oc == nil || oc.MarketRowID == 0 {
+		return nil
+	}
+	if m, ok := w.MarketsByRowID[oc.MarketRowID]; ok {
+		return &m
+	}
+	return nil
 }
 
 // levelsJSON 把档位收成价、量的 JSON。

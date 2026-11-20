@@ -99,12 +99,12 @@ func predictOutcomeFromMarket(
 	if desc != "" {
 		descPtr = common.StrPtr(common.Truncate(desc, 2000))
 	}
-	_ = fixtureTitle
 	return &persistententity.MarketOutcome{
 		Platform:                platform,
 		PlatformMarketID:        fixtureID,
 		OutcomeType:             string(outcomeKind),
-		Name:                    common.StrPtr(common.Truncate(title, 2000)),
+		OutcomeName:             common.StrPtr(common.Truncate(title, 2000)),
+		MarketName:              common.StrPtrOptional(fixtureTitle),
 		Desc:                    descPtr,
 		PlatformMarketOutcomeID: midStr,
 		MarketAddress:           common.StrPtr255(strings.TrimSpace(m.ConditionID)),

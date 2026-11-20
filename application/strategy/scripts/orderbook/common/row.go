@@ -19,7 +19,6 @@ func RowFromOutcome(m *persistententity.MarketOutcome, fx *persistententity.Mark
 		Platform:                strings.ToUpper(strings.TrimSpace(m.Platform)),
 		MarketRowID:             m.MarketRowID,
 		PlatformMarketID:        strings.TrimSpace(m.PlatformMarketID),
-		MarketName:              m.Name,
 		MarketURL:               strings.TrimSpace(m.MarketURL),
 		PlatformMarketOutcomeID: strings.TrimSpace(m.PlatformMarketOutcomeID),
 		MarketAddress:           addr,
@@ -30,7 +29,7 @@ func RowFromOutcome(m *persistententity.MarketOutcome, fx *persistententity.Mark
 	if m.SelectionID != nil {
 		row.SelectionID = m.SelectionID
 	}
-	ApplyOrderBookFixtureMeta(row, m, fx)
+	EnrichOrderBookFromOutcome(row, m, fx, tokenID)
 	return row
 }
 

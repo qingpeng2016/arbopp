@@ -17,6 +17,15 @@ func StrPtr(s string) *string {
 	return &s
 }
 
+// StrPtrOptional 空串写 NULL；非空截断 2000。
+func StrPtrOptional(s string) *string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	return StrPtr(s)
+}
+
 func StrPtr255(s string) *string {
 	s = Truncate(s, 255)
 	return &s

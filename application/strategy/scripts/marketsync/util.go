@@ -31,6 +31,7 @@ func (j *MarketSync) batchUpsertFixtureOutcomes(ctx context.Context, fo *batch.F
 		}
 	}
 	if len(fo.Outcomes) > 0 && j.outcomeRepo != nil {
+		fillOutcomeMarketNames(fo.Fixtures, fo.Outcomes)
 		if err := j.fillOutcomeMarketRowIDs(ctx, fo.Outcomes); err != nil {
 			return err
 		}
@@ -73,6 +74,33 @@ func (j *MarketSync) fillOutcomeMarketRowIDs(ctx context.Context, outcomes []*pe
 
 func outcomeParentMarketCacheKey(o *persistententity.MarketOutcome) string {
 	return o.Platform + "\x00" + o.PlatformMarketID + "\x00" + derefStr(o.Category) + "\x00" + derefStr(o.SubCategory)
+}
+
+// fillOutcomeMarketNames 用本批 fixture 的 name 写 market_name（与 market 表 upsert 内容一致）。
+func fillOutcomeMarketNames(fixtures []*persistententity.Market, outcomes []*persistententity.MarketOutcome) {
+	if len(fixtures) == 0 || len(outcomes) == 0 {
+		return
+	}
+	byKey := make(map[string]*string, len(fixtures))
+	for _, fx := range fixtures {
+		if fx == nil || fx.Name == nil {
+			continue
+		}
+		k := fixtureUpsertKey(fx)
+		if k == "" {
+			continue
+		}
+		byKey[k] = fx.Name
+	}
+	for _, o := range outcomes {
+		if o == nil {
+			continue
+		}
+		name := byKey[outcomeParentMarketCacheKey(o)]
+		if name != nil {
+			o.MarketName = name
+		}
+	}
 }
 
 func derefStr(p *string) string {

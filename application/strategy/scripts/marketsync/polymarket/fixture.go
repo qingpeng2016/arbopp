@@ -10,6 +10,20 @@ import (
 )
 
 // polymarketEventSlugBase 主盘 event 与「More Markets」子 event 共用同一 slug 前缀（如 spread 在 *-more-markets 下）。
+func polymarketParentMarketName(ev *httpentity.PolymarketEvent, m *httpentity.Market) string {
+	if ev != nil {
+		title := common.Truncate(strings.TrimSpace(ev.Title), 2000)
+		if base := polymarketEventSlugBase(ev); base != "" {
+			title = common.Truncate(strings.TrimSpace(strings.TrimSuffix(ev.Title, " - More Markets")), 2000)
+		}
+		return title
+	}
+	if m == nil {
+		return ""
+	}
+	return common.Truncate(polymarketFixtureDisplayName(m), 2000)
+}
+
 func polymarketEventSlugBase(ev *httpentity.PolymarketEvent) string {
 	if ev == nil {
 		return ""
@@ -111,11 +125,13 @@ func polymarketOutcomeFromMarket(
 	if outcomeKind == "" {
 		outcomeKind = cryptoPredictionEnum.OutcomeMarketTypeMoneyline
 	}
+	mktName := polymarketParentMarketName(ev, m)
 	return &persistententity.MarketOutcome{
 		Platform:                platform,
 		PlatformMarketID:        fixtureID,
 		OutcomeType:             string(outcomeKind),
-		Name:                    common.StrPtr(name),
+		OutcomeName:             common.StrPtr(name),
+		MarketName:              common.StrPtrOptional(mktName),
 		Desc:                    common.StrPtr(desc),
 		PlatformMarketOutcomeID: oid,
 		MarketAddress:           common.StrPtr255(addr),

@@ -10,7 +10,8 @@ type MarketOutcome struct {
 	Platform                string    `gorm:"column:platform;type:varchar(32);not null;default:''"`
 	MarketRowID             uint      `gorm:"column:market_row_id;type:bigint unsigned;not null;default:0"`    // 父场次 market.id
 	PlatformMarketID        string    `gorm:"column:platform_market_id;type:varchar(255);not null;default:''"` // 父场次平台 ID，对应 market.platform_market_id
-	Name                    *string   `gorm:"column:name;type:varchar(2000)"`
+	OutcomeName             *string   `gorm:"column:outcome_name;type:varchar(2000)"` // 子盘口名称（question/title）
+	MarketName              *string   `gorm:"column:market_name;type:varchar(2000)"`  // 父场次名称，同 market.name
 	Desc                    *string   `gorm:"column:desc;type:varchar(2000)"`
 	PlatformMarketOutcomeID string    `gorm:"column:platform_market_outcome_id;type:varchar(255);not null;default:''"` // 平台盘口 ID
 	MarketAddress           *string   `gorm:"column:market_address;type:varchar(255)"`

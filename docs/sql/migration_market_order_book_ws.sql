@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS `market_order_book_ws` (
   `platform_market_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '父场次平台 ID',
   `platform_market_outcome_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '平台盘口 ID',
   `market_name` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `outcome_name` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT '子盘口名称 market_outcome.outcome_name',
+  `token_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'token 展示名',
   `market_url` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT '',
   `market_address` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT '',
   `token_id` varchar(160) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '预测=token_id；赔率=selection_id 或空',
