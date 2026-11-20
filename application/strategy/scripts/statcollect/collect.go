@@ -446,49 +446,12 @@ func statRunnableMapKeys(fixtures map[uint]persistententity.Market, now time.Tim
 		if !marketmap.MapKeyHasTwoPlatforms(rows) {
 			continue
 		}
-		if !statMapKeyWithinPreEventScan(rows, now, preEventScanMinutes) {
+		if !strategyentry.MapKeyWithinPreEventScan(rows, now, preEventScanMinutes) {
 			continue
 		}
 		out[k] = struct{}{}
 	}
 	return out
-}
-
-// statMapKeyWithinPreEventScan 与 strategy_entry.mapKeyWithinPreEventScan 相同。
-func statMapKeyWithinPreEventScan(rows []persistententity.Market, now time.Time, preEventScanMinutes int) bool {
-	if preEventScanMinutes <= 0 {
-		return true
-	}
-	var start time.Time
-	hasStart := false
-	layouts := []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05", "2006-01-02T15:04:05Z"}
-	for i := range rows {
-		if rows[i].EventStartTime == nil {
-			continue
-		}
-		raw := strings.TrimSpace(*rows[i].EventStartTime)
-		if raw == "" {
-			continue
-		}
-		var t time.Time
-		parsed := false
-		for _, layout := range layouts {
-			if pt, err := time.Parse(layout, raw); err == nil {
-				t, parsed = pt.UTC(), true
-				break
-			}
-		}
-		if !parsed {
-			continue
-		}
-		if !hasStart || t.Before(start) {
-			start, hasStart = t, true
-		}
-	}
-	if !hasStart {
-		return false
-	}
-	return !start.After(now.UTC().Add(time.Duration(preEventScanMinutes) * time.Minute))
 }
 
 type platformSubCountRow struct {

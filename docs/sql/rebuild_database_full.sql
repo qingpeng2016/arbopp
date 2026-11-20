@@ -503,7 +503,7 @@ INSERT INTO `config_strategy` (`group_name`, `item_key`, `item_value`, `value_ty
   ('strategy_entry', 'watch_map_keys', '[]', 'json', '监控场次 map_key 列表（每项应对齐 Poly+Kalshi 两条 market）；strategy_entry 与 orderbook_sync 共用', 1, 1),
   ('strategy_entry', 'max_groups', '50', 'int', 'strategy_entry 同时 WebSocket 监控的 map_key 组数上限；按成交额降序取前 N 组', 2, 1),
   ('strategy_entry', 'ws_connect_stagger_ms', '{"min_ms":0,"max_ms":2000}', 'json', '每场各平台首次 WebSocket 建连前随机等待区间（毫秒）', 3, 1),
-  ('strategy_entry', 'pre_event_scan_minutes', '30', 'int', '仅扫描 event_start_time<=now+该分钟数(UTC)的场次；0=不按时开过滤', 4, 1)
+  ('strategy_entry', 'pre_event_scan_minutes', '30', 'int', '最早开赛<=now+N(UTC)；event_end_time 有值则须>now；0=不按开赛滤', 4, 1)
 ON DUPLICATE KEY UPDATE
   `item_value` = VALUES(`item_value`),
   `description` = VALUES(`description`);
@@ -524,7 +524,7 @@ INSERT INTO `config_strategy` (`group_name`, `item_key`, `item_value`, `value_ty
   ('strategy_entry', 'watch_map_keys', '[]', 'json', '可选：限定监控 map_key；空=LoadVerifiedFixturesNew 扫全库 ACTIVE 核对场次', 1, 1),
   ('strategy_entry', 'max_groups', '1000', 'int', '同时 WebSocket 监控 map_key 上限，按成交额取前 N', 2, 1),
   ('strategy_entry', 'ws_connect_stagger_ms', '{"min_ms":0,"max_ms":2000}', 'json', '首场 WS 建连随机错峰（毫秒）', 3, 1),
-  ('strategy_entry', 'pre_event_scan_minutes', '30', 'int', '仅扫描 event_start_time<=now+该分钟数(UTC)的场次；0=不按时开过滤', 4, 1),
+  ('strategy_entry', 'pre_event_scan_minutes', '30', 'int', '最早开赛<=now+N(UTC)；event_end_time 有值则须>now；0=不按开赛滤', 4, 1),
   ('market_sync', 'concurrency', '{"polymarket":{"concurrency":3},"kalshi":{"concurrency":3},"predict":{"concurrency":2}}', 'json', 'market_sync 各平台并发', 5, 1)
 ON DUPLICATE KEY UPDATE
   `item_value` = VALUES(`item_value`),

@@ -253,41 +253,65 @@ type WatchGroupDeps struct {
 	PlatformRepo       persistentrepo.PlatformRepo
 }
 
-// mapKeyWithinPreEventScan preEventScanMinutes>0 时：同 map_key 最早 event_start_time <= now+N 分钟（UTC）才纳入；0 不滤。
-func mapKeyWithinPreEventScan(rows []persistententity.Market, now time.Time, preEventScanMinutes int) bool {
-	if preEventScanMinutes <= 0 {
-		return true
+var marketEventTimeLayouts = []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05", "2006-01-02T15:04:05Z"}
+
+func parseMarketEventTimeUTC(raw string) (time.Time, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, false
 	}
-	var start time.Time
-	hasStart := false
-	layouts := []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05", "2006-01-02T15:04:05Z"}
-	for i := range rows {
-		if rows[i].EventStartTime == nil {
-			continue
+	for _, layout := range marketEventTimeLayouts {
+		if t, err := time.Parse(layout, raw); err == nil {
+			return t.UTC(), true
 		}
-		raw := strings.TrimSpace(*rows[i].EventStartTime)
-		if raw == "" {
-			continue
-		}
-		var t time.Time
-		parsed := false
-		for _, layout := range layouts {
-			if pt, err := time.Parse(layout, raw); err == nil {
-				t, parsed = pt.UTC(), true
-				break
+	}
+	return time.Time{}, false
+}
+
+// MapKeyWithinPreEventScan 同 map_key 下是否纳入扫描（strategy_entry / stat_collect 同源）。
+// preEventScanMinutes>0：最早 event_start_time <= now+N（UTC）；0 不按开赛滤。
+// event_end_time 为空则不管；有值则每条须 event_end_time > now（UTC）。
+func MapKeyWithinPreEventScan(rows []persistententity.Market, now time.Time, preEventScanMinutes int) bool {
+	nowU := now.UTC()
+	if preEventScanMinutes > 0 {
+		var start time.Time
+		hasStart := false
+		for i := range rows {
+			if rows[i].EventStartTime == nil {
+				continue
+			}
+			t, ok := parseMarketEventTimeUTC(*rows[i].EventStartTime)
+			if !ok {
+				continue
+			}
+			if !hasStart || t.Before(start) {
+				start, hasStart = t, true
 			}
 		}
-		if !parsed {
+		if !hasStart {
+			return false
+		}
+		if start.After(nowU.Add(time.Duration(preEventScanMinutes) * time.Minute)) {
+			return false
+		}
+	}
+	for i := range rows {
+		if rows[i].EventEndTime == nil {
 			continue
 		}
-		if !hasStart || t.Before(start) {
-			start, hasStart = t, true
+		end, ok := parseMarketEventTimeUTC(*rows[i].EventEndTime)
+		if !ok {
+			continue
+		}
+		if !end.After(nowU) {
+			return false
 		}
 	}
-	if !hasStart {
-		return false
-	}
-	return !start.After(now.UTC().Add(time.Duration(preEventScanMinutes) * time.Minute))
+	return true
+}
+
+func mapKeyWithinPreEventScan(rows []persistententity.Market, now time.Time, preEventScanMinutes int) bool {
+	return MapKeyWithinPreEventScan(rows, now, preEventScanMinutes)
 }
 
 func runnableKeysFromFixtures(ctx context.Context, fixtures map[uint]persistententity.Market, alertBadKeys bool, now time.Time, preEventScanMinutes int) map[string]struct{} {
