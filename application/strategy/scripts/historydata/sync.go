@@ -3,6 +3,7 @@ package historydata
 import (
 	"context"
 	"fmt"
+	"os"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -261,15 +262,13 @@ func (j *Sync) ingestPolymarket(
 	slug string,
 	utcDay time.Time,
 ) (filesOK, snapshots, failed int) {
-	if j.alreadyHave(ctx, dp.ID, oc.ID, utcDay, persistententity.HistoryRecordKindFile, 0) {
-		return 0, 0, 0
-	}
 	logger.InfoZ(ctx, "history_data_sync-download",
 		zap.String("exchange", "polymarket"),
 		zap.String("symbol", slug),
 		zap.String("utc_date", utcDay.Format("2006-01-02")),
 		zap.String("map_key", mapKey))
-	body, status, err := client.DownloadL2(ctx, pmdata.VendorExchangePolymarket(), cfg.DataType, slug, utcDay, cfg.PolymarketOutcome)
+
+	body, path, sha, fresh, status, err := j.parquetBodyPolymarket(ctx, client, dp, cfg, oc, slug, utcDay)
 	if err != nil {
 		if pmdata.IsNotFound(status) {
 			j.saveSkipped(ctx, dp, cfg, mapKey, oc, pmdata.VendorExchangePolymarket(), slug, utcDay, err)
@@ -279,29 +278,50 @@ func (j *Sync) ingestPolymarket(
 			j.saveSkipped(ctx, dp, cfg, mapKey, oc, pmdata.VendorExchangePolymarket(), slug, utcDay, fmt.Errorf("pmdata free tier: data within 3 weeks forbidden; upgrade or set min_utc_age_days"))
 			return 0, 0, 0
 		}
-		j.saveFailedFile(ctx, dp, cfg, mapKey, oc, pmdata.VendorExchangePolymarket(), slug, utcDay, err)
-		return 0, 0, 1
+		if fresh {
+			j.saveFailedFile(ctx, dp, cfg, mapKey, oc, pmdata.VendorExchangePolymarket(), slug, utcDay, err)
+			return 0, 0, 1
+		}
+		logger.InfoZ(ctx, "history_data_sync-polymarket-skip-no-body", zap.Error(err))
+		return 0, 0, 0
 	}
-	path, sha, werr := pmdata.WriteLocalFile(cfg.StorageDir, pmdata.VendorExchangePolymarket(), cfg.DataType, utcDay, slug, body)
-	if werr != nil {
-		j.saveFailedFile(ctx, dp, cfg, mapKey, oc, pmdata.VendorExchangePolymarket(), slug, utcDay, werr)
-		return 0, 0, 1
+	if len(body) == 0 {
+		return 0, 0, 0
 	}
-	row := j.baseRow(dp, cfg, mapKey, oc, pmdata.VendorExchangePolymarket(), slug, utcDay)
-	row.RecordKind = persistententity.HistoryRecordKindFile
-	row.SnapshotAtMs = 0
-	row.LocalFilePath = path
-	row.FileBytes = uint64(len(body))
-	row.FileSHA256 = sha
-	row.OrderBookBids = "[]"
-	row.OrderBookAsks = "[]"
-	row.IngestStatus = persistententity.HistoryIngestOK
-	row.ErrorText = fmt.Sprintf("polymarket l2 parquet; replay locally (%d bytes)", len(body))
-	if err := j.historyRepo.BatchUpsert(ctx, nil, []*persistententity.HistoryDataOrderBook{row}); err != nil {
-		notification.SendErrorLog(ctx, "history_data_sync-upsert-file", zap.Error(err), zap.String("slug", slug))
-		return 0, 0, 1
+	if fresh {
+		var werr error
+		path, sha, werr = pmdata.WriteLocalFile(cfg.StorageDir, pmdata.VendorExchangePolymarket(), cfg.DataType, utcDay, slug, body)
+		if werr != nil {
+			j.saveFailedFile(ctx, dp, cfg, mapKey, oc, pmdata.VendorExchangePolymarket(), slug, utcDay, werr)
+			return 0, 0, 1
+		}
 	}
-	return 1, 0, 0
+	if !j.alreadyHave(ctx, dp.ID, oc.ID, utcDay, persistententity.HistoryRecordKindFile, 0) {
+		fileRow := j.baseRow(dp, cfg, mapKey, oc, pmdata.VendorExchangePolymarket(), slug, utcDay)
+		fileRow.RecordKind = persistententity.HistoryRecordKindFile
+		fileRow.SnapshotAtMs = 0
+		fileRow.LocalFilePath = path
+		fileRow.FileBytes = uint64(len(body))
+		fileRow.FileSHA256 = sha
+		fileRow.OrderBookBids = "[]"
+		fileRow.OrderBookAsks = "[]"
+		fileRow.IngestStatus = persistententity.HistoryIngestOK
+		fileRow.ErrorText = fmt.Sprintf("polymarket l2 parquet (%d bytes)", len(body))
+		if err := j.historyRepo.BatchUpsert(ctx, nil, []*persistententity.HistoryDataOrderBook{fileRow}); err != nil {
+			notification.SendErrorLog(ctx, "history_data_sync-upsert-file", zap.Error(err), zap.String("slug", slug))
+			return 0, 0, 1
+		}
+	}
+	filesOK = 1
+
+	snaps, perr := pmdata.ParsePolymarketL2Parquet(body, cfg.MaxSnapshotsPerDay)
+	if perr != nil {
+		notification.SendErrorLog(ctx, "history_data_sync-parse-polymarket-parquet",
+			zap.Error(perr), zap.String("slug", slug), zap.String("path", path))
+		return filesOK, 0, 0
+	}
+	n, f := j.upsertL2Snapshots(ctx, dp, cfg, mapKey, oc, pmdata.VendorExchangePolymarket(), slug, utcDay, path, sha, body, snaps)
+	return filesOK, n, f
 }
 
 func (j *Sync) ingestPredict(
@@ -359,12 +379,75 @@ func (j *Sync) ingestPredict(
 			zap.Error(perr), zap.String("market_id", marketID), zap.String("path", path))
 		return filesOK, 0, 0
 	}
+	n, f := j.upsertL2Snapshots(ctx, dp, cfg, mapKey, oc, pmdata.VendorExchangePredict(), marketID, utcDay, path, sha, body, snaps)
+	return filesOK, n, f
+}
+
+func (j *Sync) parquetBodyPolymarket(
+	ctx context.Context,
+	client *pmdata.Client,
+	dp persistententity.DataPlatform,
+	cfg PMDataExtraConfig,
+	oc persistententity.MarketOutcome,
+	slug string,
+	utcDay time.Time,
+) (body []byte, path, sha string, fresh bool, httpStatus int, err error) {
+	if row, rerr := j.existingFileHistoryRow(ctx, dp.ID, oc, utcDay); rerr == nil && row != nil {
+		path = strings.TrimSpace(row.LocalFilePath)
+		sha = strings.TrimSpace(row.FileSHA256)
+		if path != "" {
+			body, err = os.ReadFile(path)
+			if err == nil && len(body) > 0 {
+				return body, path, sha, false, 0, nil
+			}
+		}
+	}
+	body, httpStatus, err = client.DownloadL2(ctx, pmdata.VendorExchangePolymarket(), cfg.DataType, slug, utcDay, cfg.PolymarketOutcome)
+	if err != nil {
+		return nil, "", "", true, httpStatus, err
+	}
+	return body, "", "", true, httpStatus, nil
+}
+
+func (j *Sync) existingFileHistoryRow(ctx context.Context, dpID uint, oc persistententity.MarketOutcome, utcDay time.Time) (*persistententity.HistoryDataOrderBook, error) {
+	if j.historyRepo == nil {
+		return nil, fmt.Errorf("history repo nil")
+	}
+	d := time.Date(utcDay.Year(), utcDay.Month(), utcDay.Day(), 0, 0, 0, 0, time.UTC)
+	cond := map[string]interface{}{
+		"market_outcome_id = ?": oc.ID,
+		"utc_date = ?":          d,
+		"record_kind = ?":       persistententity.HistoryRecordKindFile,
+		"snapshot_at_ms = ?":    0,
+	}
+	if dpID > 0 {
+		cond["data_platform_id = ?"] = dpID
+	}
+	row, err := j.historyRepo.FindOne(ctx, nil, cond, "")
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+func (j *Sync) upsertL2Snapshots(
+	ctx context.Context,
+	dp persistententity.DataPlatform,
+	cfg PMDataExtraConfig,
+	mapKey string,
+	oc persistententity.MarketOutcome,
+	vendorExchange, vendorSymbol string,
+	utcDay time.Time,
+	path, sha string,
+	body []byte,
+	snaps []pmdata.PredictSnapshot,
+) (inserted, failed int) {
 	var batch []*persistententity.HistoryDataOrderBook
 	for _, s := range snaps {
 		if j.alreadyHave(ctx, dp.ID, oc.ID, utcDay, persistententity.HistoryRecordKindSnapshot, s.TsMs) {
 			continue
 		}
-		row := j.baseRow(dp, cfg, mapKey, oc, pmdata.VendorExchangePredict(), marketID, utcDay)
+		row := j.baseRow(dp, cfg, mapKey, oc, vendorExchange, vendorSymbol, utcDay)
 		row.RecordKind = persistententity.HistoryRecordKindSnapshot
 		row.SnapshotAtMs = s.TsMs
 		row.LocalFilePath = path
@@ -373,16 +456,19 @@ func (j *Sync) ingestPredict(
 		row.OrderBookBids = pmdata.LevelsJSON(s.Bids)
 		row.OrderBookAsks = pmdata.LevelsJSON(s.Asks)
 		row.IngestStatus = persistententity.HistoryIngestOK
+		if row.OrderBookBids == "[]" && row.OrderBookAsks == "[]" {
+			continue
+		}
 		batch = append(batch, row)
 	}
 	if len(batch) == 0 {
-		return filesOK, 0, 0
+		return 0, 0
 	}
 	if err := j.historyRepo.BatchUpsert(ctx, nil, batch); err != nil {
 		notification.SendErrorLog(ctx, "history_data_sync-upsert-snapshots", zap.Error(err))
-		return filesOK, 0, 1
+		return 0, 1
 	}
-	return filesOK, len(batch), 0
+	return len(batch), 0
 }
 
 func (j *Sync) baseRow(
