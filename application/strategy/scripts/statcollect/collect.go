@@ -31,8 +31,7 @@ const (
 
 	jsonTotalKey = "__total__"
 
-	preEventScanConfigKey  = "pre_event_scan_minutes"
-	defaultPreEventScanMin = 30
+
 )
 
 // Collect 刷新 stat_kv：map_key 审计 + 各平台 JSON 汇总（market/outcome/map_key 按子类）。
@@ -278,7 +277,7 @@ SELECT COUNT(*) AS cnt FROM (
 
 // countPreEventRunnableGroups 与 strategy_entry.loadGroups 的 pre_event_scan_minutes 窗口一致（默认 30 分钟）。
 func (c *Collect) countPreEventRunnableGroups(ctx context.Context) (preEventRunnableStat, error) {
-	empty := preEventRunnableStat{DescriptionJSON: `{"pre_event_scan_minutes":30,"groups":[]}`}
+	empty := preEventRunnableStat{DescriptionJSON: `{"pre_event_scan_minutes":30,"end_event_scan_minutes":180,"groups":[]}`}
 	if c.marketRepo == nil || c.outcomeRepo == nil {
 		return empty, nil
 	}
@@ -286,14 +285,15 @@ func (c *Collect) countPreEventRunnableGroups(ctx context.Context) (preEventRunn
 	if err != nil {
 		return empty, err
 	}
-	preMins := c.loadPreEventScanMinutes(ctx)
-	empty.DescriptionJSON = preEventRunnableDescJSON(preMins, nil)
+	preMins := strategyentry.LoadPreEventScanMinutes(ctx, c.configStrategyRepo)
+	endMins := strategyentry.LoadEndEventScanMinutes(ctx, c.configStrategyRepo)
+	empty.DescriptionJSON = preEventRunnableDescJSON(preMins, endMins, nil)
 	if len(fixtures) == 0 {
 		return empty, nil
 	}
-	runnableKeys := statRunnableMapKeys(fixtures, time.Now().UTC(), preMins)
+	runnableKeys := statRunnableMapKeys(fixtures, time.Now().UTC(), preMins, endMins)
 	if len(runnableKeys) == 0 {
-		return preEventRunnableStat{Count: 0, DescriptionJSON: preEventRunnableDescJSON(preMins, nil)}, nil
+		return preEventRunnableStat{Count: 0, DescriptionJSON: preEventRunnableDescJSON(preMins, endMins, nil)}, nil
 	}
 	marketIDs := make([]uint, 0, len(fixtures))
 	for id := range fixtures {
@@ -320,7 +320,7 @@ func (c *Collect) countPreEventRunnableGroups(ctx context.Context) (preEventRunn
 		withOutcomes[k] = struct{}{}
 	}
 	groups := buildPreEventRunnableGroups(fixtures, withOutcomes)
-	desc := preEventRunnableDescJSON(preMins, groups)
+	desc := preEventRunnableDescJSON(preMins, endMins, groups)
 	return preEventRunnableStat{Count: int64(len(groups)), DescriptionJSON: desc}, nil
 }
 
@@ -360,15 +360,17 @@ func buildPreEventRunnableGroups(fixtures map[uint]persistententity.Market, mapK
 	return out
 }
 
-func preEventRunnableDescJSON(preEventScanMinutes int, groups []preEventRunnableGroup) string {
+func preEventRunnableDescJSON(preEventScanMinutes, endEventScanMinutes int, groups []preEventRunnableGroup) string {
 	if groups == nil {
 		groups = []preEventRunnableGroup{}
 	}
 	payload := struct {
 		PreEventScanMinutes int                     `json:"pre_event_scan_minutes"`
+		EndEventScanMinutes int                     `json:"end_event_scan_minutes"`
 		Groups              []preEventRunnableGroup `json:"groups"`
 	}{
 		PreEventScanMinutes: preEventScanMinutes,
+		EndEventScanMinutes: endEventScanMinutes,
 		Groups:              groups,
 	}
 	b, err := json.Marshal(payload)
@@ -381,11 +383,13 @@ func preEventRunnableDescJSON(preEventScanMinutes int, groups []preEventRunnable
 		// description 列 varchar(500)：只保留 map_key + 组数，避免截断非法 JSON
 		compact := struct {
 			PreEventScanMinutes int      `json:"pre_event_scan_minutes"`
+			EndEventScanMinutes int      `json:"end_event_scan_minutes"`
 			Count               int      `json:"count"`
 			MapKeys             []string `json:"map_keys"`
 			Truncated           bool     `json:"truncated"`
 		}{
 			PreEventScanMinutes: preEventScanMinutes,
+			EndEventScanMinutes: endEventScanMinutes,
 			Count:               len(groups),
 			Truncated:           true,
 		}
@@ -404,29 +408,7 @@ func preEventRunnableDescJSON(preEventScanMinutes int, groups []preEventRunnable
 	return s
 }
 
-func (c *Collect) loadPreEventScanMinutes(ctx context.Context) int {
-	if c.configStrategyRepo == nil {
-		return defaultPreEventScanMin
-	}
-	cfg, err := c.configStrategyRepo.FindOne(ctx, nil, map[string]interface{}{
-		"group_name = ?": marketmap.ConfigGroupStrategyEntry,
-		"item_key = ?":   preEventScanConfigKey,
-		"is_enabled = ?": 1,
-	}, "")
-	if err != nil {
-		if err != gorm.ErrRecordNotFound {
-			notification.SendErrorLog(ctx, "stat_collect-pre_event_scan_minutes-read-failed", zap.Error(err))
-		}
-		return defaultPreEventScanMin
-	}
-	n, err := strconv.Atoi(strings.TrimSpace(cfg.ItemValue))
-	if err != nil {
-		return defaultPreEventScanMin
-	}
-	return n
-}
-
-func statRunnableMapKeys(fixtures map[uint]persistententity.Market, now time.Time, preEventScanMinutes int) map[string]struct{} {
+func statRunnableMapKeys(fixtures map[uint]persistententity.Market, now time.Time, preEventScanMinutes, endEventScanMinutes int) map[string]struct{} {
 	rowsByKey := make(map[string][]persistententity.Market)
 	for _, fx := range fixtures {
 		if fx.MapKey == nil || fx.MapVerified != 1 {
@@ -446,7 +428,7 @@ func statRunnableMapKeys(fixtures map[uint]persistententity.Market, now time.Tim
 		if !marketmap.MapKeyHasTwoPlatforms(rows) {
 			continue
 		}
-		if !strategyentry.MapKeyWithinPreEventScan(rows, now, preEventScanMinutes) {
+		if !strategyentry.MapKeyWithinPreEventScan(rows, now, preEventScanMinutes, endEventScanMinutes) {
 			continue
 		}
 		out[k] = struct{}{}
@@ -599,7 +581,7 @@ func preEventRunnableAuditDesc(a mapKeyAudit) string {
 	if strings.TrimSpace(a.PreEventRunnableDesc) != "" {
 		return a.PreEventRunnableDesc
 	}
-	return `{"pre_event_scan_minutes":30,"groups":[]}`
+	return `{"pre_event_scan_minutes":30,"end_event_scan_minutes":180,"groups":[]}`
 }
 
 func kvStat(group, key, val, valType, desc string, sortNo int) *persistententity.StatKV {

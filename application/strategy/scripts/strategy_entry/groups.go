@@ -49,6 +49,8 @@ const (
 	defaultPredictSports         = 0.02
 	configKeyPreEventScanMinutes = "pre_event_scan_minutes"
 	defaultPreEventScanMinutes   = 30
+	configKeyEndEventScanMinutes = "end_event_scan_minutes"
+	defaultEndEventScanMinutes   = 180
 )
 
 // Params 5.2 的可配置门槛。手续费按平台和运动放在 fees 里，比较时只读。
@@ -238,6 +240,30 @@ func LoadPreEventScanMinutes(ctx context.Context, configStrategyRepo persistentr
 	return n
 }
 
+// LoadEndEventScanMinutes 读 config_strategy.strategy_entry.end_event_scan_minutes。
+func LoadEndEventScanMinutes(ctx context.Context, configStrategyRepo persistentrepo.ConfigStrategyRepo) int {
+	endEventScanMinutes := defaultEndEventScanMinutes
+	if configStrategyRepo == nil {
+		return endEventScanMinutes
+	}
+	cfg, err := configStrategyRepo.FindOne(ctx, nil, map[string]interface{}{
+		"group_name = ?": marketmap.ConfigGroupStrategyEntry,
+		"item_key = ?":   configKeyEndEventScanMinutes,
+		"is_enabled = ?": 1,
+	}, "")
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			notification.SendErrorLog(ctx, "strategy_entry-end-event-scan-minutes-read-failed", zap.Error(err))
+		}
+		return endEventScanMinutes
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(cfg.ItemValue))
+	if err != nil {
+		return endEventScanMinutes
+	}
+	return n
+}
+
 // WatchGroupCounts 与 strategy_entry.loadGroups 同源的场次计数（stat_collect / 心跳应对场次）。
 type WatchGroupCounts struct {
 	Matched   int // 合规且有 outcome，未截 max_groups
@@ -270,8 +296,8 @@ func parseMarketEventTimeUTC(raw string) (time.Time, bool) {
 
 // MapKeyWithinPreEventScan 同 map_key 下是否纳入扫描（strategy_entry / stat_collect 同源）。
 // preEventScanMinutes>0：最早 event_start_time <= now+N（UTC）；0 不按开赛滤。
-// event_end_time 为空则不管；有值则每条须 event_end_time > now（UTC）。
-func MapKeyWithinPreEventScan(rows []persistententity.Market, now time.Time, preEventScanMinutes int) bool {
+// endEventScanMinutes>0：event_end_time 有值则须 end+N>now（UTC）；空则不滤；0 不按结束滤。
+func MapKeyWithinPreEventScan(rows []persistententity.Market, now time.Time, preEventScanMinutes, endEventScanMinutes int) bool {
 	nowU := now.UTC()
 	if preEventScanMinutes > 0 {
 		var start time.Time
@@ -295,26 +321,29 @@ func MapKeyWithinPreEventScan(rows []persistententity.Market, now time.Time, pre
 			return false
 		}
 	}
-	for i := range rows {
-		if rows[i].EventEndTime == nil {
-			continue
-		}
-		end, ok := parseMarketEventTimeUTC(*rows[i].EventEndTime)
-		if !ok {
-			continue
-		}
-		if !end.After(nowU) {
-			return false
+	if endEventScanMinutes > 0 {
+		grace := time.Duration(endEventScanMinutes) * time.Minute
+		for i := range rows {
+			if rows[i].EventEndTime == nil {
+				continue
+			}
+			end, ok := parseMarketEventTimeUTC(*rows[i].EventEndTime)
+			if !ok {
+				continue
+			}
+			if !end.Add(grace).After(nowU) {
+				return false
+			}
 		}
 	}
 	return true
 }
 
-func mapKeyWithinPreEventScan(rows []persistententity.Market, now time.Time, preEventScanMinutes int) bool {
-	return MapKeyWithinPreEventScan(rows, now, preEventScanMinutes)
+func mapKeyWithinPreEventScan(rows []persistententity.Market, now time.Time, preEventScanMinutes, endEventScanMinutes int) bool {
+	return MapKeyWithinPreEventScan(rows, now, preEventScanMinutes, endEventScanMinutes)
 }
 
-func runnableKeysFromFixtures(ctx context.Context, fixtures map[uint]persistententity.Market, alertBadKeys bool, now time.Time, preEventScanMinutes int) map[string]struct{} {
+func runnableKeysFromFixtures(ctx context.Context, fixtures map[uint]persistententity.Market, alertBadKeys bool, now time.Time, preEventScanMinutes, endEventScanMinutes int) map[string]struct{} {
 	rowsByKey := map[string][]persistententity.Market{}
 	for _, fx := range fixtures {
 		if fx.MapKey == nil || fx.MapVerified != 1 {
@@ -337,7 +366,7 @@ func runnableKeysFromFixtures(ctx context.Context, fixtures map[uint]persistente
 		if !marketmap.MapKeyHasTwoPlatforms(rows) {
 			continue
 		}
-		if !mapKeyWithinPreEventScan(rows, now, preEventScanMinutes) {
+		if !mapKeyWithinPreEventScan(rows, now, preEventScanMinutes, endEventScanMinutes) {
 			continue
 		}
 		runnableKeys[k] = struct{}{}
@@ -396,7 +425,8 @@ func loadWatchGroups(ctx context.Context, d WatchGroupDeps, alertBadKeys bool) (
 	}
 
 	preEventScanMinutes := LoadPreEventScanMinutes(ctx, d.ConfigStrategyRepo)
-	runnableKeys := runnableKeysFromFixtures(ctx, fixtures, alertBadKeys, time.Now().UTC(), preEventScanMinutes)
+	endEventScanMinutes := LoadEndEventScanMinutes(ctx, d.ConfigStrategyRepo)
+	runnableKeys := runnableKeysFromFixtures(ctx, fixtures, alertBadKeys, time.Now().UTC(), preEventScanMinutes, endEventScanMinutes)
 
 	// 获取所有市场的outcomes盘口信息（多平台的）
 	outcomes := marketmap.FilterOutcomesUnderVerifiedFixtures(raw, fixtures)

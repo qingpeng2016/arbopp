@@ -34,8 +34,9 @@ func (e *Entry) flushMarketRunningCountStrategy(ctx context.Context, wantByKey m
 		return
 	}
 	preMins := LoadPreEventScanMinutes(ctx, e.configStrategyRepo)
+	endMins := LoadEndEventScanMinutes(ctx, e.configStrategyRepo)
 	groups := e.runningMarketGroups(wantByKey)
-	desc := marketRunningDescJSON(preMins, groups)
+	desc := marketRunningDescJSON(preMins, endMins, groups)
 	row := &persistententity.StatKV{
 		GroupName:   statGroupMapKeyAudit,
 		ItemKey:     statKeyMarketRunningCountEntry,
@@ -87,15 +88,17 @@ func marketRowIDsFromGroup(g group) []uint {
 	return ids
 }
 
-func marketRunningDescJSON(preEventScanMinutes int, groups []marketRunningGroup) string {
+func marketRunningDescJSON(preEventScanMinutes, endEventScanMinutes int, groups []marketRunningGroup) string {
 	if groups == nil {
 		groups = []marketRunningGroup{}
 	}
 	payload := struct {
 		PreEventScanMinutes int                  `json:"pre_event_scan_minutes"`
+		EndEventScanMinutes int                  `json:"end_event_scan_minutes"`
 		Groups              []marketRunningGroup `json:"groups"`
 	}{
 		PreEventScanMinutes: preEventScanMinutes,
+		EndEventScanMinutes: endEventScanMinutes,
 		Groups:              groups,
 	}
 	b, err := json.Marshal(payload)
@@ -107,11 +110,13 @@ func marketRunningDescJSON(preEventScanMinutes int, groups []marketRunningGroup)
 	if len(s) > descMax {
 		compact := struct {
 			PreEventScanMinutes int      `json:"pre_event_scan_minutes"`
+			EndEventScanMinutes int      `json:"end_event_scan_minutes"`
 			Count               int      `json:"count"`
 			MapKeys             []string `json:"map_keys"`
 			Truncated           bool     `json:"truncated"`
 		}{
 			PreEventScanMinutes: preEventScanMinutes,
+			EndEventScanMinutes: endEventScanMinutes,
 			Count:               len(groups),
 			Truncated:           true,
 		}
