@@ -1,4 +1,4 @@
--- strategy_entry WS 盘口快照（与 market_order_book 同结构；REST orderbook_sync 仍写 market_order_book）
+-- strategy_entry WS 盘口历史快照（与线上一致；仅 snapshot_at_ms，无 token 唯一键）
 CREATE TABLE IF NOT EXISTS `market_order_book_ws` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `market_row_id` bigint unsigned NOT NULL DEFAULT 0 COMMENT '父场次 market.id',
@@ -11,22 +11,21 @@ CREATE TABLE IF NOT EXISTS `market_order_book_ws` (
   `platform_market_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '父场次平台 ID',
   `platform_market_outcome_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '平台盘口 ID',
   `market_name` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `outcome_name` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT '子盘口名称 market_outcome.outcome_name',
-  `token_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'token 展示名',
+  `outcome_name` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT '子盘口名称 market_outcome.name',
+  `token_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'token 展示名 Yes/No 或队名等',
   `market_url` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT '',
   `market_address` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT '',
   `token_id` varchar(160) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '预测=token_id；赔率=selection_id 或空',
   `selection_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '赔率平台选项 ID',
   `order_book_asks` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `order_book_bids` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `snapshot_second` bigint NOT NULL DEFAULT 0 COMMENT '快照秒级别',
-  `snapshot_at_ms` bigint NOT NULL DEFAULT 0 COMMENT '快照毫秒（平台 WS）',
+  `snapshot_at_ms` bigint NOT NULL DEFAULT 0 COMMENT '快照毫秒（平台 WS 时间；0=无）',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  KEY `idx_order_book_ws_token_snap_ms` (`platform`,`token_id`,`snapshot_at_ms`),
   KEY `idx_order_book_ws_market_row` (`market_row_id`),
   KEY `idx_order_book_ws_platform_outcome` (`platform`,`platform_market_outcome_id`),
   KEY `idx_order_book_ws_platform_fixture` (`platform`,`platform_market_id`),
-  KEY `idx_order_book_ws_map_key` (`map_key`)
+  KEY `idx_order_book_ws_map_key` (`map_key`),
+  KEY `idx_order_book_ws_token_snap_ms` (`platform`,`token_id`,`snapshot_at_ms`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='WS 报价快照（strategy_entry）';
