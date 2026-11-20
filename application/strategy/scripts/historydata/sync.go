@@ -30,6 +30,7 @@ type Sync struct {
 	outcomeRepo      persistentrepo.MarketOutcomeRepo
 	dataPlatformRepo persistentrepo.DataPlatformRepo
 	historyRepo      persistentrepo.HistoryDataOrderBookRepo
+	eventRepo        persistentrepo.HistoryMarketEventRepo
 }
 
 func NewSync(
@@ -39,6 +40,7 @@ func NewSync(
 	outcomeRepo persistentrepo.MarketOutcomeRepo,
 	dataPlatformRepo persistentrepo.DataPlatformRepo,
 	historyRepo persistentrepo.HistoryDataOrderBookRepo,
+	eventRepo persistentrepo.HistoryMarketEventRepo,
 ) *Sync {
 	return &Sync{
 		dataTaskRepo:     dataTaskRepo,
@@ -47,6 +49,7 @@ func NewSync(
 		outcomeRepo:      outcomeRepo,
 		dataPlatformRepo: dataPlatformRepo,
 		historyRepo:      historyRepo,
+		eventRepo:        eventRepo,
 	}
 }
 
@@ -311,6 +314,12 @@ func (j *Sync) ingestPolymarket(
 	}
 	n, f := j.upsertL2Snapshots(ctx, dp, cfg, mapKey, oc, pmdata.VendorExchangePolymarket(), slug, utcDay, path, sha, body, snaps)
 	j.patchUTCDateAfterIngest(ctx, oc.ID, utcDay, path)
+	rawN, rawErr := j.ingestRawMarketEvents(ctx, dp, cfg, mapKey, oc, pmdata.VendorExchangePolymarket(), slug, utcDay, path, sha, body, true)
+	if rawErr != nil {
+		notification.SendErrorLog(ctx, "history_data_sync-raw-events-polymarket", zap.Error(rawErr), zap.String("slug", slug))
+	} else if rawN > 0 {
+		logger.InfoZ(ctx, "history_data_sync-raw-events-polymarket", zap.String("slug", slug), zap.Int("inserted", rawN))
+	}
 	logger.InfoZ(ctx, "history_data_sync-polymarket-snapshots",
 		zap.String("slug", slug),
 		zap.String("utc_date", utcDay.Format("2006-01-02")),
@@ -369,6 +378,12 @@ func (j *Sync) ingestPredict(
 	}
 	n, f := j.upsertL2Snapshots(ctx, dp, cfg, mapKey, oc, pmdata.VendorExchangePredict(), marketID, utcDay, path, sha, body, snaps)
 	j.patchUTCDateAfterIngest(ctx, oc.ID, utcDay, path)
+	rawN, rawErr := j.ingestRawMarketEvents(ctx, dp, cfg, mapKey, oc, pmdata.VendorExchangePredict(), marketID, utcDay, path, sha, body, false)
+	if rawErr != nil {
+		notification.SendErrorLog(ctx, "history_data_sync-raw-events-predict", zap.Error(rawErr), zap.String("market_id", marketID))
+	} else if rawN > 0 {
+		logger.InfoZ(ctx, "history_data_sync-raw-events-predict", zap.String("market_id", marketID), zap.Int("inserted", rawN))
+	}
 	logger.InfoZ(ctx, "history_data_sync-predict-snapshots",
 		zap.String("market_id", marketID),
 		zap.String("utc_date", utcDay.Format("2006-01-02")),
@@ -534,6 +549,88 @@ func (j *Sync) existingSnapshotMs(ctx context.Context, platformID, outcomeID uin
 		}
 	}
 	return out, nil
+}
+
+func (j *Sync) ingestRawMarketEvents(
+	ctx context.Context,
+	dp persistententity.DataPlatform,
+	cfg PMDataExtraConfig,
+	mapKey string,
+	oc persistententity.MarketOutcome,
+	vendorExchange, vendorSymbol string,
+	utcDay time.Time,
+	path, sha string,
+	body []byte,
+	poly bool,
+) (inserted int, err error) {
+	if !cfg.IngestRawMarketEvents || j.eventRepo == nil || len(body) == 0 || strings.TrimSpace(sha) == "" {
+		return 0, nil
+	}
+	n, cerr := j.eventRepo.CountWhere(ctx, nil, map[string]interface{}{
+		"market_outcome_id = ?": oc.ID,
+		"file_sha256 = ?":     sha,
+	})
+	if cerr != nil {
+		return 0, cerr
+	}
+	if n > 0 {
+		return 0, nil
+	}
+	var events []pmdata.RawMarketEvent
+	if poly {
+		events, err = pmdata.ParsePolymarketRawEvents(body)
+	} else {
+		events, err = pmdata.ParsePredictRawEvents(body)
+	}
+	if err != nil {
+		return 0, err
+	}
+	day := persistententity.CalendarDateFrom(utcDay).String()
+	batch := make([]*persistententity.HistoryMarketEvent, 0, min(512, len(events)))
+	for _, e := range events {
+		batch = append(batch, &persistententity.HistoryMarketEvent{
+			DataPlatformID:  dp.ID,
+			MapKey:          mapKey,
+			MarketRowID:     oc.MarketRowID,
+			MarketOutcomeID: oc.ID,
+			VenuePlatform:   strings.ToUpper(strings.TrimSpace(oc.Platform)),
+			VendorExchange:  vendorExchange,
+			VendorSymbol:    vendorSymbol,
+			FileCalendarDay: day,
+			DataType:        cfg.DataType,
+			EventKind:       e.EventKind,
+			EventType:       e.EventType,
+			EventAtMs:       e.EventAtMs,
+			LocalEventAtMs:  e.LocalEventAtMs,
+			RowIndex:        uint32(e.RowIndex),
+			PayloadJSON:     e.PayloadJSON,
+			LocalFilePath:   path,
+			FileBytes:       uint64(len(body)),
+			FileSHA256:      sha,
+			IngestStatus:    persistententity.HistoryIngestOK,
+		})
+		if len(batch) >= 200 {
+			if err := j.eventRepo.BatchCreateIgnoreDup(ctx, nil, batch); err != nil {
+				return inserted, err
+			}
+			inserted += len(batch)
+			batch = batch[:0]
+		}
+	}
+	if len(batch) > 0 {
+		if err := j.eventRepo.BatchCreateIgnoreDup(ctx, nil, batch); err != nil {
+			return inserted, err
+		}
+		inserted += len(batch)
+	}
+	return inserted, nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (j *Sync) patchUTCDateAfterIngest(ctx context.Context, outcomeID uint, utcDay time.Time, localPath string) {

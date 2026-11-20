@@ -14,8 +14,9 @@ type PMDataExtraConfig struct {
 	UTCDaysAfterEvent  int      `json:"utc_days_after_event"`
 	OutcomeTypes       []string `json:"outcome_types"`
 	PolymarketOutcome    string   `json:"polymarket_outcome"` // yes | no
-	MaxSnapshotsPerDay   int      `json:"max_snapshots_per_day"`
-	MinUTCAgeDays        int      `json:"min_utc_age_days"`
+	MaxSnapshotsPerDay     int  `json:"max_snapshots_per_day"`
+	MinUTCAgeDays          int  `json:"min_utc_age_days"`
+	IngestRawMarketEvents  bool `json:"ingest_raw_market_events"`
 }
 
 func ParsePMDataExtraConfig(raw string) PMDataExtraConfig {
@@ -26,8 +27,9 @@ func ParsePMDataExtraConfig(raw string) PMDataExtraConfig {
 		UTCDaysAfterEvent:  1,
 		OutcomeTypes:       []string{"moneyline"},
 		PolymarketOutcome:  "yes",
-		MaxSnapshotsPerDay: 500,
-		MinUTCAgeDays:      21,
+		MaxSnapshotsPerDay:    500,
+		MinUTCAgeDays:         21,
+		IngestRawMarketEvents: true,
 	}
 	raw = strings.TrimSpace(raw)
 	if raw == "" {

@@ -433,6 +433,35 @@ CREATE TABLE IF NOT EXISTS `data_history_order_book` (
   KEY `idx_history_replay` (`map_key`, `snapshot_at_ms`, `venue_platform`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `data_history_market_event` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `data_platform_id` bigint unsigned NOT NULL DEFAULT 0,
+  `map_key` varchar(192) NOT NULL DEFAULT '',
+  `market_row_id` bigint unsigned NOT NULL DEFAULT 0,
+  `market_outcome_id` bigint unsigned NOT NULL DEFAULT 0,
+  `venue_platform` varchar(32) NOT NULL DEFAULT '',
+  `vendor_exchange` varchar(32) NOT NULL DEFAULT '',
+  `vendor_symbol` varchar(255) NOT NULL DEFAULT '',
+  `file_calendar_day` date NOT NULL COMMENT 'Parquet 文件 UTC 日',
+  `data_type` varchar(32) NOT NULL DEFAULT 'l2',
+  `event_kind` varchar(32) NOT NULL DEFAULT '' COMMENT 'book|price_change|orderbook',
+  `event_type` varchar(64) NOT NULL DEFAULT '' COMMENT '源 event_type',
+  `event_at_ms` bigint NOT NULL DEFAULT 0,
+  `local_event_at_ms` bigint NOT NULL DEFAULT 0,
+  `row_index` int unsigned NOT NULL DEFAULT 0,
+  `payload_json` mediumtext NOT NULL,
+  `local_file_path` varchar(512) NOT NULL DEFAULT '',
+  `file_bytes` bigint unsigned NOT NULL DEFAULT 0,
+  `file_sha256` char(64) NOT NULL DEFAULT '',
+  `ingest_status` varchar(24) NOT NULL DEFAULT 'ok',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_history_market_event` (`data_platform_id`,`market_outcome_id`,`file_sha256`,`row_index`),
+  KEY `idx_hme_map_time` (`map_key`,`event_at_ms`,`venue_platform`),
+  KEY `idx_hme_kind` (`market_outcome_id`,`file_calendar_day`,`event_kind`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `data_task` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `ingest_source` varchar(16) NOT NULL DEFAULT 'pmdata' COMMENT 'pmdata|synthetic',
