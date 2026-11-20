@@ -20,7 +20,7 @@ type Syncer struct {
 	Books persistentrepo.OrderBookRepo
 }
 
-func (s *Syncer) Sync(ctx context.Context, markets []persistententity.MarketOutcome, fetch fetchopt.PlatformFetch) (upserted, missed int, err error) {
+func (s *Syncer) Sync(ctx context.Context, markets []persistententity.MarketOutcome, fixtures map[uint]persistententity.Market, fetch fetchopt.PlatformFetch) (upserted, missed int, err error) {
 	if s.API == nil {
 		return 0, len(markets), nil
 	}
@@ -36,13 +36,13 @@ func (s *Syncer) Sync(ctx context.Context, markets []persistententity.MarketOutc
 	for i := range chunks {
 		ch := chunks[i]
 		tasks[i] = func(ctx context.Context) (int, int, error) {
-			return s.syncChunk(ctx, ch)
+			return s.syncChunk(ctx, ch, fixtures)
 		}
 	}
 	return fetchopt.RunConcurrent(ctx, fetch.BatchConcurrency, tasks)
 }
 
-func (s *Syncer) syncChunk(ctx context.Context, ch fetchChunk) (upserted, missed int, err error) {
+func (s *Syncer) syncChunk(ctx context.Context, ch fetchChunk, fixtures map[uint]persistententity.Market) (upserted, missed int, err error) {
 	if len(ch.items) == 0 {
 		return 0, 0, nil
 	}
@@ -54,7 +54,7 @@ func (s *Syncer) syncChunk(ctx context.Context, ch fetchChunk) (upserted, missed
 	if resp != nil {
 		books = resp.OrderBooks
 	}
-	rows, batchMissed := booksToRows(ch.markets, books)
+	rows, batchMissed := booksToRows(ch.markets, books, fixtures)
 	missed = batchMissed
 	if len(rows) == 0 {
 		return 0, missed, nil
@@ -65,7 +65,7 @@ func (s *Syncer) syncChunk(ctx context.Context, ch fetchChunk) (upserted, missed
 	return len(rows), missed, nil
 }
 
-func booksToRows(markets []persistententity.MarketOutcome, books []httpentity.OrderBookResponse) ([]*persistententity.OrderBook, int) {
+func booksToRows(markets []persistententity.MarketOutcome, books []httpentity.OrderBookResponse, fixtures map[uint]persistententity.Market) ([]*persistententity.OrderBook, int) {
 	byAsset := make(map[string]httpentity.OrderBookResponse, len(books))
 	for _, b := range books {
 		id := strings.TrimSpace(b.AssetID)
@@ -94,7 +94,11 @@ func booksToRows(markets []persistententity.MarketOutcome, books []httpentity.Or
 			missed++
 			continue
 		}
-		out = append(out, common.RowFromOutcome(&m, string(bidsJSON), string(asksJSON), token))
+		var fx *persistententity.Market
+		if f, ok := fixtures[m.MarketRowID]; ok {
+			fx = &f
+		}
+		out = append(out, common.RowFromOutcome(&m, fx, string(bidsJSON), string(asksJSON), token))
 	}
 	return out, missed
 }

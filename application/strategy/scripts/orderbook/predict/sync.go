@@ -20,7 +20,7 @@ type Syncer struct {
 	Books persistentrepo.OrderBookRepo
 }
 
-func (s *Syncer) Sync(ctx context.Context, markets []persistententity.MarketOutcome, fetch fetchopt.PlatformFetch) (upserted, missed int, err error) {
+func (s *Syncer) Sync(ctx context.Context, markets []persistententity.MarketOutcome, fixtures map[uint]persistententity.Market, fetch fetchopt.PlatformFetch) (upserted, missed int, err error) {
 	if s.API == nil {
 		return 0, len(markets), nil
 	}
@@ -36,18 +36,18 @@ func (s *Syncer) Sync(ctx context.Context, markets []persistententity.MarketOutc
 	for i := range chunks {
 		ch := chunks[i]
 		tasks[i] = func(ctx context.Context) (int, int, error) {
-			return s.syncChunk(ctx, ch)
+			return s.syncChunk(ctx, ch, fixtures)
 		}
 	}
 	return fetchopt.RunConcurrent(ctx, fetch.BatchConcurrency, tasks)
 }
 
-func (s *Syncer) syncChunk(ctx context.Context, ch fetchChunk) (upserted, missed int, err error) {
+func (s *Syncer) syncChunk(ctx context.Context, ch fetchChunk, fixtures map[uint]persistententity.Market) (upserted, missed int, err error) {
 	books, err := s.API.GetOrderbooks(ctx, ch.ids)
 	if err != nil {
 		return 0, len(ch.markets), err
 	}
-	rows, batchMissed := booksToRows(ch.markets, books)
+	rows, batchMissed := booksToRows(ch.markets, books, fixtures)
 	missed = batchMissed
 	if len(rows) == 0 {
 		return 0, missed, nil
@@ -58,7 +58,7 @@ func (s *Syncer) syncChunk(ctx context.Context, ch fetchChunk) (upserted, missed
 	return len(rows), missed, nil
 }
 
-func booksToRows(markets []persistententity.MarketOutcome, books []httpentity.PredictOrderbook) ([]*persistententity.OrderBook, int) {
+func booksToRows(markets []persistententity.MarketOutcome, books []httpentity.PredictOrderbook, fixtures map[uint]persistententity.Market) ([]*persistententity.OrderBook, int) {
 	byID := make(map[string]httpentity.PredictOrderbook, len(books))
 	for i := range books {
 		id := strconv.FormatInt(books[i].MarketID, 10)
@@ -79,7 +79,11 @@ func booksToRows(markets []persistententity.MarketOutcome, books []httpentity.Pr
 		}
 		yesBids := common.LevelsFromPairs(book.Bids)
 		yesAsks := common.LevelsFromPairs(book.Asks)
-		out = append(out, common.PredictBookRows(&m, yesBids, yesAsks)...)
+		var fx *persistententity.Market
+		if f, ok := fixtures[m.MarketRowID]; ok {
+			fx = &f
+		}
+		out = append(out, common.PredictBookRowsWithFixture(&m, fx, yesBids, yesAsks)...)
 	}
 	return out, missed
 }

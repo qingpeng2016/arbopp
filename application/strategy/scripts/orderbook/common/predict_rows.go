@@ -11,6 +11,15 @@ import (
 
 // PredictBookRows 由 YES 视角盘口写 Predict 的 YES/NO 两行（token_id 对应该侧 outcome）。
 func PredictBookRows(m *persistententity.MarketOutcome, yesBids, yesAsks []book.Level) []*persistententity.OrderBook {
+	return predictBookRows(m, nil, yesBids, yesAsks)
+}
+
+// PredictBookRowsWithFixture orderbook_sync 写库时带上父场次冗余字段。
+func PredictBookRowsWithFixture(m *persistententity.MarketOutcome, fx *persistententity.Market, yesBids, yesAsks []book.Level) []*persistententity.OrderBook {
+	return predictBookRows(m, fx, yesBids, yesAsks)
+}
+
+func predictBookRows(m *persistententity.MarketOutcome, fx *persistententity.Market, yesBids, yesAsks []book.Level) []*persistententity.OrderBook {
 	if m == nil {
 		return nil
 	}
@@ -18,11 +27,11 @@ func PredictBookRows(m *persistententity.MarketOutcome, yesBids, yesAsks []book.
 	noTok := strings.TrimSpace(m.NoTokenID)
 	var rows []*persistententity.OrderBook
 	if yesTok != "" {
-		rows = append(rows, RowFromOutcome(m, levelsJSON(yesBids), levelsJSON(yesAsks), yesTok))
+		rows = append(rows, RowFromOutcome(m, fx, levelsJSON(yesBids), levelsJSON(yesAsks), yesTok))
 	}
 	if noTok != "" && noTok != yesTok {
 		noBids, noAsks := book.NoBookFromYesBook(yesBids, yesAsks)
-		rows = append(rows, RowFromOutcome(m, levelsJSON(noBids), levelsJSON(noAsks), noTok))
+		rows = append(rows, RowFromOutcome(m, fx, levelsJSON(noBids), levelsJSON(noAsks), noTok))
 	}
 	return rows
 }

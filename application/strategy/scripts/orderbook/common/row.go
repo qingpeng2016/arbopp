@@ -7,7 +7,7 @@ import (
 )
 
 // RowFromOutcome 由 market_outcome + 盘口 JSON 写 market_order_book 行。
-func RowFromOutcome(m *persistententity.MarketOutcome, bidsJSON, asksJSON, tokenID string) *persistententity.OrderBook {
+func RowFromOutcome(m *persistententity.MarketOutcome, fx *persistententity.Market, bidsJSON, asksJSON, tokenID string) *persistententity.OrderBook {
 	if m == nil {
 		return nil
 	}
@@ -30,5 +30,30 @@ func RowFromOutcome(m *persistententity.MarketOutcome, bidsJSON, asksJSON, token
 	if m.SelectionID != nil {
 		row.SelectionID = m.SelectionID
 	}
+	ApplyOrderBookFixtureMeta(row, m, fx)
 	return row
+}
+
+// ApplyOrderBookFixtureMeta 写 map_key / 联赛等冗余列（来自 outcome + 父场次 market）。
+func ApplyOrderBookFixtureMeta(row *persistententity.OrderBook, oc *persistententity.MarketOutcome, fx *persistententity.Market) {
+	if row == nil || oc == nil {
+		return
+	}
+	row.Category = oc.Category
+	row.SubCategory = oc.SubCategory
+	row.Competition = oc.Competition
+	if fx == nil {
+		return
+	}
+	if row.Category == nil {
+		row.Category = fx.Category
+	}
+	if row.SubCategory == nil {
+		row.SubCategory = fx.SubCategory
+	}
+	if row.Competition == nil {
+		row.Competition = fx.Competition
+	}
+	row.MapKey = fx.MapKey
+	row.CompetitionEn = fx.CompetitionEn
 }

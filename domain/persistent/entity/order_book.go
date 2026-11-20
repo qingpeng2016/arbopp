@@ -5,6 +5,11 @@ import "time"
 // OrderBook 报价快照（预测订单簿 / 赔率线）
 type OrderBook struct {
 	ID            int64     `gorm:"primaryKey;column:id;type:bigint;not null;autoIncrement"`
+	MapKey           *string `gorm:"column:map_key;type:varchar(192)"`
+	Category         *string `gorm:"column:category;type:varchar(200)"`
+	SubCategory      *string `gorm:"column:sub_category;type:varchar(200)"`
+	Competition      *string `gorm:"column:competition;type:varchar(64)"`
+	CompetitionEn    *string `gorm:"column:competition_en;type:varchar(128)"`
 	Platform         string  `gorm:"column:platform;type:varchar(32);not null;default:''"`
 	MarketRowID      uint    `gorm:"column:market_row_id;type:bigint unsigned;not null;default:0"` // 父场次 market.id
 	PlatformMarketID string  `gorm:"column:platform_market_id;type:varchar(255);not null;default:''"`

@@ -204,9 +204,14 @@ CREATE TABLE IF NOT EXISTS `market_outcome` (
 
 CREATE TABLE IF NOT EXISTS `market_order_book` (
   `id` bigint NOT NULL AUTO_INCREMENT,
-  `platform` varchar(32) NOT NULL DEFAULT '',
   `market_row_id` bigint unsigned NOT NULL DEFAULT 0 COMMENT '父场次 market.id',
-  `platform_market_id` varchar(255) NOT NULL DEFAULT '' COMMENT '父场次平台 ID，对应 market.platform_market_id',
+  `map_key` varchar(192) DEFAULT NULL COMMENT '跨平台场次对齐键 market.map_key',
+  `category` varchar(200) DEFAULT NULL,
+  `sub_category` varchar(200) DEFAULT NULL,
+  `competition` varchar(64) DEFAULT NULL COMMENT '联赛/杯赛名称（如英超）',
+  `competition_en` varchar(128) DEFAULT NULL COMMENT '统一英文名，来自配置 name_en',
+  `platform` varchar(32) NOT NULL DEFAULT '',
+  `platform_market_id` varchar(255) NOT NULL DEFAULT '' COMMENT '父场次平台 ID，对应 market.market_id',
   `market_name` text,
   `market_url` varchar(255) DEFAULT '',
   `platform_market_outcome_id` varchar(255) NOT NULL DEFAULT '' COMMENT '平台盘口 ID',
@@ -221,7 +226,8 @@ CREATE TABLE IF NOT EXISTS `market_order_book` (
   UNIQUE KEY `uniq_platform_outcome_token` (`platform`,`platform_market_outcome_id`,`token_id`),
   KEY `idx_order_book_market_row` (`market_row_id`),
   KEY `idx_order_book_platform_outcome` (`platform`,`platform_market_outcome_id`),
-  KEY `idx_order_book_platform_fixture` (`platform`,`platform_market_id`)
+  KEY `idx_order_book_platform_fixture` (`platform`,`platform_market_id`),
+  KEY `idx_order_book_map_key` (`map_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='报价快照（预测订单簿 / 赔率线）';
 
 -- strategy_entry 机会（二元 + 1X2）

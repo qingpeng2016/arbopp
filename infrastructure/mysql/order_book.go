@@ -125,7 +125,8 @@ func (r *OrderBookImpl) BatchUpsert(ctx context.Context, tx *gorm.DB, list []*en
 				{Name: "token_id"},
 			},
 			DoUpdates: clause.AssignmentColumns([]string{
-				"market_row_id", "platform_market_id",
+				"market_row_id", "map_key", "category", "sub_category", "competition", "competition_en",
+				"platform_market_id",
 				"market_name", "market_url", "market_address", "selection_id",
 				"order_book_asks", "order_book_bids", "updated_at",
 			}),

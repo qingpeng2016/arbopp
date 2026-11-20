@@ -94,7 +94,7 @@ func (j *OrderBook) Run(ctx context.Context) {
 	}
 
 	fetchCfg := j.resolveFetchConfig(ctx)
-	stats := j.syncPlatformsConcurrent(ctx, kalshiMarkets, polyMarkets, predictMarkets, fetchCfg)
+	stats := j.syncPlatformsConcurrent(ctx, fixtures, kalshiMarkets, polyMarkets, predictMarkets, fetchCfg)
 
 	for _, st := range []platformSyncStat{stats.kalshi, stats.poly, stats.predict} {
 		if st.platform == "" || st.err == nil {
@@ -128,7 +128,7 @@ type orderbookPlatformTotals struct {
 	kalshi, poly, predict platformSyncStat
 }
 
-func (j *OrderBook) syncPlatformsConcurrent(ctx context.Context, kalshiMarkets, polyMarkets, predictMarkets []persistententity.MarketOutcome, fetchCfg fetchopt.FetchConfig) orderbookPlatformTotals {
+func (j *OrderBook) syncPlatformsConcurrent(ctx context.Context, fixtures map[uint]persistententity.Market, kalshiMarkets, polyMarkets, predictMarkets []persistententity.MarketOutcome, fetchCfg fetchopt.FetchConfig) orderbookPlatformTotals {
 	type job struct {
 		platform string
 		run      func(context.Context) (int, int, error)
@@ -139,7 +139,7 @@ func (j *OrderBook) syncPlatformsConcurrent(ctx context.Context, kalshiMarkets, 
 		syncer := j.kalshiSyncer
 		jobs = append(jobs, job{
 			platform: string(cryptoPredictionEnum.PlatformKalshi),
-			run:      func(c context.Context) (int, int, error) { return syncer.Sync(c, mk, fetchCfg.Kalshi) },
+			run:      func(c context.Context) (int, int, error) { return syncer.Sync(c, mk, fixtures, fetchCfg.Kalshi) },
 		})
 	}
 	if len(polyMarkets) > 0 {
@@ -147,7 +147,7 @@ func (j *OrderBook) syncPlatformsConcurrent(ctx context.Context, kalshiMarkets, 
 		syncer := j.polySyncer
 		jobs = append(jobs, job{
 			platform: string(cryptoPredictionEnum.PlatformPolymarket),
-			run:      func(c context.Context) (int, int, error) { return syncer.Sync(c, mp, fetchCfg.Polymarket) },
+			run:      func(c context.Context) (int, int, error) { return syncer.Sync(c, mp, fixtures, fetchCfg.Polymarket) },
 		})
 	}
 	if len(predictMarkets) > 0 {
@@ -155,7 +155,7 @@ func (j *OrderBook) syncPlatformsConcurrent(ctx context.Context, kalshiMarkets, 
 		syncer := j.predictSyncer
 		jobs = append(jobs, job{
 			platform: string(cryptoPredictionEnum.PlatformPredict),
-			run:      func(c context.Context) (int, int, error) { return syncer.Sync(c, md, fetchCfg.Predict) },
+			run:      func(c context.Context) (int, int, error) { return syncer.Sync(c, md, fixtures, fetchCfg.Predict) },
 		})
 	}
 
