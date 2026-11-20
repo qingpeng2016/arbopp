@@ -97,9 +97,12 @@ func (f *Flush) flushBooks() {
 		f.mu.Unlock()
 		return
 	}
+	snap := time.Now().Unix()
 	rows := make([]*persistententity.OrderBook, 0, len(f.latest))
 	for _, row := range f.latest {
-		rows = append(rows, row)
+		dup := *row
+		dup.SnapshotSecond = snap
+		rows = append(rows, &dup)
 	}
 	f.latest = map[string]*persistententity.OrderBook{}
 	f.mu.Unlock()

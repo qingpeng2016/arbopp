@@ -757,7 +757,7 @@
         "name_desc": "ATP Tour",
         "sport_id": "atp",
         "tag_ids": [
-          101232
+          864
         ]
       },
       {
@@ -766,7 +766,7 @@
         "name_desc": "WTA Tour",
         "sport_id": "wta",
         "tag_ids": [
-          102123
+          864
         ]
       }
     ]

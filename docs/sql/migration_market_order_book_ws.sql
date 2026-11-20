@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS `market_order_book_ws` (
   `selection_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '赔率平台选项 ID',
   `order_book_asks` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `order_book_bids` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `snapshot_second` bigint NOT NULL DEFAULT 0 COMMENT '快照秒级别',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),

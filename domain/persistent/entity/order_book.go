@@ -23,6 +23,7 @@ type OrderBook struct {
 	SelectionID   *string   `gorm:"column:selection_id;type:varchar(255)"`
 	OrderBookAsks string    `gorm:"column:order_book_asks;type:text;not null"`
 	OrderBookBids string    `gorm:"column:order_book_bids;type:text;not null"`
+	SnapshotSecond int64  `gorm:"column:snapshot_second;type:bigint;not null;default:0"`
 	CreatedAt     time.Time `gorm:"column:created_at;type:datetime;not null;default:CURRENT_TIMESTAMP"`
 	UpdatedAt     time.Time `gorm:"column:updated_at;type:datetime;not null;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"`
 }

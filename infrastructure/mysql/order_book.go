@@ -128,7 +128,7 @@ func (r *OrderBookImpl) BatchUpsert(ctx context.Context, tx *gorm.DB, list []*en
 				"market_row_id", "map_key", "category", "sub_category", "competition", "competition_en",
 				"platform_market_id",
 				"market_name", "outcome_name", "token_name", "market_url", "market_address", "selection_id",
-				"order_book_asks", "order_book_bids", "updated_at",
+				"order_book_asks", "order_book_bids", "snapshot_second", "updated_at",
 			}),
 		}).CreateInBatches(list, 100).Error
 	})

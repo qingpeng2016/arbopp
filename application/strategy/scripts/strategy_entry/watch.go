@@ -510,6 +510,7 @@ func persistWSOrderBook(repo persistentrepo.OrderBookWSRepo, row *persistententi
 	if wsRow == nil {
 		return
 	}
+	wsRow.SnapshotSecond = time.Now().Unix()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := repo.BatchUpsert(ctx, nil, []*persistententity.OrderBookWS{wsRow}); err != nil {
