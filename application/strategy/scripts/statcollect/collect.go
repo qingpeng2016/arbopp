@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketmap"
 	strategyentry "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/dederi/logger"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/notification"
@@ -29,6 +30,9 @@ const (
 	groupStatMeta     = "stat_meta"
 
 	jsonTotalKey = "__total__"
+
+	preEventScanConfigKey  = "pre_event_scan_minutes"
+	defaultPreEventScanMin = 30
 )
 
 // Collect 刷新 stat_kv：map_key 审计 + 各平台 JSON 汇总（market/outcome/map_key 按子类）。
@@ -120,11 +124,17 @@ func (c *Collect) Run(ctx context.Context) {
 		notification.SendErrorLog(ctx, "stat_collect-watch_groups-failed", zap.Error(watchErr))
 		watchCounts = strategyentry.WatchGroupCounts{}
 	}
+	preEventRunnable, preErr := c.countPreEventRunnableGroups(ctx)
+	if preErr != nil {
+		notification.SendErrorLog(ctx, "stat_collect-pre_event_runnable-failed", zap.Error(preErr))
+		preEventRunnable = 0
+	}
 	audit := mapKeyAudit{
-		Watchable: int64(watchCounts.Watchable),
-		Matched:   int64(watchCounts.Matched),
-		BadLt2:    badOnly.BadLt2,
-		BadDup:    badOnly.BadDup,
+		Watchable:          int64(watchCounts.Watchable),
+		Matched:            int64(watchCounts.Matched),
+		PreEventRunnable:   preEventRunnable,
+		BadLt2:             badOnly.BadLt2,
+		BadDup:             badOnly.BadDup,
 	}
 	auditRows := mapKeyAuditRows(audit)
 
@@ -148,6 +158,7 @@ func (c *Collect) Run(ctx context.Context) {
 	logger.InfoZ(ctx, "stat_collect-done",
 		zap.Int64("matched_groups", audit.Matched),
 		zap.Int64("watchable_groups", audit.Watchable),
+		zap.Int64("pre_event_runnable_groups", audit.PreEventRunnable),
 		zap.Int64("bad_lt2", audit.BadLt2),
 		zap.Int64("bad_dup", audit.BadDup),
 		zap.Bool("watch_groups_ok", watchErr == nil),
@@ -158,10 +169,11 @@ func (c *Collect) Run(ctx context.Context) {
 }
 
 type mapKeyAudit struct {
-	Matched   int64
-	Watchable int64
-	BadLt2    int64
-	BadDup    int64
+	Matched          int64
+	Watchable        int64
+	PreEventRunnable int64
+	BadLt2           int64
+	BadDup           int64
 }
 
 func (c *Collect) loadMapKeyAuditBadOnly(ctx context.Context) (mapKeyAudit, error) {
@@ -250,6 +262,137 @@ SELECT COUNT(*) AS cnt FROM (
 		return 0, err
 	}
 	return int(row.Cnt), nil
+}
+
+// countPreEventRunnableGroups 与 strategy_entry.loadGroups 的 pre_event_scan_minutes 窗口一致（默认 30 分钟）。
+func (c *Collect) countPreEventRunnableGroups(ctx context.Context) (int64, error) {
+	if c.marketRepo == nil || c.outcomeRepo == nil {
+		return 0, nil
+	}
+	fixtures, err := marketmap.LoadVerifiedFixturesNew(ctx, c.marketRepo, c.configStrategyRepo, c.platformRepo)
+	if err != nil {
+		return 0, err
+	}
+	if len(fixtures) == 0 {
+		return 0, nil
+	}
+	preMins := c.loadPreEventScanMinutes(ctx)
+	runnableKeys := statRunnableMapKeys(fixtures, time.Now().UTC(), preMins)
+	if len(runnableKeys) == 0 {
+		return 0, nil
+	}
+	marketIDs := make([]uint, 0, len(fixtures))
+	for id := range fixtures {
+		marketIDs = append(marketIDs, id)
+	}
+	_, raw, err := c.outcomeRepo.List(ctx, nil, map[string]interface{}{
+		"market_row_id IN ?": marketIDs,
+	}, "id asc", "")
+	if err != nil {
+		return 0, err
+	}
+	outcomes := marketmap.FilterOutcomesUnderVerifiedFixtures(raw, fixtures)
+	groups := map[string]struct{}{}
+	for i := range outcomes {
+		oc := outcomes[i]
+		fx, ok := fixtures[oc.MarketRowID]
+		if !ok || fx.MapKey == nil {
+			continue
+		}
+		k := strings.TrimSpace(*fx.MapKey)
+		if _, ok := runnableKeys[k]; !ok {
+			continue
+		}
+		groups[k] = struct{}{}
+	}
+	return int64(len(groups)), nil
+}
+
+func (c *Collect) loadPreEventScanMinutes(ctx context.Context) int {
+	if c.configStrategyRepo == nil {
+		return defaultPreEventScanMin
+	}
+	cfg, err := c.configStrategyRepo.FindOne(ctx, nil, map[string]interface{}{
+		"group_name = ?": marketmap.ConfigGroupStrategyEntry,
+		"item_key = ?":   preEventScanConfigKey,
+		"is_enabled = ?": 1,
+	}, "")
+	if err != nil {
+		if err != gorm.ErrRecordNotFound {
+			notification.SendErrorLog(ctx, "stat_collect-pre_event_scan_minutes-read-failed", zap.Error(err))
+		}
+		return defaultPreEventScanMin
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(cfg.ItemValue))
+	if err != nil {
+		return defaultPreEventScanMin
+	}
+	return n
+}
+
+func statRunnableMapKeys(fixtures map[uint]persistententity.Market, now time.Time, preEventScanMinutes int) map[string]struct{} {
+	rowsByKey := make(map[string][]persistententity.Market)
+	for _, fx := range fixtures {
+		if fx.MapKey == nil || fx.MapVerified != 1 {
+			continue
+		}
+		k := strings.TrimSpace(*fx.MapKey)
+		if k == "" {
+			continue
+		}
+		rowsByKey[k] = append(rowsByKey[k], fx)
+	}
+	out := make(map[string]struct{})
+	for k, rows := range rowsByKey {
+		if dup, _, _ := marketmap.MapKeyDuplicatePlatform(rows); dup {
+			continue
+		}
+		if !marketmap.MapKeyHasTwoPlatforms(rows) {
+			continue
+		}
+		if !statMapKeyWithinPreEventScan(rows, now, preEventScanMinutes) {
+			continue
+		}
+		out[k] = struct{}{}
+	}
+	return out
+}
+
+// statMapKeyWithinPreEventScan 与 strategy_entry.mapKeyWithinPreEventScan 相同。
+func statMapKeyWithinPreEventScan(rows []persistententity.Market, now time.Time, preEventScanMinutes int) bool {
+	if preEventScanMinutes <= 0 {
+		return true
+	}
+	var start time.Time
+	hasStart := false
+	layouts := []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05", "2006-01-02T15:04:05Z"}
+	for i := range rows {
+		if rows[i].EventStartTime == nil {
+			continue
+		}
+		raw := strings.TrimSpace(*rows[i].EventStartTime)
+		if raw == "" {
+			continue
+		}
+		var t time.Time
+		parsed := false
+		for _, layout := range layouts {
+			if pt, err := time.Parse(layout, raw); err == nil {
+				t, parsed = pt.UTC(), true
+				break
+			}
+		}
+		if !parsed {
+			continue
+		}
+		if !hasStart || t.Before(start) {
+			start, hasStart = t, true
+		}
+	}
+	if !hasStart {
+		return false
+	}
+	return !start.After(now.UTC().Add(time.Duration(preEventScanMinutes) * time.Minute))
 }
 
 type platformSubCountRow struct {
@@ -368,11 +511,13 @@ func mapKeyAuditRows(a mapKeyAudit) []*persistententity.StatKV {
 		kvStat(groupMapKeyAudit, "watchable_groups", strconv.FormatInt(a.Watchable, 10), "int",
 			"strategy_entry 应对监控组数（与 loadGroups/max_groups 一致）", 1),
 		kvStat(groupMapKeyAudit, "matched_groups", strconv.FormatInt(a.Matched, 10), "int",
-			"strategy_entry 库内匹配组数（未截 max_groups）", 2),
+			"strategy_entry 库内匹配组数（未截 max_groups，不含开赛前窗口）", 2),
+		kvStat(groupMapKeyAudit, "pre_event_runnable_groups", strconv.FormatInt(a.PreEventRunnable, 10), "int",
+			"满足 pre_event_scan_minutes 开赛前窗口且可跑的 map_key 组数（与 loadGroups 时间窗一致）", 3),
 		kvStat(groupMapKeyAudit, "bad_lt2_platform_groups", strconv.FormatInt(a.BadLt2, 10), "int",
-			"map_key 平台数<2 的组数（audit D）", 3),
+			"map_key 平台数<2 的组数（audit D）", 4),
 		kvStat(groupMapKeyAudit, "bad_dup_platform_groups", strconv.FormatInt(a.BadDup, 10), "int",
-			"map_key 同平台重复组数（audit D）", 4),
+			"map_key 同平台重复组数（audit D）", 5),
 	}
 }
 
