@@ -18,7 +18,7 @@ type Snapshot struct {
 	Outcomes    []persistententity.MarketOutcome
 }
 
-// LoadFromStatKV 读 description JSON；按各 group.map_key 加载 ACTIVE 场次与盘口。
+// LoadFromStatKV 读 description JSON；按各 group.map_key 加载 ACTIVE 场次及其盘口（盘口无 status，随 market）。
 func LoadFromStatKV(
 	ctx context.Context,
 	statRepo persistentrepo.StatKVRepo,
@@ -70,7 +70,6 @@ func LoadFromStatKV(
 	}
 	_, outcomes, err := outcomeRepo.List(ctx, nil, map[string]interface{}{
 		"market_row_id IN ?": marketRowIDs,
-		"status = ?":         "ACTIVE",
 	}, "platform asc, id asc", "")
 	if err != nil {
 		return out, err
