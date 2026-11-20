@@ -26,6 +26,7 @@ type Entry struct {
 	marketRepo         persistentrepo.MarketRepo
 	outcomeRepo        persistentrepo.MarketOutcomeRepo
 	bookRepo           persistentrepo.OrderBookRepo
+	wsBookRepo         persistentrepo.OrderBookWSRepo
 	thresholdRepo      persistentrepo.ConfigStrategyThresholdRepo
 	feeRepo            persistentrepo.ConfigStrategyFeeRepo
 	oppRepo            persistentrepo.ArbBinaryOpportunityRepo
@@ -67,6 +68,7 @@ func NewEntry(
 	marketRepo persistentrepo.MarketRepo,
 	outcomeRepo persistentrepo.MarketOutcomeRepo,
 	bookRepo persistentrepo.OrderBookRepo,
+	wsBookRepo persistentrepo.OrderBookWSRepo,
 	thresholdRepo persistentrepo.ConfigStrategyThresholdRepo,
 	feeRepo persistentrepo.ConfigStrategyFeeRepo,
 	oppRepo persistentrepo.ArbBinaryOpportunityRepo,
@@ -83,6 +85,7 @@ func NewEntry(
 		marketRepo:         marketRepo,
 		outcomeRepo:        outcomeRepo,
 		bookRepo:           bookRepo,
+		wsBookRepo:         wsBookRepo,
 		thresholdRepo:      thresholdRepo,
 		feeRepo:            feeRepo,
 		oppRepo:            oppRepo,

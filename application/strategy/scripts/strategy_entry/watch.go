@@ -383,8 +383,7 @@ func (w *watch) write(e event) {
 	}
 	w.touchWS(e.Platform)
 
-	// 记录订单簿
-	// w.enqueueBookPersist(e)
+	w.enqueueBookPersistWS(e)
 
 	var outcomeID uint
 	var ok bool
@@ -483,16 +482,112 @@ func (w *watch) polyYesTokensTouched(changes []book.PolyChange) map[string]struc
 	return out
 }
 
-// enqueueBookPersist 把本条 WS 对应的盘口交给 Flush 合并落库，避免每条 price_change 起 goroutine 并发 Upsert 死锁。
-func (w *watch) enqueueBookPersist(e event) {
-	if w.entry == nil || w.entry.flush == nil {
+// enqueueBookPersistWS 每条 WS 在独立协程写入 market_order_book_ws（完整内存盘口 JSON）。
+func (w *watch) enqueueBookPersistWS(e event) {
+	if w.entry == nil || w.entry.wsBookRepo == nil {
 		return
 	}
-	for _, row := range w.orderBookRowsFromEvent(e) {
-		if row != nil {
-			w.entry.flush.Book(row)
+	rows := w.orderBookRowsFromEvent(e)
+	if len(rows) == 0 {
+		return
+	}
+	repo := w.entry.wsBookRepo
+	for _, row := range rows {
+		if row == nil {
+			continue
+		}
+		dup := cloneOrderBookRow(row)
+		w.enrichBookRow(dup)
+		go persistWSOrderBook(repo, dup)
+	}
+}
+
+func persistWSOrderBook(repo persistentrepo.OrderBookWSRepo, row *persistententity.OrderBook) {
+	if repo == nil || row == nil {
+		return
+	}
+	wsRow := persistententity.OrderBookWSCopy(row)
+	if wsRow == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := repo.BatchUpsert(ctx, nil, []*persistententity.OrderBookWS{wsRow}); err != nil {
+		notification.SendErrorLog(ctx, "strategy_entry-ws-book-upsert",
+			zap.Error(err),
+			zap.String("platform", row.Platform),
+			zap.String("outcome_id", row.PlatformMarketOutcomeID),
+			zap.String("token_id", row.TokenID))
+	}
+}
+
+func cloneOrderBookRow(src *persistententity.OrderBook) *persistententity.OrderBook {
+	if src == nil {
+		return nil
+	}
+	dup := *src
+	if src.MapKey != nil {
+		v := *src.MapKey
+		dup.MapKey = &v
+	}
+	if src.Category != nil {
+		v := *src.Category
+		dup.Category = &v
+	}
+	if src.SubCategory != nil {
+		v := *src.SubCategory
+		dup.SubCategory = &v
+	}
+	if src.Competition != nil {
+		v := *src.Competition
+		dup.Competition = &v
+	}
+	if src.CompetitionEn != nil {
+		v := *src.CompetitionEn
+		dup.CompetitionEn = &v
+	}
+	if src.MarketName != nil {
+		v := *src.MarketName
+		dup.MarketName = &v
+	}
+	if src.SelectionID != nil {
+		v := *src.SelectionID
+		dup.SelectionID = &v
+	}
+	return &dup
+}
+
+func (w *watch) enrichBookRow(row *persistententity.OrderBook) {
+	if w == nil || row == nil {
+		return
+	}
+	oc := w.outcomeForBookRow(row)
+	if oc == nil {
+		return
+	}
+	var fx *persistententity.Market
+	if m, ok := w.MarketsByRowID[oc.MarketRowID]; ok {
+		fx = &m
+	}
+	obcommon.ApplyOrderBookFixtureMeta(row, oc, fx)
+}
+
+func (w *watch) outcomeForBookRow(row *persistententity.OrderBook) *persistententity.MarketOutcome {
+	if w == nil || row == nil {
+		return nil
+	}
+	wantPlat := strings.ToUpper(strings.TrimSpace(row.Platform))
+	wantOutcome := strings.TrimSpace(row.PlatformMarketOutcomeID)
+	for i := range w.Outcomes {
+		oc := &w.Outcomes[i]
+		if strings.ToUpper(strings.TrimSpace(oc.Platform)) != wantPlat {
+			continue
+		}
+		if strings.TrimSpace(oc.PlatformMarketOutcomeID) == wantOutcome {
+			return oc
 		}
 	}
+	return nil
 }
 
 // orderBookRowsFromEvent 按平台与事件类型取出待落库的盘口行。
@@ -550,11 +645,18 @@ func (w *watch) bookRowsForPredictMarket(marketID string) []*persistententity.Or
 	if !ok {
 		return nil
 	}
-	return predictPersistRows(&w.Outcomes[idx], b.Bids, b.Asks)
+	return w.predictPersistRows(&w.Outcomes[idx], b.Bids, b.Asks)
 }
 
-func predictPersistRows(oc *persistententity.MarketOutcome, yesBids, yesAsks []book.Level) []*persistententity.OrderBook {
-	rows := obcommon.PredictBookRows(oc, yesBids, yesAsks)
+func (w *watch) predictPersistRows(oc *persistententity.MarketOutcome, yesBids, yesAsks []book.Level) []*persistententity.OrderBook {
+	if w == nil || oc == nil {
+		return nil
+	}
+	var fx *persistententity.Market
+	if m, ok := w.MarketsByRowID[oc.MarketRowID]; ok {
+		fx = &m
+	}
+	rows := obcommon.PredictBookRowsWithFixture(oc, fx, yesBids, yesAsks)
 	if len(rows) == 0 {
 		return nil
 	}
@@ -627,7 +729,7 @@ func (w *watch) bookRowsForHit(aIndex, bIndex int) []*persistententity.OrderBook
 			continue
 		}
 		if strings.EqualFold(oc.Platform, appcommon.PlatformPredict) {
-			rows = append(rows, predictPersistRows(&w.Outcomes[idx], bk.Bids, bk.Asks)...)
+			rows = append(rows, w.predictPersistRows(&w.Outcomes[idx], bk.Bids, bk.Asks)...)
 			continue
 		}
 		rows = append(rows, bookRow(&w.Outcomes[idx], bk.Bids, bk.Asks, bookID))

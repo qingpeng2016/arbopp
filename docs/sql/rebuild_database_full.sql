@@ -231,6 +231,34 @@ CREATE TABLE IF NOT EXISTS `market_order_book` (
   KEY `idx_order_book_map_key` (`map_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='报价快照（预测订单簿 / 赔率线）';
 
+CREATE TABLE IF NOT EXISTS `market_order_book_ws` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `market_row_id` bigint unsigned NOT NULL DEFAULT 0 COMMENT '父场次 market.id',
+  `map_key` varchar(192) DEFAULT NULL COMMENT '跨平台场次对齐键 market.map_key',
+  `category` varchar(200) DEFAULT NULL,
+  `sub_category` varchar(200) DEFAULT NULL,
+  `competition` varchar(64) DEFAULT NULL COMMENT '联赛/杯赛名称（如英超）',
+  `competition_en` varchar(128) DEFAULT NULL COMMENT '统一英文名，来自配置 name_en',
+  `platform` varchar(32) NOT NULL DEFAULT '',
+  `platform_market_id` varchar(255) NOT NULL DEFAULT '' COMMENT '父场次平台 ID',
+  `market_name` text,
+  `market_url` varchar(255) DEFAULT '',
+  `platform_market_outcome_id` varchar(255) NOT NULL DEFAULT '' COMMENT '平台盘口 ID',
+  `market_address` varchar(255) DEFAULT '',
+  `token_id` varchar(160) NOT NULL DEFAULT '' COMMENT '预测=token_id；赔率=selection_id 或空',
+  `selection_id` varchar(255) DEFAULT NULL COMMENT '赔率平台选项 ID',
+  `order_book_asks` text NOT NULL,
+  `order_book_bids` text NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_platform_outcome_token` (`platform`,`platform_market_outcome_id`,`token_id`),
+  KEY `idx_order_book_ws_market_row` (`market_row_id`),
+  KEY `idx_order_book_ws_platform_outcome` (`platform`,`platform_market_outcome_id`),
+  KEY `idx_order_book_ws_platform_fixture` (`platform`,`platform_market_id`),
+  KEY `idx_order_book_ws_map_key` (`map_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='WS 报价快照（strategy_entry）';
+
 -- strategy_entry 机会（二元 + 1X2）
 CREATE TABLE IF NOT EXISTS `arb_binary_opportunity` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',

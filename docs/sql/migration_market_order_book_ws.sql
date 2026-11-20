@@ -1,0 +1,28 @@
+-- strategy_entry WS 盘口快照（与 market_order_book 同结构；REST orderbook_sync 仍写 market_order_book）
+CREATE TABLE IF NOT EXISTS `market_order_book_ws` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `market_row_id` bigint unsigned NOT NULL DEFAULT 0 COMMENT '父场次 market.id',
+  `map_key` varchar(192) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '跨平台场次对齐键 market.map_key',
+  `category` varchar(200) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sub_category` varchar(200) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `competition` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '联赛/杯赛名称（如英超）',
+  `competition_en` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '统一英文名，来自配置 name_en',
+  `platform` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `platform_market_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '父场次平台 ID',
+  `platform_market_outcome_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '平台盘口 ID',
+  `market_name` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `market_url` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT '',
+  `market_address` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT '',
+  `token_id` varchar(160) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '预测=token_id；赔率=selection_id 或空',
+  `selection_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '赔率平台选项 ID',
+  `order_book_asks` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `order_book_bids` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_platform_outcome_token` (`platform`,`platform_market_outcome_id`,`token_id`),
+  KEY `idx_order_book_ws_market_row` (`market_row_id`),
+  KEY `idx_order_book_ws_platform_outcome` (`platform`,`platform_market_outcome_id`),
+  KEY `idx_order_book_ws_platform_fixture` (`platform`,`platform_market_id`),
+  KEY `idx_order_book_ws_map_key` (`map_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='WS 报价快照（strategy_entry）';

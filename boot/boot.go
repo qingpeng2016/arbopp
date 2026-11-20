@@ -63,6 +63,7 @@ func BuildContainer() *dig.Container {
 	_ = c.Provide(mysql.NewMarketImpl)
 	_ = c.Provide(mysql.NewMarketOutcomeImpl)
 	_ = c.Provide(mysql.NewOrderBookImpl)
+	_ = c.Provide(mysql.NewOrderBookWSImpl)
 	_ = c.Provide(mysql.NewDataPlatformImpl)
 	_ = c.Provide(mysql.NewHistoryDataOrderBookImpl)
 	_ = c.Provide(mysql.NewHistoryMarketEventImpl)
