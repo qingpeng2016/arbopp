@@ -3,8 +3,8 @@ package strategyentry
 import (
 	"context"
 	"fmt"
-	"sort"
 	"go.uber.org/zap"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,8 +14,8 @@ import (
 	appcommon "github.com/gph-tech/fgmm-strategy-bitfinex/application/common"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketmap"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/persist"
-	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/wsbookqueue"
 	entrystat "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/stat"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/wsbookqueue"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/notification"
 	httprepo "github.com/gph-tech/fgmm-strategy-bitfinex/domain/http/repository"
 	persistentrepo "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/repository"
@@ -195,7 +195,7 @@ func (e *Entry) Stop() {
 	}
 }
 
-// loop 先对一次账，之后每 20 秒再对一次。行情不走这里。
+// loop 先对一次账，之后每 20 秒再对一次。行情不走这里。1
 func (e *Entry) loop(ctx context.Context) {
 	defer close(e.done)
 	e.flush = persist.Start(e.bookRepo, e.oppRepo)
@@ -400,9 +400,9 @@ func (e *Entry) flushMarketRunningCountStrategy(ctx context.Context, wantByKey m
 	}
 	entrystat.FlushMarketRunningCountStrategy(ctx, entrystat.MarketRunningOpts{
 		StatRepo:            e.statRepo,
-		PreEventScanMinutes:   LoadPreEventScanMinutes(ctx, e.configStrategyRepo),
-		EndEventScanMinutes:   LoadEndEventScanMinutes(ctx, e.configStrategyRepo),
-		Groups:                e.runningMarketGroupsForStat(wantByKey),
+		PreEventScanMinutes: LoadPreEventScanMinutes(ctx, e.configStrategyRepo),
+		EndEventScanMinutes: LoadEndEventScanMinutes(ctx, e.configStrategyRepo),
+		Groups:              e.runningMarketGroupsForStat(wantByKey),
 	})
 }
 
