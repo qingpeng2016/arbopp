@@ -22,6 +22,16 @@ func StrPtr255(s string) *string {
 	return &s
 }
 
+// StrPtr255NilIfEmpty 空串写 NULL；非空则截断 255（用于 event_start/end 跟 API 一致）。
+func StrPtr255NilIfEmpty(s string) *string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	s = Truncate(s, 255)
+	return &s
+}
+
 func StrPtr200(s string) *string {
 	s = Truncate(s, 200)
 	return &s

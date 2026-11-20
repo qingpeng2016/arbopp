@@ -54,16 +54,23 @@ func extractPolymarketTimes(m *httpentity.Market) (eventStart, eventEnd, marketS
 	if eventStart == "" {
 		eventStart = formatStd(parsePolyDT(m.StartDateIso))
 	}
+	sportsGame := strings.TrimSpace(m.GameStartTime) != "" || strings.TrimSpace(m.EventStartTime) != ""
 	if len(m.Events) > 0 {
 		e := &m.Events[0]
 		eventEnd = formatStd(parsePolyDT(e.FinishedTimestamp))
 		marketEnd = formatStd(parsePolyDT(e.ClosedTime))
+		if eventEnd == "" {
+			eventEnd = formatStd(parsePolyDT(e.ClosedTime))
+		}
 	}
-	if eventEnd == "" && !m.EndDate.IsZero() {
-		eventEnd = m.EndDate.UTC().Format("2006-01-02 15:04:05")
-	}
-	if eventEnd == "" {
-		eventEnd = formatStd(parsePolyDT(m.EndDateIso))
+	// 体育：无 finished/closed 时不拿 market endDate 当赛事结束（常为开赛时刻，会误杀 pre_event）。
+	if eventEnd == "" && !sportsGame {
+		if !m.EndDate.IsZero() {
+			eventEnd = m.EndDate.UTC().Format("2006-01-02 15:04:05")
+		}
+		if eventEnd == "" {
+			eventEnd = formatStd(parsePolyDT(m.EndDateIso))
+		}
 	}
 	if marketEnd == "" && eventEnd != "" {
 		marketEnd = eventEnd

@@ -46,8 +46,8 @@ func polymarketFixtureFromEvent(
 		title = common.Truncate(strings.TrimSpace(strings.TrimSuffix(ev.Title, " - More Markets")), 2000)
 	}
 	slug := common.StrPtr255(polymarketEventSlugBase(ev))
-	evStart := common.StrPtr255(strings.TrimSpace(ev.StartDate))
-	evEnd := common.StrPtr255(strings.TrimSpace(ev.EndDate))
+	evStart := common.StrPtr255NilIfEmpty(ev.StartDate)
+	evEnd := common.StrPtr255NilIfEmpty(ev.EndDate)
 	url := buildPolymarketEventURL(ev.Slug)
 	return &persistententity.Market{
 		Platform:         platform,
@@ -252,8 +252,8 @@ func polymarketFixtureFromFlatMarket(
 		Name:             common.StrPtr(common.Truncate(name, 2000)),
 		PlatformMarketID: fid,
 		MarketURL:        buildPolymarketEventURL(urlSlug),
-		EventStartTime:   common.StrPtr255(evStart),
-		EventEndTime:     common.StrPtr255(evEnd),
+		EventStartTime:   common.StrPtr255NilIfEmpty(evStart),
+		EventEndTime:     common.StrPtr255NilIfEmpty(evEnd),
 		Status:           string(cryptoPredictionEnum.MarketStatusActive),
 		Category:         common.StrPtr200(category),
 		SubCategory:      common.StrPtr200(subCategory),
