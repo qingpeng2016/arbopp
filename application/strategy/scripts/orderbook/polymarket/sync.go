@@ -54,7 +54,8 @@ func (s *Syncer) syncChunk(ctx context.Context, ch fetchChunk, fixtures map[uint
 	if resp != nil {
 		books = resp.OrderBooks
 	}
-	rows, batchMissed := booksToRows(ch.markets, books, fixtures)
+	snap := common.RestFetchSnapshotSecond()
+	rows, batchMissed := booksToRows(ch.markets, books, fixtures, snap)
 	missed = batchMissed
 	if len(rows) == 0 {
 		return 0, missed, nil
@@ -65,7 +66,7 @@ func (s *Syncer) syncChunk(ctx context.Context, ch fetchChunk, fixtures map[uint
 	return len(rows), missed, nil
 }
 
-func booksToRows(markets []persistententity.MarketOutcome, books []httpentity.OrderBookResponse, fixtures map[uint]persistententity.Market) ([]*persistententity.OrderBook, int) {
+func booksToRows(markets []persistententity.MarketOutcome, books []httpentity.OrderBookResponse, fixtures map[uint]persistententity.Market, snapshotSecond int64) ([]*persistententity.OrderBook, int) {
 	byAsset := make(map[string]httpentity.OrderBookResponse, len(books))
 	for _, b := range books {
 		id := strings.TrimSpace(b.AssetID)
@@ -98,8 +99,7 @@ func booksToRows(markets []persistententity.MarketOutcome, books []httpentity.Or
 		if f, ok := fixtures[m.MarketRowID]; ok {
 			fx = &f
 		}
-		snap := common.SnapshotSecondOrNow(common.SnapshotSecondFromPolyTimestamp(book.Timestamp))
-		out = append(out, common.RowFromOutcomeAt(&m, fx, string(bidsJSON), string(asksJSON), token, snap))
+		out = append(out, common.RowFromOutcomeAt(&m, fx, string(bidsJSON), string(asksJSON), token, snapshotSecond))
 	}
 	return out, missed
 }

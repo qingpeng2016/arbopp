@@ -82,19 +82,21 @@ func (j *OrderBook) pollTick(ctx context.Context, cached *running.Snapshot) {
 		return
 	}
 	snap, err := running.LoadFromStatKV(ctx, j.statRepo, j.marketRepo, j.outcomeRepo)
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			*cached = running.Snapshot{}
+			return
+		}
 		notification.SendErrorLog(ctx, "orderbook-poll-stat-load-failed", zap.Error(err))
 		return
 	}
-	if snap.Fingerprint != cached.Fingerprint {
-		*cached = snap
-		if len(snap.Groups) > 0 {
-			logger.InfoZ(ctx, "orderbook-poll-targets-reloaded",
-				zap.Int("groups", len(snap.Groups)),
-				zap.Int("outcomes", len(snap.Outcomes)))
-		}
+	if cached.Fingerprint != snap.Fingerprint && len(snap.Groups) > 0 {
+		logger.InfoZ(ctx, "orderbook-poll-targets-reloaded",
+			zap.Int("groups", len(snap.Groups)),
+			zap.Int("outcomes", len(snap.Outcomes)))
 	}
-	if len(cached.Outcomes) == 0 {
+	*cached = snap
+	if len(cached.Groups) == 0 || len(cached.Outcomes) == 0 {
 		return
 	}
 

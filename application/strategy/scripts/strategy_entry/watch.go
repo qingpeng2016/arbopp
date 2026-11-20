@@ -725,7 +725,11 @@ func (w *watch) predictPersistRows(oc *persistententity.MarketOutcome, yesBids, 
 	if m, ok := w.MarketsByRowID[oc.MarketRowID]; ok {
 		fx = &m
 	}
-	rows := obcommon.PredictBookRowsWithFixture(oc, fx, yesBids, yesAsks, updateTimestampMs)
+	snapSec := updateTimestampMs / 1000
+	if snapSec <= 0 {
+		snapSec = time.Now().Unix()
+	}
+	rows := obcommon.PredictBookRowsWithFixture(oc, fx, yesBids, yesAsks, snapSec)
 	if len(rows) == 0 {
 		return nil
 	}

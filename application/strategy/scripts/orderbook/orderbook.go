@@ -6,8 +6,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketmap"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/orderbook/fetchopt"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/orderbook/running"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/orderbook/kalshi"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/orderbook/polymarket"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/orderbook/predict"
@@ -18,6 +18,7 @@ import (
 	persistententity "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/entity"
 	persistentrepo "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/repository"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // OrderBook 拉取已核对市场的订单簿并写入 market_order_book（批量 API + BatchUpsert）。
@@ -69,7 +70,7 @@ func NewOrderBook(
 	}
 }
 
-// Run orderbook_sync：config_strategy.watch_map_keys 指定场次下的 ACTIVE 盘口，按平台批量拉盘口并 upsert。
+// Run orderbook_sync：与 poll 相同，仅 stat_kv market_running_count_strategy.groups 非空时拉盘口。
 func (j *OrderBook) Run(ctx context.Context) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -78,52 +79,50 @@ func (j *OrderBook) Run(ctx context.Context) {
 				zap.String("stack", string(debug.Stack())))
 		}
 	}()
-	if j.outcomeRepo == nil || j.marketRepo == nil || j.kalshiSyncer == nil || j.kalshiSyncer.Books == nil {
-		notification.SendErrorLog(ctx, "orderbook_sync-skipped", zap.String("reason", "repo nil"))
-		return
-	}
+	j.syncRunningStatOnce(ctx, "orderbook_sync")
+}
 
-	fixtures, err := marketmap.LoadVerifiedFixturesNew(ctx, j.marketRepo, j.configStrategyRepo, j.platformRepo)
-	if err != nil {
-		notification.SendErrorLog(ctx, "orderbook_sync-ListFixturesFailed", zap.Error(err))
+func (j *OrderBook) syncRunningStatOnce(ctx context.Context, logPrefix string) {
+	if j.outcomeRepo == nil || j.marketRepo == nil || j.statRepo == nil || j.kalshiSyncer == nil || j.kalshiSyncer.Books == nil {
+		notification.SendErrorLog(ctx, logPrefix+"-skipped", zap.String("reason", "repo nil"))
 		return
 	}
-	_, raw, err := j.outcomeRepo.List(ctx, nil, nil, "platform asc, id asc", "")
+	snap, err := running.LoadFromStatKV(ctx, j.statRepo, j.marketRepo, j.outcomeRepo)
 	if err != nil {
-		notification.SendErrorLog(ctx, "orderbook_sync-ListMarketsFailed", zap.Error(err))
+		if err == gorm.ErrRecordNotFound {
+			logger.InfoZ(ctx, logPrefix+"-no-running-stat")
+			return
+		}
+		notification.SendErrorLog(ctx, logPrefix+"-stat-load-failed", zap.Error(err))
 		return
 	}
-	rows := marketmap.FilterOutcomesUnderVerifiedFixtures(raw, fixtures)
+	if len(snap.Groups) == 0 || len(snap.Outcomes) == 0 {
+		logger.InfoZ(ctx, logPrefix+"-no-running-groups")
+		return
+	}
+	rows := snap.Outcomes
 	kalshiMarkets, polyMarkets, predictMarkets := splitOutcomesByPlatform(rows)
-	if len(kalshiMarkets) == 0 && len(polyMarkets) == 0 && len(predictMarkets) == 0 {
-		logger.InfoZ(ctx, "orderbook_sync-no-markets",
-			zap.Int("scanned", len(rows)))
-		return
-	}
-
 	fetchCfg := j.resolveFetchConfig(ctx)
-	stats := j.syncPlatformsConcurrent(ctx, fixtures, kalshiMarkets, polyMarkets, predictMarkets, fetchCfg)
+	stats := j.syncPlatformsConcurrent(ctx, snap.Fixtures, kalshiMarkets, polyMarkets, predictMarkets, fetchCfg)
 
 	for _, st := range []platformSyncStat{stats.kalshi, stats.poly, stats.predict} {
 		if st.platform == "" || st.err == nil {
 			continue
 		}
-		notification.SendErrorLog(ctx, "orderbook_sync-PlatformFailed",
+		notification.SendErrorLog(ctx, logPrefix+"-platform-failed",
 			zap.String("platform", st.platform),
 			zap.Error(st.err))
 	}
 
-	logger.InfoZ(ctx, "orderbook_sync-Completed",
-		zap.Int("markets_scanned", len(rows)),
+	logger.InfoZ(ctx, logPrefix+"-completed",
+		zap.Int("groups", len(snap.Groups)),
+		zap.Int("outcomes", len(rows)),
 		zap.Int("kalshi_targets", len(kalshiMarkets)),
 		zap.Int("kalshi_upserted", stats.kalshi.upserted),
-		zap.Int("kalshi_missed", stats.kalshi.missed),
 		zap.Int("poly_targets", len(polyMarkets)),
 		zap.Int("poly_upserted", stats.poly.upserted),
-		zap.Int("poly_missed", stats.poly.missed),
 		zap.Int("predict_targets", len(predictMarkets)),
-		zap.Int("predict_upserted", stats.predict.upserted),
-		zap.Int("predict_missed", stats.predict.missed))
+		zap.Int("predict_upserted", stats.predict.upserted))
 }
 
 type platformSyncStat struct {
