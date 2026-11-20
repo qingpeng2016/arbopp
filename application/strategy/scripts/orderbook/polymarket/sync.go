@@ -79,27 +79,28 @@ func booksToRows(markets []persistententity.MarketOutcome, books []httpentity.Or
 	missed := 0
 	for i := range markets {
 		m := markets[i]
-		token := strings.TrimSpace(m.YesTokenID)
-		book, ok := byAsset[token]
-		if !ok {
-			missed++
-			continue
-		}
-		bidsJSON, err := json.Marshal(book.Bids)
-		if err != nil {
-			missed++
-			continue
-		}
-		asksJSON, err := json.Marshal(book.Asks)
-		if err != nil {
-			missed++
-			continue
-		}
 		var fx *persistententity.Market
 		if f, ok := fixtures[m.MarketRowID]; ok {
 			fx = &f
 		}
-		out = append(out, common.RowFromOutcomeAt(&m, fx, string(bidsJSON), string(asksJSON), token, snapshotAtMs))
+		for _, token := range tokenIDsForOutcome(&m) {
+			book, ok := byAsset[token]
+			if !ok {
+				missed++
+				continue
+			}
+			bidsJSON, err := json.Marshal(book.Bids)
+			if err != nil {
+				missed++
+				continue
+			}
+			asksJSON, err := json.Marshal(book.Asks)
+			if err != nil {
+				missed++
+				continue
+			}
+			out = append(out, common.RowFromOutcomeAt(&m, fx, string(bidsJSON), string(asksJSON), token, snapshotAtMs))
+		}
 	}
 	return out, missed
 }

@@ -1,8 +1,6 @@
 package polymarket
 
 import (
-	"strings"
-
 	httpentity "github.com/gph-tech/fgmm-strategy-bitfinex/domain/http/entity"
 	persistententity "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/entity"
 )
@@ -27,23 +25,21 @@ func chunkOutcomes(markets []persistententity.MarketOutcome, batchSize int) []fe
 	}
 	for i := range markets {
 		m := markets[i]
-		token := batchItemFromOutcome(&m)
-		if token.TokenID == "" {
+		tokens := tokenIDsForOutcome(&m)
+		if len(tokens) == 0 {
 			continue
 		}
+		if len(cur.items)+len(tokens) > batchSize && len(cur.items) > 0 {
+			appendChunk()
+		}
 		cur.markets = append(cur.markets, m)
-		cur.items = append(cur.items, token)
+		for _, tokenID := range tokens {
+			cur.items = append(cur.items, httpentity.BatchGetOrderBooksRequestItem{TokenID: tokenID})
+		}
 		if len(cur.items) >= batchSize {
 			appendChunk()
 		}
 	}
 	appendChunk()
 	return chunks
-}
-
-func batchItemFromOutcome(m *persistententity.MarketOutcome) httpentity.BatchGetOrderBooksRequestItem {
-	if m == nil {
-		return httpentity.BatchGetOrderBooksRequestItem{}
-	}
-	return httpentity.BatchGetOrderBooksRequestItem{TokenID: strings.TrimSpace(m.YesTokenID)}
 }
