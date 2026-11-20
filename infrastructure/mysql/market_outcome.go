@@ -129,7 +129,7 @@ func (r *MarketOutcomeImpl) BatchUpsert(ctx context.Context, tx *gorm.DB, list [
 				"market_row_id", "platform_market_id", "name", "desc", "market_address", "market_url",
 				"yes_token_id", "no_token_id", "selection_id",
 				"market_start_time", "market_end_time", "outcome_type",
-				"volume_total", "volume24hr", "slug", "competition", "config",
+				"volume_total", "volume24hr", "slug", "competition", "competition_en", "config",
 			}),
 		}).CreateInBatches(list, 100).Error
 	})

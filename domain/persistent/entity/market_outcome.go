@@ -27,6 +27,7 @@ type MarketOutcome struct {
 	Volume24hr              *float64  `gorm:"column:volume24hr;type:double"`
 	Slug                    *string   `gorm:"column:slug;type:varchar(255)"`
 	Competition             *string   `gorm:"column:competition;type:varchar(64)"`
+	CompetitionEn           *string   `gorm:"column:competition_en;type:varchar(128)"`
 	Config                  *string   `gorm:"column:config;type:text"`
 	CreatedAt               time.Time `gorm:"column:created_at;type:datetime;not null;default:CURRENT_TIMESTAMP"`
 	UpdatedAt               time.Time `gorm:"column:updated_at;type:datetime;not null;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"`
