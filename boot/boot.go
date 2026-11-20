@@ -13,14 +13,18 @@ import (
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/statcollect"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/taskalert"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/wsbookflush"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/wsbookqueue"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/constants"
 	log2 "github.com/gph-tech/fgmm-strategy-bitfinex/common/dederi/logger"
+	redisclient "github.com/gph-tech/fgmm-strategy-bitfinex/common/dederi/redis"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/notification"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/conf"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/infrastructure/http"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/infrastructure/mysql"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/interfaces/rest"
 
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/dig"
 	"go.uber.org/zap/zapcore"
 )
@@ -48,9 +52,14 @@ func BuildContainer() *dig.Container {
 	_ = c.Provide(marketsync.NewMarketSync)
 	_ = c.Provide(marketmap.NewMarketMap)
 	_ = c.Provide(statcollect.NewCollect)
+	_ = c.Provide(wsbookflush.NewFlush)
 	_ = c.Provide(strategy.NewScheduler)
 	_ = c.Provide(strategy.NewEntry)
 
+	_ = c.Provide(func(cfg *conf.Config) redis.UniversalClient {
+		return redisclient.NewRedisClient(cfg.RedisConf)
+	})
+	_ = c.Provide(wsbookqueue.New)
 	_ = c.Provide(NewDBClient)
 	_ = c.Provide(mysql.NewPlatformImpl)
 	_ = c.Provide(mysql.NewAccountImpl)

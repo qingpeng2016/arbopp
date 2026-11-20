@@ -590,6 +590,7 @@ INSERT INTO `bot_schedule_config` (`module`, `task_name`, `interval_seconds`, `e
   ('less_one', 'synthetic_history_sync', 3600, 36, 1, 'data_task synthetic_l2 伪造秒级簿', 0, 1, 0),
   ('less_one', 'backtest_replay', 3600, 37, 1, 'backtest_task pending 重放历史簿', 0, 1, 0),
   ('less_one', 'strategy_entry', 20, 40, 1, '已核对场次 WebSocket：二元 + 1X2', 1, 1, 0),
+  ('less_one', 'ws_book_flush', 5, 31, 1, 'Redis 队列批量写 market_order_book_ws', 1, 1, 0),
   ('less_one', 'trade_execute', 5, 60, 1, '下单与敞口（预留）', 0, 1, 0),
   ('less_one', 'task_alert', 300, 70, 1, '告警', 0, 1, 0),
   ('less_one', 'report_daily', 86400, 80, 1, '日复盘', 0, 1, 0),

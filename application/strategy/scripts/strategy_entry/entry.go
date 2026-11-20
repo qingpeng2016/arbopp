@@ -14,6 +14,7 @@ import (
 	appcommon "github.com/gph-tech/fgmm-strategy-bitfinex/application/common"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketmap"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/persist"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/wsbookqueue"
 	entrystat "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/stat"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/notification"
 	httprepo "github.com/gph-tech/fgmm-strategy-bitfinex/domain/http/repository"
@@ -26,7 +27,7 @@ type Entry struct {
 	marketRepo         persistentrepo.MarketRepo
 	outcomeRepo        persistentrepo.MarketOutcomeRepo
 	bookRepo           persistentrepo.OrderBookRepo
-	wsBookRepo         persistentrepo.OrderBookWSRepo
+	wsBookQueue        *wsbookqueue.Queue
 	thresholdRepo      persistentrepo.ConfigStrategyThresholdRepo
 	feeRepo            persistentrepo.ConfigStrategyFeeRepo
 	oppRepo            persistentrepo.ArbBinaryOpportunityRepo
@@ -68,7 +69,7 @@ func NewEntry(
 	marketRepo persistentrepo.MarketRepo,
 	outcomeRepo persistentrepo.MarketOutcomeRepo,
 	bookRepo persistentrepo.OrderBookRepo,
-	wsBookRepo persistentrepo.OrderBookWSRepo,
+	wsBookQueue *wsbookqueue.Queue,
 	thresholdRepo persistentrepo.ConfigStrategyThresholdRepo,
 	feeRepo persistentrepo.ConfigStrategyFeeRepo,
 	oppRepo persistentrepo.ArbBinaryOpportunityRepo,
@@ -85,7 +86,7 @@ func NewEntry(
 		marketRepo:         marketRepo,
 		outcomeRepo:        outcomeRepo,
 		bookRepo:           bookRepo,
-		wsBookRepo:         wsBookRepo,
+		wsBookQueue:        wsBookQueue,
 		thresholdRepo:      thresholdRepo,
 		feeRepo:            feeRepo,
 		oppRepo:            oppRepo,

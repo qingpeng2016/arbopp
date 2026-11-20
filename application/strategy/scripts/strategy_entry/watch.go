@@ -482,43 +482,38 @@ func (w *watch) polyYesTokensTouched(changes []book.PolyChange) map[string]struc
 	return out
 }
 
-// enqueueBookPersistWS 每条 WS 在独立协程写入 market_order_book_ws（完整内存盘口 JSON）。
+// enqueueBookPersistWS 将 WS 盘口推入 Redis，由 ws_book_flush 批量写 market_order_book_ws。
 func (w *watch) enqueueBookPersistWS(e event) {
-	if w.entry == nil || w.entry.wsBookRepo == nil {
+	if w.entry == nil || w.entry.wsBookQueue == nil {
 		return
 	}
 	rows := w.orderBookRowsFromEvent(e)
 	if len(rows) == 0 {
 		return
 	}
-	repo := w.entry.wsBookRepo
+	snap := time.Now().Unix()
+	q := w.entry.wsBookQueue
 	for _, row := range rows {
 		if row == nil {
 			continue
 		}
 		dup := cloneOrderBookRow(row)
 		w.enrichBookRow(dup)
-		go persistWSOrderBook(repo, dup)
-	}
-}
-
-func persistWSOrderBook(repo persistentrepo.OrderBookWSRepo, row *persistententity.OrderBook) {
-	if repo == nil || row == nil {
-		return
-	}
-	wsRow := persistententity.OrderBookWSCopy(row)
-	if wsRow == nil {
-		return
-	}
-	wsRow.SnapshotSecond = time.Now().Unix()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := repo.BatchUpsert(ctx, nil, []*persistententity.OrderBookWS{wsRow}); err != nil {
-		notification.SendErrorLog(ctx, "strategy_entry-ws-book-upsert",
-			zap.Error(err),
-			zap.String("platform", row.Platform),
-			zap.String("outcome_id", row.PlatformMarketOutcomeID),
-			zap.String("token_id", row.TokenID))
+		wsRow := persistententity.OrderBookWSCopy(dup)
+		if wsRow == nil {
+			continue
+		}
+		wsRow.SnapshotSecond = snap
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		err := q.Push(ctx, wsRow)
+		cancel()
+		if err != nil {
+			notification.SendErrorLog(ctx, "strategy_entry-ws-book-queue-push",
+				zap.Error(err),
+				zap.String("platform", dup.Platform),
+				zap.String("outcome_id", dup.PlatformMarketOutcomeID),
+				zap.String("token_id", dup.TokenID))
+		}
 	}
 }
 

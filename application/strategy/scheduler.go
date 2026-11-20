@@ -15,6 +15,7 @@ import (
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/orderbook"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/statcollect"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/wsbookflush"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/taskalert"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/dederi/logger"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/notification"
@@ -45,6 +46,7 @@ type Scheduler struct {
 	marketSync      *marketsync.MarketSync
 	marketMap       *marketmap.MarketMap
 	statCollect     *statcollect.Collect
+	wsBookFlush     *wsbookflush.Flush
 	botScheduleRepo persistentrepo.BotScheduleConfigRepo
 	ns              *gocron.Scheduler
 	jobMap          map[string]*gocron.Job
@@ -63,6 +65,7 @@ func NewScheduler(
 	marketSync *marketsync.MarketSync,
 	marketMap *marketmap.MarketMap,
 	statCollect *statcollect.Collect,
+	wsBookFlush *wsbookflush.Flush,
 	botScheduleRepo persistentrepo.BotScheduleConfigRepo,
 ) *Scheduler {
 	return &Scheduler{
@@ -75,6 +78,7 @@ func NewScheduler(
 		marketSync:      marketSync,
 		marketMap:       marketMap,
 		statCollect:     statCollect,
+		wsBookFlush:     wsBookFlush,
 		botScheduleRepo: botScheduleRepo,
 		ns:              gocron.NewScheduler(time.Local),
 		jobMap:          make(map[string]*gocron.Job),
@@ -304,6 +308,12 @@ func (s *Scheduler) getHandleFunc(module, taskName string) func() {
 		return func() {
 			if s.strategyEntry != nil {
 				s.strategyEntry.Run(context.Background())
+			}
+		}
+	case wsbookflush.TaskName:
+		return func() {
+			if s.wsBookFlush != nil {
+				s.wsBookFlush.Run(context.Background())
 			}
 		}
 	default:
