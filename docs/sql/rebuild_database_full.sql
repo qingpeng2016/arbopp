@@ -193,6 +193,7 @@ CREATE TABLE IF NOT EXISTS `market_outcome` (
   `slug` varchar(255) DEFAULT NULL,
   `competition` varchar(64) DEFAULT NULL COMMENT '联赛/杯赛名称（如英超）',
   `competition_en` varchar(128) DEFAULT NULL COMMENT '统一英文名，来自配置 name_en',
+  `map_key` varchar(192) DEFAULT NULL COMMENT '跨平台场次对齐键 market.map_key',
   `config` text,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -200,7 +201,8 @@ CREATE TABLE IF NOT EXISTS `market_outcome` (
   UNIQUE KEY `uk_platform_outcome_sub` (`platform`,`platform_market_outcome_id`,`category`,`sub_category`),
   KEY `idx_outcome_market_row` (`market_row_id`),
   KEY `idx_outcome_platform_market` (`platform`,`platform_market_id`,`category`,`sub_category`),
-  KEY `idx_outcome_type` (`outcome_type`)
+  KEY `idx_outcome_type` (`outcome_type`),
+  KEY `idx_outcome_map_key` (`map_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='可交易盘口';
 
 CREATE TABLE IF NOT EXISTS `market_order_book` (

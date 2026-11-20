@@ -23,11 +23,12 @@ type mapMember struct {
 
 // MarketMap 按 category+sub_category+competition_en 归桶，在同桶内跨 Poly / Kalshi / Predict 对齐 slug，写 map_key 并置 map_verified=1。
 type MarketMap struct {
-	marketRepo persistentrepo.MarketRepo
+	marketRepo  persistentrepo.MarketRepo
+	outcomeRepo persistentrepo.MarketOutcomeRepo
 }
 
-func NewMarketMap(marketRepo persistentrepo.MarketRepo) *MarketMap {
-	return &MarketMap{marketRepo: marketRepo}
+func NewMarketMap(marketRepo persistentrepo.MarketRepo, outcomeRepo persistentrepo.MarketOutcomeRepo) *MarketMap {
+	return &MarketMap{marketRepo: marketRepo, outcomeRepo: outcomeRepo}
 }
 
 // Run 发现仍有 map_verified=0 的联赛后，拉取该联赛下全部 ACTIVE 场次做跨平台对齐（含已核对 Poly/Kalshi），
@@ -277,7 +278,29 @@ func (j *MarketMap) applyMapKeyVerified(ctx context.Context, id uint, row *persi
 	if needsVerify {
 		upd["map_verified"] = 1
 	}
-	return j.marketRepo.Update(ctx, nil, map[string]interface{}{"id = ?": id}, upd)
+	if err := j.marketRepo.Update(ctx, nil, map[string]interface{}{"id = ?": id}, upd); err != nil {
+		return err
+	}
+	if strings.TrimSpace(mapKey) != "" {
+		return j.propagateOutcomeMapKey(ctx, id, mapKey)
+	}
+	return nil
+}
+
+// propagateOutcomeMapKey 将该场次 map_key 写到其下全部 market_outcome（与 market 场次键一致）。
+func (j *MarketMap) propagateOutcomeMapKey(ctx context.Context, marketRowID uint, mapKey string) error {
+	if j == nil || j.outcomeRepo == nil || marketRowID == 0 {
+		return nil
+	}
+	mapKey = strings.TrimSpace(mapKey)
+	if mapKey == "" {
+		return nil
+	}
+	return j.outcomeRepo.Update(ctx, nil, map[string]interface{}{
+		"market_row_id = ?": marketRowID,
+	}, map[string]interface{}{
+		"map_key": mapKey,
+	})
 }
 
 func marketCategorySub(m *persistententity.Market) (category, subCategory string) {
@@ -420,8 +443,18 @@ func (j *MarketMap) clearMapAssignment(ctx context.Context, id uint) error {
 	if j == nil || j.marketRepo == nil || id == 0 {
 		return nil
 	}
-	return j.marketRepo.Update(ctx, nil, map[string]interface{}{"id = ?": id}, map[string]interface{}{
-		"map_key":       nil,
-		"map_verified":  0,
-	})
+	if err := j.marketRepo.Update(ctx, nil, map[string]interface{}{"id = ?": id}, map[string]interface{}{
+		"map_key":      nil,
+		"map_verified": 0,
+	}); err != nil {
+		return err
+	}
+	if j.outcomeRepo != nil {
+		_ = j.outcomeRepo.Update(ctx, nil, map[string]interface{}{
+			"market_row_id = ?": id,
+		}, map[string]interface{}{
+			"map_key": nil,
+		})
+	}
+	return nil
 }

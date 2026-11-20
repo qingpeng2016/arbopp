@@ -14,6 +14,6 @@ type MarketOutcomeRepo interface {
 	Update(ctx context.Context, tx *gorm.DB, where map[string]interface{}, updateData map[string]interface{}) error
 	Create(ctx context.Context, tx *gorm.DB, e *entity.MarketOutcome) (id uint, err error)
 	BatchCreate(ctx context.Context, tx *gorm.DB, list []*entity.MarketOutcome) error
-	// BatchUpsert 按 uk_platform_outcome_sub；map_key 在 market 表由 market_map 维护
+	// BatchUpsert 按 uk_platform_outcome_sub；不覆盖 map_key（由 market_map 从 market 同步到 outcome）
 	BatchUpsert(ctx context.Context, tx *gorm.DB, list []*entity.MarketOutcome) error
 }
