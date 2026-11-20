@@ -384,6 +384,7 @@ func (e *Entry) notifyWSHeartbeat(ctx context.Context) {
 	fields = append(fields, notification.FieldPair{Key: "状态", Value: status})
 
 	_ = notification.GetGlobalNotificationManager().SendInfoAlert(ctx, "strategy_entry WS 心跳", fields)
+	e.flushMarketRunningCountStrategy(ctx, wantByKey)
 	e.flushDetectLatencyStat(ctx)
 }
 

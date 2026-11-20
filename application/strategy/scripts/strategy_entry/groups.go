@@ -214,6 +214,30 @@ func (e *Entry) loadMaxGroups(ctx context.Context) int {
 	return LoadMaxGroups(ctx, e.configStrategyRepo)
 }
 
+// LoadPreEventScanMinutes 读 config_strategy.strategy_entry.pre_event_scan_minutes。
+func LoadPreEventScanMinutes(ctx context.Context, configStrategyRepo persistentrepo.ConfigStrategyRepo) int {
+	preEventScanMinutes := defaultPreEventScanMinutes
+	if configStrategyRepo == nil {
+		return preEventScanMinutes
+	}
+	cfg, err := configStrategyRepo.FindOne(ctx, nil, map[string]interface{}{
+		"group_name = ?": marketmap.ConfigGroupStrategyEntry,
+		"item_key = ?":   configKeyPreEventScanMinutes,
+		"is_enabled = ?": 1,
+	}, "")
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			notification.SendErrorLog(ctx, "strategy_entry-pre-event-scan-minutes-read-failed", zap.Error(err))
+		}
+		return preEventScanMinutes
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(cfg.ItemValue))
+	if err != nil {
+		return preEventScanMinutes
+	}
+	return n
+}
+
 // WatchGroupCounts 与 strategy_entry.loadGroups 同源的场次计数（stat_collect / 心跳应对场次）。
 type WatchGroupCounts struct {
 	Matched   int // 合规且有 outcome，未截 max_groups
@@ -347,20 +371,7 @@ func loadWatchGroups(ctx context.Context, d WatchGroupDeps, alertBadKeys bool) (
 		return nil, 0, err
 	}
 
-	preEventScanMinutes := defaultPreEventScanMinutes
-	if d.ConfigStrategyRepo != nil {
-		if cfg, err := d.ConfigStrategyRepo.FindOne(ctx, nil, map[string]interface{}{
-			"group_name = ?": marketmap.ConfigGroupStrategyEntry,
-			"item_key = ?":   configKeyPreEventScanMinutes,
-			"is_enabled = ?": 1,
-		}, ""); err == nil {
-			if n, err := strconv.Atoi(strings.TrimSpace(cfg.ItemValue)); err == nil {
-				preEventScanMinutes = n
-			}
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			notification.SendErrorLog(ctx, "strategy_entry-pre-event-scan-minutes-read-failed", zap.Error(err))
-		}
-	}
+	preEventScanMinutes := LoadPreEventScanMinutes(ctx, d.ConfigStrategyRepo)
 	runnableKeys := runnableKeysFromFixtures(ctx, fixtures, alertBadKeys, time.Now().UTC(), preEventScanMinutes)
 
 	// 获取所有市场的outcomes盘口信息（多平台的）
