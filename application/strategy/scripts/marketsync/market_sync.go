@@ -84,6 +84,7 @@ func (j *MarketSync) Run(ctx context.Context) {
 		return
 	}
 
+	runStart := time.Now()
 	polyCfg := j.resolvePolymarketSportsConfig(ctx)
 	kalshiCfg := j.resolveKalshiGameSeriesConfig(ctx)
 	predictCfg := j.resolvePredictSportsConfig(ctx)
@@ -164,6 +165,7 @@ func (j *MarketSync) Run(ctx context.Context) {
 	wg.Wait()
 
 	totalSaved := polySaved.Add(kalshiSaved).Add(predictSaved)
+	elapsed := time.Since(runStart)
 	logger.InfoZ(ctx, "market_sync-Completed",
 		zap.Int("fixtures", totalSaved.Fixtures),
 		zap.Int("outcomes", totalSaved.Outcomes),
@@ -172,7 +174,9 @@ func (j *MarketSync) Run(ctx context.Context) {
 		zap.Int("kalshi_fixtures", kalshiSaved.Fixtures),
 		zap.Int("kalshi_outcomes", kalshiSaved.Outcomes),
 		zap.Int("predict_fixtures", predictSaved.Fixtures),
-		zap.Int("predict_outcomes", predictSaved.Outcomes))
+		zap.Int("predict_outcomes", predictSaved.Outcomes),
+		zap.String("elapsed", elapsed.Round(time.Second).String()))
+	notifyRunDone(ctx, syncPoly, syncKal, syncPredict, polySaved, kalshiSaved, predictSaved, elapsed)
 }
 
 func subCategoryStrings(cats []cryptoPredictionEnum.SubMarketCategory) []string {
@@ -305,7 +309,7 @@ func marketCategorySportCN(rows []persistententity.ConfigMarketCategory, platfor
 	return sub
 }
 
-// notifyCategoryDone 每个 market_category 子类跑完后单独一条 Lark 摘要（不再把整平台子类拼在一条里）。
+// notifyCategoryDone 子类跑完只打日志；汇总见 notifyRunDone。
 func notifyCategoryDone(
 	ctx context.Context,
 	platform string,
@@ -317,37 +321,82 @@ func notifyCategoryDone(
 ) {
 	sub := string(step.SubCategory)
 	sportCN := marketCategorySportCN(catalogRows, platform, sub)
-	title := "market_sync 分类完成"
-	fields := []notification.FieldPair{
-		{Key: "平台", Value: strings.ToUpper(strings.TrimSpace(platform))},
-		{Key: "分类", Value: sportCN},
-		{Key: "子类", Value: sub},
-		{Key: "场次数", Value: strconv.Itoa(stats.Fixtures)},
-		{Key: "盘口数", Value: strconv.Itoa(stats.Outcomes)},
-		{Key: "耗时", Value: elapsed.Round(time.Second).String()},
-		{Key: "sort_no", Value: strconv.Itoa(step.SortNo)},
-	}
-	if syncErr != nil {
-		fields = append(fields, notification.FieldPair{Key: "状态", Value: "失败"}, notification.FieldPair{Key: "错误", Value: syncErr.Error()})
-	} else if stats.Empty() {
-		fields = append(fields, notification.FieldPair{Key: "状态", Value: "成功"},
-			notification.FieldPair{Key: "说明", Value: "本次无新开仓写入（检查 tag_ids 是否主网、市场 OPEN、outcome 过滤）"})
-	} else {
-		fields = append(fields, notification.FieldPair{Key: "状态", Value: "成功"})
-	}
 	logger.InfoZ(ctx, "market_sync-category-done",
 		zap.String("platform", platform),
 		zap.String("sub_category", sub),
 		zap.String("sport_cn", sportCN),
+		zap.Int("sort_no", step.SortNo),
 		zap.Int("fixtures", stats.Fixtures),
 		zap.Int("outcomes", stats.Outcomes),
 		zap.String("elapsed", elapsed.Round(time.Second).String()),
 		zap.Error(syncErr))
+	// title := "market_sync 分类完成"
+	// fields := []notification.FieldPair{
+	// 	{Key: "平台", Value: strings.ToUpper(strings.TrimSpace(platform))},
+	// 	{Key: "分类", Value: sportCN},
+	// 	{Key: "子类", Value: sub},
+	// 	{Key: "场次数", Value: strconv.Itoa(stats.Fixtures)},
+	// 	{Key: "盘口数", Value: strconv.Itoa(stats.Outcomes)},
+	// 	{Key: "耗时", Value: elapsed.Round(time.Second).String()},
+	// 	{Key: "sort_no", Value: strconv.Itoa(step.SortNo)},
+	// }
+	// if syncErr != nil {
+	// 	fields = append(fields, notification.FieldPair{Key: "状态", Value: "失败"}, notification.FieldPair{Key: "错误", Value: syncErr.Error()})
+	// } else if stats.Empty() {
+	// 	fields = append(fields, notification.FieldPair{Key: "状态", Value: "成功"},
+	// 		notification.FieldPair{Key: "说明", Value: "本次无新开仓写入（检查 tag_ids 是否主网、市场 OPEN、outcome 过滤）"})
+	// } else {
+	// 	fields = append(fields, notification.FieldPair{Key: "状态", Value: "成功"})
+	// }
+	// _ = notification.GetGlobalNotificationManager().SendInfoAlert(ctx, title, fields)
+}
+
+// notifyRunDone 全平台 market_sync 一轮结束后发一条整体摘要。
+func notifyRunDone(
+	ctx context.Context,
+	syncPoly, syncKal, syncPredict bool,
+	polySaved, kalSaved, predSaved leagueopt.SaveStats,
+	elapsed time.Duration,
+) {
+	total := polySaved.Add(kalSaved).Add(predSaved)
+	title := "market_sync 完成"
+	fields := []notification.FieldPair{
+		{Key: "场次数", Value: strconv.Itoa(total.Fixtures)},
+		{Key: "盘口数", Value: strconv.Itoa(total.Outcomes)},
+		{Key: "耗时", Value: elapsed.Round(time.Second).String()},
+	}
+	if syncPoly {
+		fields = append(fields,
+			notification.FieldPair{Key: "POLYMARKET 场次数", Value: strconv.Itoa(polySaved.Fixtures)},
+			notification.FieldPair{Key: "POLYMARKET 盘口数", Value: strconv.Itoa(polySaved.Outcomes)},
+		)
+	}
+	if syncKal {
+		fields = append(fields,
+			notification.FieldPair{Key: "KALSHI 场次数", Value: strconv.Itoa(kalSaved.Fixtures)},
+			notification.FieldPair{Key: "KALSHI 盘口数", Value: strconv.Itoa(kalSaved.Outcomes)},
+		)
+	}
+	if syncPredict {
+		fields = append(fields,
+			notification.FieldPair{Key: "PREDICT 场次数", Value: strconv.Itoa(predSaved.Fixtures)},
+			notification.FieldPair{Key: "PREDICT 盘口数", Value: strconv.Itoa(predSaved.Outcomes)},
+		)
+	}
+	if total.Empty() {
+		fields = append(fields,
+			notification.FieldPair{Key: "状态", Value: "成功"},
+			notification.FieldPair{Key: "说明", Value: "本轮各平台均无新开仓写入（检查联赛配置、市场 OPEN、outcome 过滤）"},
+		)
+	} else {
+		fields = append(fields, notification.FieldPair{Key: "状态", Value: "成功"})
+	}
+	logger.InfoZ(ctx, "market_sync-run-done",
+		zap.Int("fixtures", total.Fixtures),
+		zap.Int("outcomes", total.Outcomes),
+		zap.String("elapsed", elapsed.Round(time.Second).String()))
 	if err := notification.GetGlobalNotificationManager().SendInfoAlert(ctx, title, fields); err != nil {
-		logger.ErrorZ(ctx, "market_sync-category-notify-failed",
-			zap.String("platform", platform),
-			zap.String("sub_category", sub),
-			zap.Error(err))
+		logger.ErrorZ(ctx, "market_sync-run-notify-failed", zap.Error(err))
 	}
 }
 
