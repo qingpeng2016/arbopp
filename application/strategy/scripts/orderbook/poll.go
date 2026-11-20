@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/orderbook/fetchopt"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/orderbook/running"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/dederi/logger"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/notification"
@@ -12,7 +11,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// RunPoll 常驻：每秒读 stat_kv 在跑场次，并发拉盘口写 market_order_book。
+// pollSleepAfterTick 每轮拉盘后休眠，避免打满 API/DB。
+const pollSleepAfterTick = 700 * time.Millisecond
+
+// RunPoll 常驻：读 stat_kv 在跑场次，并发拉盘口写 market_order_book。
 func (j *OrderBook) RunPoll(ctx context.Context) {
 	if j == nil {
 		return
@@ -56,16 +58,16 @@ func (j *OrderBook) StopPoll() {
 
 func (j *OrderBook) pollLoop(ctx context.Context) {
 	defer close(j.pollDone)
-	tick := time.NewTicker(time.Second)
-	defer tick.Stop()
-
 	var cached running.Snapshot
 	for {
+		if ctx.Err() != nil {
+			return
+		}
+		j.pollTick(ctx, &cached)
 		select {
 		case <-ctx.Done():
 			return
-		case <-tick.C:
-			j.pollTick(ctx, &cached)
+		case <-time.After(pollSleepAfterTick):
 		}
 	}
 }
@@ -97,7 +99,8 @@ func (j *OrderBook) pollTick(ctx context.Context, cached *running.Snapshot) {
 	}
 
 	kalshiMarkets, polyMarkets, predictMarkets := splitOutcomesByPlatform(cached.Outcomes)
-	fetchCfg := aggressiveFetchConfig(len(cached.Outcomes))
+	// 与 orderbook_sync 相同：每请求多盘口（Poly /books、Kalshi orderbooks、Predict orderbooks），批间并发
+	fetchCfg := j.resolveFetchConfig(ctx)
 	stats := j.syncPlatformsConcurrent(ctx, cached.Fixtures, kalshiMarkets, polyMarkets, predictMarkets, fetchCfg)
 
 	totalUpserted := stats.kalshi.upserted + stats.poly.upserted + stats.predict.upserted
@@ -113,24 +116,5 @@ func (j *OrderBook) pollTick(ctx context.Context, cached *running.Snapshot) {
 		notification.SendErrorLog(ctx, "orderbook-poll-platform-failed",
 			zap.String("platform", st.platform),
 			zap.Error(st.err))
-	}
-}
-
-// aggressiveFetchConfig 每盘口一批、高并发，便于 1s 内尽量写全。
-func aggressiveFetchConfig(outcomeCount int) fetchopt.FetchConfig {
-	c := outcomeCount
-	if c < 1 {
-		c = 1
-	}
-	if c > 32 {
-		c = 32
-	}
-	bf := func() fetchopt.PlatformFetch {
-		return fetchopt.PlatformFetch{BatchSize: 1, BatchConcurrency: c}
-	}
-	return fetchopt.FetchConfig{
-		Polymarket: bf(),
-		Kalshi:     bf(),
-		Predict:    bf(),
 	}
 }
