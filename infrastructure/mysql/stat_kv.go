@@ -45,6 +45,22 @@ func (r *StatKVImpl) DeleteByGroup(ctx context.Context, tx *gorm.DB, groupName s
 	return tx.WithContext(ctx).Where("group_name = ?", groupName).Delete(&entity.StatKV{}).Error
 }
 
+func (r *StatKVImpl) DeleteByGroupItems(ctx context.Context, tx *gorm.DB, groupName string, itemKeys []string) error {
+	if tx == nil {
+		tx = r.db
+	}
+	groupName = strings.TrimSpace(groupName)
+	if groupName == "" {
+		return fmt.Errorf("delete stat_kv: empty group_name")
+	}
+	if len(itemKeys) == 0 {
+		return nil
+	}
+	return tx.WithContext(ctx).
+		Where("group_name = ? AND item_key IN ?", groupName, itemKeys).
+		Delete(&entity.StatKV{}).Error
+}
+
 func (r *StatKVImpl) BatchCreate(ctx context.Context, tx *gorm.DB, list []*entity.StatKV) error {
 	if tx == nil {
 		tx = r.db

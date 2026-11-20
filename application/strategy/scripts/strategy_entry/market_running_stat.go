@@ -10,6 +10,7 @@ import (
 	persistententity "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/entity"
 	"go.uber.org/zap"
 
+	"github.com/gph-tech/fgmm-strategy-bitfinex/common/dederi/logger"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/notification"
 )
 
@@ -26,6 +27,10 @@ type marketRunningGroup struct {
 // flushMarketRunningCountStrategy 写入当前 strategy_entry 在跑场次（与 stat_collect market_running_count 同 JSON 结构）。
 func (e *Entry) flushMarketRunningCountStrategy(ctx context.Context, wantByKey map[string]group) {
 	if e == nil || e.statRepo == nil {
+		if e != nil && e.statRepo == nil {
+			notification.SendErrorLog(ctx, "strategy_entry-market_running_count_strategy-skipped",
+				zap.String("reason", "statRepo nil"))
+		}
 		return
 	}
 	preMins := LoadPreEventScanMinutes(ctx, e.configStrategyRepo)
@@ -42,7 +47,11 @@ func (e *Entry) flushMarketRunningCountStrategy(ctx context.Context, wantByKey m
 	}
 	if err := e.statRepo.UpsertBatch(ctx, nil, []*persistententity.StatKV{row}); err != nil {
 		notification.SendErrorLog(ctx, "strategy_entry-market_running_count_strategy-stat_kv", zap.Error(err))
+		return
 	}
+	logger.InfoZ(ctx, "strategy_entry-market_running_count_strategy-stat_kv",
+		zap.Int("count", len(groups)),
+		zap.String("item_key", statKeyMarketRunningCountEntry))
 }
 
 func (e *Entry) runningMarketGroups(wantByKey map[string]group) []marketRunningGroup {

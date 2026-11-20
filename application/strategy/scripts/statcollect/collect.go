@@ -23,7 +23,7 @@ import (
 const TaskName = "stat_collect"
 
 const (
-	groupMapKeyAudit  = "map_key_audit"
+	groupMapKeyAudit = "map_key_audit"
 	groupMarketCount  = "market_count"
 	groupOutcomeCount = "outcome_count"
 	groupMapKeyCount  = "map_key_count"
@@ -140,7 +140,7 @@ func (c *Collect) Run(ctx context.Context) {
 	auditRows := mapKeyAuditRows(audit)
 
 	err = c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := c.statRepo.DeleteByGroup(ctx, tx, groupMapKeyAudit); err != nil {
+		if err := c.statRepo.DeleteByGroupItems(ctx, tx, groupMapKeyAudit, mapKeyAuditKeysFromRows(auditRows)); err != nil {
 			return err
 		}
 		if err := c.statRepo.UpsertBatch(ctx, tx, auditRows); err != nil {
@@ -615,6 +615,21 @@ func mapKeyAuditRows(a mapKeyAudit) []*persistententity.StatKV {
 		kvStat(groupMapKeyAudit, "bad_dup_platform_groups", strconv.FormatInt(a.BadDup, 10), "int",
 			"map_key 同平台重复组数（audit D）", 5),
 	}
+}
+
+func mapKeyAuditKeysFromRows(rows []*persistententity.StatKV) []string {
+	keys := make([]string, 0, len(rows))
+	for _, r := range rows {
+		if r == nil {
+			continue
+		}
+		k := strings.TrimSpace(r.ItemKey)
+		if k == "" {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 func preEventRunnableAuditDesc(a mapKeyAudit) string {
