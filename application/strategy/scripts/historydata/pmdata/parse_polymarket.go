@@ -11,12 +11,12 @@ import (
 )
 
 type polymarketL2Row struct {
-	Timestamp int64     `parquet:"timestamp"`
-	LocalTS   int64     `parquet:"local_timestamp"`
-	BidPrices []float64 `parquet:"bid_prices"`
-	BidSizes  []float64 `parquet:"bid_sizes"`
-	AskPrices []float64 `parquet:"ask_prices"`
-	AskSizes  []float64 `parquet:"ask_sizes"`
+	Timestamp int64          `parquet:"timestamp"`
+	LocalTS   int64          `parquet:"local_timestamp"`
+	BidPrices parquetDoubles `parquet:"bid_prices"`
+	BidSizes  parquetDoubles `parquet:"bid_sizes"`
+	AskPrices parquetDoubles `parquet:"ask_prices"`
+	AskSizes  parquetDoubles `parquet:"ask_sizes"`
 	BestBid   float64   `parquet:"best_bid"`
 	BestAsk   float64   `parquet:"best_ask"`
 	PcPrice   float64   `parquet:"pc_price"`
@@ -81,8 +81,8 @@ func polymarketRowToSnapshot(row polymarketL2Row, st *polyL1State) (PredictSnaps
 		return PredictSnapshot{}, false
 	}
 	ts := rowTsMs(row.Timestamp, row.LocalTS)
-	bids := zipLevels(row.BidPrices, row.BidSizes)
-	asks := zipLevels(row.AskPrices, row.AskSizes)
+	bids := zipLevels(row.BidPrices.values(), row.BidSizes.values())
+	asks := zipLevels(row.AskPrices.values(), row.AskSizes.values())
 	if len(bids) > 0 || len(asks) > 0 {
 		if len(bids) > 0 {
 			st.bidPx, st.bidSz = bids[0][0], bids[0][1]

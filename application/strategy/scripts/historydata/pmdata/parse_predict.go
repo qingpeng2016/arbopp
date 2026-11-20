@@ -22,15 +22,15 @@ type PredictSnapshot struct {
 }
 
 type predictL2Row struct {
-	MarketID      int64      `parquet:"market_id"`
-	Timestamp     int64      `parquet:"timestamp"` // parquet may store as logical timestamp; fallback read
-	BidPrices     []float64  `parquet:"bid_prices"`
-	BidSizes      []float64  `parquet:"bid_sizes"`
-	AskPrices     []float64  `parquet:"ask_prices"`
-	AskSizes      []float64  `parquet:"ask_sizes"`
-	LocalTS       int64      `parquet:"local_timestamp"`
-	UpdateMS      int64      `parquet:"updateTimestampMs"`
-	UpdateTS      int64      `parquet:"update_timestamp_ms"`
+	MarketID  int64          `parquet:"market_id"`
+	Timestamp int64          `parquet:"timestamp"`
+	LocalTS   int64          `parquet:"local_timestamp"`
+	BidPrices parquetDoubles `parquet:"bid_prices"`
+	BidSizes  parquetDoubles `parquet:"bid_sizes"`
+	AskPrices parquetDoubles `parquet:"ask_prices"`
+	AskSizes  parquetDoubles `parquet:"ask_sizes"`
+	UpdateMS  int64          `parquet:"updateTimestampMs"`
+	UpdateTS  int64          `parquet:"update_timestamp_ms"`
 }
 
 // ParsePredictL2Parquet 按 PMData schema 读快照（限 maxRows）。
@@ -48,7 +48,7 @@ func ParsePredictL2Parquet(data []byte, maxRows int) ([]PredictSnapshot, error) 
 	r := parquet.NewGenericReader[predictL2Row](f)
 	defer r.Close()
 	buf := make([]predictL2Row, 64)
-	var out []PredictSnapshot
+	var raw []PredictSnapshot
 	for {
 		n, readErr := r.Read(buf)
 		for i := 0; i < n; i++ {
@@ -56,22 +56,22 @@ func ParsePredictL2Parquet(data []byte, maxRows int) ([]PredictSnapshot, error) 
 			if snap.TsMs <= 0 && len(snap.Bids) == 0 && len(snap.Asks) == 0 {
 				continue
 			}
-			out = append(out, snap)
-			if len(out) >= maxRows {
-				return downsampleByMinute(out), nil
+			if len(snap.Bids) == 0 && len(snap.Asks) == 0 {
+				continue
 			}
+			raw = append(raw, snap)
 		}
 		if readErr != nil {
 			if readErr == io.EOF {
 				break
 			}
-			if len(out) > 0 {
-				return downsampleByMinute(out), nil
+			if len(raw) > 0 {
+				return capSnapshots(downsampleByMinute(raw), maxRows), nil
 			}
 			return nil, fmt.Errorf("read parquet: %w", readErr)
 		}
 	}
-	return downsampleByMinute(out), nil
+	return capSnapshots(downsampleByMinute(raw), maxRows), nil
 }
 
 func rowToSnapshot(row predictL2Row) PredictSnapshot {
@@ -87,8 +87,8 @@ func rowToSnapshot(row predictL2Row) PredictSnapshot {
 	}
 	return PredictSnapshot{
 		TsMs: ts,
-		Bids: zipLevels(row.BidPrices, row.BidSizes),
-		Asks: zipLevels(row.AskPrices, row.AskSizes),
+		Bids: zipLevels(row.BidPrices.values(), row.BidSizes.values()),
+		Asks: zipLevels(row.AskPrices.values(), row.AskSizes.values()),
 	}
 }
 

@@ -235,6 +235,7 @@ func (j *Sync) runDataTask(
 		zap.String("map_key", mapKey),
 		zap.String("status", status),
 		zap.Int("files_ok", downloaded),
+		zap.Int("snapshots_upserted", snapshots),
 		zap.Int("failed", failed))
 	return downloaded, snapshots, failed
 }
@@ -457,9 +458,14 @@ func (j *Sync) upsertL2Snapshots(
 	body []byte,
 	snaps []pmdata.PredictSnapshot,
 ) (inserted, failed int) {
+	existing, err := j.existingSnapshotMs(ctx, dp.ID, oc.ID, utcDay)
+	if err != nil {
+		notification.SendErrorLog(ctx, "history_data_sync-list-existing-snapshots", zap.Error(err))
+		return 0, 1
+	}
 	var batch []*persistententity.HistoryDataOrderBook
 	for _, s := range snaps {
-		if j.alreadyHave(ctx, dp.ID, oc.ID, utcDay, persistententity.HistoryRecordKindSnapshot, s.TsMs) {
+		if _, ok := existing[s.TsMs]; ok {
 			continue
 		}
 		row := j.baseRow(dp, cfg, mapKey, oc, vendorExchange, vendorSymbol, utcDay)
@@ -479,11 +485,44 @@ func (j *Sync) upsertL2Snapshots(
 	if len(batch) == 0 {
 		return 0, 0
 	}
-	if err := j.historyRepo.BatchUpsert(ctx, nil, batch); err != nil {
-		notification.SendErrorLog(ctx, "history_data_sync-upsert-snapshots", zap.Error(err))
-		return 0, 1
+	const chunk = 100
+	for i := 0; i < len(batch); i += chunk {
+		end := i + chunk
+		if end > len(batch) {
+			end = len(batch)
+		}
+		part := batch[i:end]
+		if err := j.historyRepo.BatchUpsert(ctx, nil, part); err != nil {
+			notification.SendErrorLog(ctx, "history_data_sync-upsert-snapshots", zap.Error(err),
+				zap.Int("offset", i), zap.Int("batch_len", len(part)))
+			return inserted, 1
+		}
+		inserted += len(part)
 	}
-	return len(batch), 0
+	return inserted, 0
+}
+
+func (j *Sync) existingSnapshotMs(ctx context.Context, platformID, outcomeID uint, utcDay time.Time) (map[int64]struct{}, error) {
+	out := make(map[int64]struct{})
+	if j.historyRepo == nil {
+		return out, fmt.Errorf("history repo nil")
+	}
+	d := time.Date(utcDay.Year(), utcDay.Month(), utcDay.Day(), 0, 0, 0, 0, time.UTC)
+	_, rows, err := j.historyRepo.List(ctx, nil, map[string]interface{}{
+		"data_platform_id = ?":  platformID,
+		"market_outcome_id = ?": outcomeID,
+		"utc_date = ?":          d,
+		"record_kind = ?":       persistententity.HistoryRecordKindSnapshot,
+	}, "id asc", "")
+	if err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		if rows[i].SnapshotAtMs > 0 {
+			out[rows[i].SnapshotAtMs] = struct{}{}
+		}
+	}
+	return out, nil
 }
 
 func (j *Sync) baseRow(
