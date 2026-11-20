@@ -3,6 +3,7 @@ package strategyentry
 import (
 	"context"
 	"fmt"
+	"sort"
 	"go.uber.org/zap"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	appcommon "github.com/gph-tech/fgmm-strategy-bitfinex/application/common"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketmap"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/persist"
+	entrystat "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/stat"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/notification"
 	httprepo "github.com/gph-tech/fgmm-strategy-bitfinex/domain/http/repository"
 	persistentrepo "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/repository"
@@ -386,6 +388,50 @@ func (e *Entry) notifyWSHeartbeat(ctx context.Context) {
 	_ = notification.GetGlobalNotificationManager().SendInfoAlert(ctx, "strategy_entry WS 心跳", fields)
 	e.flushMarketRunningCountStrategy(ctx, wantByKey)
 	e.flushDetectLatencyStat(ctx)
+}
+
+func (e *Entry) flushMarketRunningCountStrategy(ctx context.Context, wantByKey map[string]group) {
+	if e == nil {
+		return
+	}
+	entrystat.FlushMarketRunningCountStrategy(ctx, entrystat.MarketRunningOpts{
+		StatRepo:            e.statRepo,
+		PreEventScanMinutes:   LoadPreEventScanMinutes(ctx, e.configStrategyRepo),
+		EndEventScanMinutes:   LoadEndEventScanMinutes(ctx, e.configStrategyRepo),
+		Groups:                e.runningMarketGroupsForStat(wantByKey),
+	})
+}
+
+func (e *Entry) runningMarketGroupsForStat(wantByKey map[string]group) []entrystat.Group {
+	e.mu.Lock()
+	keys := make([]string, 0, len(e.watches))
+	for k := range e.watches {
+		keys = append(keys, k)
+	}
+	e.mu.Unlock()
+	sort.Strings(keys)
+	out := make([]entrystat.Group, 0, len(keys))
+	for _, k := range keys {
+		g, ok := wantByKey[k]
+		if !ok {
+			out = append(out, entrystat.Group{MapKey: k})
+			continue
+		}
+		out = append(out, entrystat.Group{MapKey: k, MarketRowIDs: marketRowIDsFromGroup(g)})
+	}
+	return out
+}
+
+func marketRowIDsFromGroup(g group) []uint {
+	if len(g.MarketsByRowID) == 0 {
+		return nil
+	}
+	ids := make([]uint, 0, len(g.MarketsByRowID))
+	for id := range g.MarketsByRowID {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return ids
 }
 
 func notifyWatchSummary(ctx context.Context, removed, added, running int) {
