@@ -435,14 +435,15 @@ CREATE TABLE IF NOT EXISTS `data_history_order_book` (
 
 CREATE TABLE IF NOT EXISTS `data_task` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `task_type` varchar(32) NOT NULL DEFAULT 'history_l2',
-  `map_key` varchar(192) NOT NULL DEFAULT '',
-  `status` varchar(24) NOT NULL DEFAULT 'pending',
+  `ingest_source` varchar(16) NOT NULL DEFAULT 'pmdata' COMMENT 'pmdata|synthetic',
+  `map_key` varchar(192) NOT NULL DEFAULT '' COMMENT '场次 map_key；PMData 据此解析各平台 slug/market_id',
+  `params` text NULL COMMENT 'JSON：pmdata 可 utc_dates/min_utc_age_days 等；synthetic 可扩展',
+  `status` varchar(24) NOT NULL DEFAULT 'pending' COMMENT 'pending|running|completed|failed',
   `error_text` varchar(512) NOT NULL DEFAULT '',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  KEY `idx_data_task_status` (`task_type`, `status`),
+  KEY `idx_data_task_ingest_status` (`ingest_source`, `status`),
   KEY `idx_data_task_map_key` (`map_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

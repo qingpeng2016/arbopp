@@ -84,8 +84,8 @@ func (j *Sync) Run(ctx context.Context) {
 	j.reclaimStaleRunningTasks(ctx, 15*time.Minute)
 
 	_, tasks, err := j.dataTaskRepo.List(ctx, nil, map[string]interface{}{
-		"task_type = ?": persistententity.DataTaskTypeHistoryL2,
-		"status = ?":    persistententity.DataTaskStatusPending,
+		"ingest_source = ?": persistententity.DataTaskIngestPmdata,
+		"status = ?":        persistententity.DataTaskStatusPending,
 	}, "id asc", "")
 	if err != nil {
 		notification.SendErrorLog(ctx, "history_data_sync-ListTasksFailed", zap.Error(err))
@@ -124,9 +124,16 @@ func (j *Sync) runDataTask(
 		return 0, 0, 0
 	}
 	mapKey := strings.TrimSpace(task.MapKey)
+	taskParamsRaw := ""
+	if task.Params != nil {
+		taskParamsRaw = strings.TrimSpace(*task.Params)
+	}
+	tp, hasTaskParams := ParseDataTaskParams(taskParamsRaw)
+	cfg = ApplyPMDataExtra(cfg, tp, hasTaskParams)
 	logger.InfoZ(ctx, "history_data_sync-task-start",
 		zap.Uint("task_id", task.ID),
-		zap.String("map_key", mapKey))
+		zap.String("map_key", mapKey),
+		zap.Bool("task_params", hasTaskParams))
 	_ = j.dataTaskRepo.Update(ctx, nil, map[string]interface{}{"id = ?": task.ID}, map[string]interface{}{
 		"status":     persistententity.DataTaskStatusRunning,
 		"error_text": "",
@@ -169,7 +176,10 @@ func (j *Sync) runDataTask(
 		if fx.EventEndTime != nil {
 			evEnd = *fx.EventEndTime
 		}
-		dates := UTCDatesForFixture(mapKey, evStart, evEnd, cfg.UTCDaysBeforeEvent, cfg.UTCDaysAfterEvent)
+		dates, useFixed := utcDatesFromTaskParams(tp, hasTaskParams)
+		if !useFixed {
+			dates = UTCDatesForFixture(mapKey, evStart, evEnd, cfg.UTCDaysBeforeEvent, cfg.UTCDaysAfterEvent)
+		}
 		dates = FilterUTCDatesByMinAge(dates, cfg.MinUTCAgeDays)
 		if len(dates) == 0 {
 			continue
@@ -450,7 +460,7 @@ func (j *Sync) reclaimStaleRunningTasks(ctx context.Context, maxAge time.Duratio
 	}
 	cutoff := time.Now().Add(-maxAge)
 	_, stale, err := j.dataTaskRepo.List(ctx, nil, map[string]interface{}{
-		"task_type = ?":      persistententity.DataTaskTypeHistoryL2,
+		"ingest_source = ?":  persistententity.DataTaskIngestPmdata,
 		"status = ?":         persistententity.DataTaskStatusRunning,
 		"updated_at < ?":     cutoff,
 	}, "id asc", "")

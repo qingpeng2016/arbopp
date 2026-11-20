@@ -77,8 +77,8 @@ func (j *Sync) Run(ctx context.Context) {
 	cfg := ParseExtraConfig(extraRaw)
 
 	_, tasks, err := j.dataTaskRepo.List(ctx, nil, map[string]interface{}{
-		"task_type = ?": persistententity.DataTaskTypeSyntheticL2,
-		"status = ?":    persistententity.DataTaskStatusPending,
+		"ingest_source = ?": persistententity.DataTaskIngestSynthetic,
+		"status = ?":        persistententity.DataTaskStatusPending,
 	}, "id asc", "")
 	if err != nil {
 		notification.SendErrorLog(ctx, "synthetic_history_sync-ListTasksFailed", zap.Error(err))
