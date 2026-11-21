@@ -294,6 +294,7 @@ kill_all_run_bot_processes() {
     pid_is_deploy_guard "\${pid}" && continue
     proc_is_app_run_bot "\${pid}" || continue
     cmd=\$(read_proc_cmdline "\${pid}" 2>/dev/null || true)
+    case "\${cmd}" in *bash*|*sudo*|*deploy*|*sshd*) continue ;; esac
     echo ">>> [服务器] kill -\${sig} pid=\${pid} \${cmd}"
     kill "-\${sig}" "\${pid}" 2>/dev/null || true
   done
@@ -397,17 +398,6 @@ start_mall() {
   mkdir -p "\${BIN_DIR}" "\${LOG_DIR}"
   local bin_path="\${BIN_DIR}/\${MALL_BIN_NAME}"
   echo ">>> [服务器] start_mall: cwd=\$(pwd)"
-  if [[ "\${RUN_BOT}" == "true" ]]; then
-    kill_all_run_bot_processes TERM || true
-    sleep 2
-    kill_all_run_bot_processes KILL || true
-    sleep 1
-  else
-    kill_all_run_user_processes TERM
-    sleep 2
-    kill_all_run_user_processes KILL
-    sleep 1
-  fi
   : >"\${LOG_FILE}" || { echo "ERROR: 无法写 \${LOG_FILE}" >&2; exit 1; }
   export GO111MODULE=on
   export GOPROXY="\${GOPROXY:-https://goproxy.cn,direct}"
