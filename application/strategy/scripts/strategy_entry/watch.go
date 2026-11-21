@@ -318,6 +318,7 @@ func (w *watch) serveSxbet() {
 		Snapshot: func(gen int) {
 			w.bootstrapSxbetBooks(gen)
 		},
+		Stagger: func() { entryws.StaggerConnect(w.Ctx, st.MinMs, st.MaxMs) },
 	})
 }
 

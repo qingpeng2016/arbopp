@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gph-tech/fgmm-strategy-bitfinex/domain/http/entity"
@@ -34,11 +35,18 @@ func newPooledTransport() *http.Transport {
 	}
 }
 
+// realtimeTokenCacheTTL 多场次共用同一 api key 时避免每场 Connect 都打 token（易 429）。
+const realtimeTokenCacheTTL = 4 * time.Minute
+
 // Client SX Bet HTTP 客户端。
 type Client struct {
 	baseURL    string
 	apiKey     string
 	httpClient *http.Client
+
+	tokenMu    sync.Mutex
+	cachedTok  string
+	tokenUntil time.Time
 }
 
 var _ repo.SxbetRepo = (*Client)(nil)
@@ -192,6 +200,15 @@ func (c *Client) GetRealtimeToken(ctx context.Context) (string, error) {
 	if strings.TrimSpace(c.apiKey) == "" {
 		return "", fmt.Errorf("sxbet: missing api key for realtime")
 	}
+	now := time.Now()
+	c.tokenMu.Lock()
+	if c.cachedTok != "" && now.Before(c.tokenUntil) {
+		tok := c.cachedTok
+		c.tokenMu.Unlock()
+		return tok, nil
+	}
+	c.tokenMu.Unlock()
+
 	var resp entity.SxbetRealtimeTokenResponse
 	if err := c.doGET(ctx, "/user/realtime-token-v3/api-key", nil, &resp); err != nil {
 		return "", err
@@ -200,6 +217,10 @@ func (c *Client) GetRealtimeToken(ctx context.Context) (string, error) {
 	if tok == "" {
 		return "", fmt.Errorf("sxbet realtime token empty (status=%s)", resp.Status)
 	}
+	c.tokenMu.Lock()
+	c.cachedTok = tok
+	c.tokenUntil = time.Now().Add(realtimeTokenCacheTTL)
+	c.tokenMu.Unlock()
 	return tok, nil
 }
 

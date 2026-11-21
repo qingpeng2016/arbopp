@@ -2,6 +2,7 @@ package sxbet
 
 import (
 	"context"
+	"math/rand/v2"
 	"strings"
 	"time"
 
@@ -18,6 +19,8 @@ type Session struct {
 	Begin    func() (context.Context, int)
 	Apply    func(Message)
 	Snapshot func(gen int)
+	// Stagger 每次 WS 握手前随机等待（config_strategy ws_connect_stagger_ms）。
+	Stagger func()
 }
 
 // Run 维持 SX Bet orderbook_v3 WS，断线重连。
@@ -36,6 +39,9 @@ func Run(ctx context.Context, api httprepo.SxbetRepo, outcomes []persistententit
 		if ctx.Err() != nil {
 			return
 		}
+		if s.Stagger != nil {
+			s.Stagger()
+		}
 		if s.Snapshot != nil {
 			s.Snapshot(gen)
 		}
@@ -49,8 +55,20 @@ func Run(ctx context.Context, api httprepo.SxbetRepo, outcomes []persistententit
 		}
 		notification.SendErrorLog(ctx, "strategy_entry-sxbet-disconnected",
 			zap.String("map_key", mapKey), zap.Int("gen", gen), zap.Error(err))
-		if !ws.Sleep(ctx, time.Second) {
+		backoff := time.Second
+		if err != nil && isSxbetRateLimit(err) {
+			backoff = 45*time.Second + time.Duration(rand.IntN(30000))*time.Millisecond
+		}
+		if !ws.Sleep(ctx, backoff) {
 			return
 		}
 	}
+}
+
+func isSxbetRateLimit(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToUpper(err.Error())
+	return strings.Contains(s, "429") || strings.Contains(s, "RATE_LIMIT")
 }
