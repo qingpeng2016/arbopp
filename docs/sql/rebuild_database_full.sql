@@ -2,11 +2,15 @@
 -- 空库 / 删库后：表结构 + 全局配置种子（与当前代码一致，2026-11）
 -- 不含：market / market_outcome / market_order_book / stat_kv 运行时数据
 --
--- 完整重建请用：./docs/sql/rebuild_database.sh DBNAME
+-- 完整重建请用：
+--   mysql DB < docs/sql/install_database_all.sql
+-- 或 ./docs/sql/rebuild_database.sh DBNAME
+-- 说明：docs/sql/INSTALL_DATABASE.md
 -- 若只执行本文件，还须再执行：
 --   config_market_category_install.sql  （联赛同步）
 --   config_strategy_fee.sql             （手续费 config_strategy_fee，必跑）
---   predict_market_sync.sql             （Predict 手续费 0.02 占位，可选）
+--   predict_market_sync.sql             （Predict，可选）
+--   migration_predict_all_league_align.sql （Predict 全联赛对齐，推荐）
 --
 -- 手续费：strategy_entry 读 config_strategy_fee（非 config_strategy_threshold）
 --   Poly Sports 默认 0.05；Kalshi Sports 默认 0.07；Predict 见 predict 脚本
