@@ -9,6 +9,8 @@ chmod +x deploy-service.sh deploy-backend.sh
 
 SSH：配置了 `SSH_KEY` 则用本机密钥（无需 `sshpass`）；未配置则用 `SSH_PASS` + `sshpass`/`expect`。
 
+宝塔等目录属 **root**、SSH 用 **ubuntu** 时设 `REMOTE_SUDO=1`（本机 SSH ubuntu，远端 `sudo -i` 执行 git pull / kill / nohup）。
+
 服务器执行：`go run main.go --run_conf=test --run_bot=true`（`MALL_BOT_RUN_CONF` 可改）。
 
 `status` / `restart` / `stop`：第二个参数，例如 `./deploy-service.sh master status`。

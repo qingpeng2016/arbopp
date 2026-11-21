@@ -13,7 +13,7 @@ git_prepare_for_pull() {
       || true
   fi
   if [[ "${clean_bin}" == "1" ]]; then
-    git clean -fd logs/ bin/ 2>/dev/null || true
+    git clean -fd bin/ 2>/dev/null || true
   fi
 }
 
@@ -46,7 +46,8 @@ git_sync_branch() {
   ensure_app_git_repo
   cd "${APP_DIR}"
   if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    echo "ERROR: ${APP_DIR} 不是 git 仓库" >&2
+    echo "ERROR: ${APP_DIR} 不是 git 仓库（或当前用户无权限 git，目录属主为 root 时请在 .deploy.env 设 REMOTE_SUDO=1）" >&2
+    git status 2>&1 | head -5 >&2 || true
     exit 1
   fi
   git_prepare_for_pull "${GIT_CLEAN_BIN:-0}"

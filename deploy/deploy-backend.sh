@@ -58,6 +58,16 @@ mkdir -p "\${LOG_DIR}" 2>/dev/null || true
 
 ${REMOTE_LIB}
 
+shopt -s nullglob
+
+pid_is_deploy_guard() {
+  local p="\$1"
+  [[ "\${p}" == "\$\$" ]] && return 0
+  [[ "\${p}" == "\${PPID}" ]] && return 0
+  [[ -n "\${BASHPID:-}" && "\${p}" == "\${BASHPID}" ]] && return 0
+  return 1
+}
+
 proc_cwd() {
   local pid="\$1"
   readlink -f "/proc/\${pid}/cwd" 2>/dev/null || true
@@ -168,6 +178,7 @@ find_matching_pid() {
     [[ -e "\${pid_path}" ]] || continue
     pid=\${pid_path#/proc/}
     [[ "\${pid}" =~ ^[0-9]+\$ ]] || continue
+    pid_is_deploy_guard "\${pid}" && continue
     cmdline_matches_mode "\${pid}" || continue
     echo "\${pid}"
     return 0
@@ -181,6 +192,7 @@ kill_matching() {
     [[ -e "\${pid_path}" ]] || continue
     pid=\${pid_path#/proc/}
     [[ "\${pid}" =~ ^[0-9]+\$ ]] || continue
+    pid_is_deploy_guard "\${pid}" && continue
     cmdline_matches_mode "\${pid}" || continue
     kill "-\${sig}" "\${pid}" 2>/dev/null || true
   done
@@ -252,6 +264,7 @@ kill_all_run_user_processes() {
     [[ -e "\${pid_path}" ]] || continue
     pid=\${pid_path#/proc/}
     [[ "\${pid}" =~ ^[0-9]+\$ ]] || continue
+    pid_is_deploy_guard "\${pid}" && continue
     proc_is_app_run_user "\${pid}" || continue
     cmd=\$(read_proc_cmdline "\${pid}" 2>/dev/null || true)
     echo ">>> [服务器] kill -\${sig} pid=\${pid} \${cmd}"
@@ -260,6 +273,7 @@ kill_all_run_user_processes() {
   if [[ -n "\${LISTEN_PORT}" ]]; then
     kill_port_listeners "\${LISTEN_PORT}" "\${sig}"
   fi
+  return 0
 }
 
 kill_all_run_bot_processes() {
@@ -276,11 +290,13 @@ kill_all_run_bot_processes() {
     [[ -e "\${pid_path}" ]] || continue
     pid=\${pid_path#/proc/}
     [[ "\${pid}" =~ ^[0-9]+\$ ]] || continue
+    pid_is_deploy_guard "\${pid}" && continue
     proc_is_app_run_bot "\${pid}" || continue
     cmd=\$(read_proc_cmdline "\${pid}" 2>/dev/null || true)
     echo ">>> [服务器] kill -\${sig} pid=\${pid} \${cmd}"
     kill "-\${sig}" "\${pid}" 2>/dev/null || true
   done
+  return 0
 }
 
 stop_mall() {
@@ -327,7 +343,17 @@ show_mall_status() {
   if [[ "\${found}" -eq 0 ]]; then
     echo ">>> 无匹配进程"
   fi
+  if [[ -f "\${PID_FILE}" ]]; then
+    local pf
+    pf=\$(tr -d '[:space:]' <"\${PID_FILE}" 2>/dev/null || true)
+    [[ -n "\${pf}" ]] && echo ">>> pid 文件 \${PID_FILE}: \${pf}"
+  fi
   return 0
+}
+
+deploy_report_pids() {
+  echo ">>> [服务器] === 部署结果（PID）==="
+  show_mall_status
 }
 
 wait_for_mall() {
@@ -339,7 +365,7 @@ wait_for_mall() {
   for i in \$(seq 1 "\${wait_sec}"); do
     if [[ "\${RUN_BOT}" == "true" ]]; then
       if mall_bot_ready; then
-        show_mall_status
+        deploy_report_pids
         return 0
       fi
     else
@@ -387,10 +413,12 @@ start_mall() {
     ensure_go
     echo ">>> [服务器] 启动 \${GO_BIN} run main.go --run_conf=\${RUN_CONF} --run_bot=\${RUN_BOT}"
     nohup "\${GO_BIN}" run main.go --run_conf="\${RUN_CONF}" --run_bot="\${RUN_BOT}" >>"\${LOG_FILE}" 2>&1 &
+    echo ">>> [服务器] nohup 父进程 PID=\$!"
   else
     [[ -x "\${bin_path}" ]] || build_mall_binary
     echo ">>> [服务器] 启动 \${bin_path} --run_conf=\${RUN_CONF} --run_bot=\${RUN_BOT}"
     nohup "\${bin_path}" --run_conf="\${RUN_CONF}" --run_bot="\${RUN_BOT}" >>"\${LOG_FILE}" 2>&1 &
+    echo ">>> [服务器] nohup PID=\$!"
   fi
   echo \$! >"\${PID_FILE}"
   wait_for_mall
@@ -404,6 +432,7 @@ case "\${ACTION}" in
     fi
     stop_mall
     start_mall
+    deploy_report_pids
     ;;
   restart)
     if [[ "\${PAPER_USE_GO_RUN}" != "1" ]]; then
@@ -411,6 +440,7 @@ case "\${ACTION}" in
     fi
     stop_mall
     start_mall
+    deploy_report_pids
     ;;
   stop) stop_mall ;;
   status) show_mall_status ;;
@@ -427,4 +457,5 @@ if ! run_remote_bash "$REMOTE_SCRIPT_BODY"; then
   echo ">>> 若上方已有 RUNNING，可: ./deploy-service.sh master status" >&2
   exit 1
 fi
-echo ">>> 后端完成"
+echo ">>> 部署成功（远端 PID 见上方 RUNNING / pid 文件 行）"
+echo ">>> 查状态: ./deploy-service.sh ${BRANCH} status"

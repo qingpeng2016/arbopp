@@ -49,6 +49,8 @@ deploy_common_init() {
   GIT_FETCH_TIMEOUT="${GIT_FETCH_TIMEOUT:-120}"
   LOCAL_REPO_DIR="${LOCAL_REPO_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
   GIT_REPO_URL="${GIT_REPO_URL:-git@github.com:qingpeng2016/arbopp.git}"
+  # SSH 为非 root 且代码目录属主 root（宝塔常见）时设为 1：远程用 sudo -i 执行 git / 启停
+  REMOTE_SUDO="${REMOTE_SUDO:-0}"
 
   APP_DIR="$MALL_APP_DIR"
   SSH_TARGET="${SSH_USER}@${SSH_HOST}"
@@ -87,10 +89,24 @@ deploy_remote_lib() {
   cat "${SCRIPT_DIR}/remote-lib.sh"
 }
 
-# 远程执行一条 shell 命令（已拼好、由调用方转义）
+# 单条远程命令包一层 root（需 ubuntu 等用户 NOPASSWD sudo）
+_deploy_ssh_wrap() {
+  local remote_cmd="$1"
+  if [[ "${REMOTE_SUDO}" == "1" ]]; then
+    printf 'sudo -i bash -lc %q' "$remote_cmd"
+  else
+    printf '%s' "$remote_cmd"
+  fi
+}
+
+# 远程执行一条 shell 命令（已拼好、由调用方转义）；第 2 参为 1 时不包 sudo（脚本体已 pipe 到 sudo -i bash）
 _deploy_ssh_run() {
   local remote_cmd="$1"
+  local skip_wrap="${2:-0}"
   local rc=0
+  if [[ "$skip_wrap" != "1" ]]; then
+    remote_cmd="$(_deploy_ssh_wrap "$remote_cmd")"
+  fi
 
   if [[ -n "$SSH_KEY_FILE" ]]; then
     ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "$remote_cmd"
@@ -136,8 +152,12 @@ run_remote_bash() {
   echo ">>> SSH ${SSH_TARGET} — 以下在服务器 ${APP_DIR} 执行"
   local b64 one_liner
   b64=$(printf '%s' "$script_body" | base64 | tr -d '\n')
-  one_liner="echo ${b64} | base64 -d | bash"
-  _deploy_ssh_run "$one_liner"
+  local pipe_shell="bash"
+  [[ "${REMOTE_SUDO}" == "1" ]] && pipe_shell="sudo -i bash"
+  one_liner="echo ${b64} | base64 -d | ${pipe_shell}"
+  local skip=0
+  [[ "${REMOTE_SUDO}" == "1" ]] && skip=1
+  _deploy_ssh_run "$one_liner" "$skip"
 }
 
 resolve_backend_mode() {
