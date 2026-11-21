@@ -107,8 +107,6 @@ const (
 
 	// maxKalshiPolyAssignHours 唯一 Kalshi↔Poly 边若日期可解析且差超过此值，视为误配（如 bou-not 21 日 vs ful-bou 29 日）。
 	maxKalshiPolyAssignHours = 72
-	// maxCrossPlatformEventStartHours 两边都有 event_start_time 时，超过此差值不成边（区分改期/重复场次，如 11-16 vs 11-17）。
-	maxCrossPlatformEventStartHours = 18
 )
 
 type fixtureEdge struct {
@@ -171,7 +169,7 @@ func isYMDParts(y, m, d string) bool {
 	return true
 }
 
-// linkPlatformFixtures 同联赛下对齐场次。slug/队名匹配；若两边均有 event_start_time 则开赛时刻须接近，否则不成边。
+// linkPlatformFixtures 同联赛下对齐场次。slug/队名匹配；若两边均有 event_start_time 则开赛时刻须完全一致（UTC），否则不成边。
 // names、starts 的键与 keys 相同（starts 为 UTC 时间串，可空）。
 func linkPlatformFixtures(keys map[string]struct{}, names map[string]string, starts map[string]string) map[string]string {
 	parent := make(map[string]string, len(keys))
@@ -471,11 +469,7 @@ func fixturePairStartOK(ka, kb string, starts map[string]string) bool {
 	if !oka || !okb {
 		return true
 	}
-	dayA, dayB := sa.UTC().Format("2006-01-02"), sb.UTC().Format("2006-01-02")
-	if dayA != dayB {
-		return false
-	}
-	return eventStartDeltaHours(sa, sb) <= maxCrossPlatformEventStartHours
+	return sa.UTC().Equal(sb.UTC())
 }
 
 func fixtureDateDeltaForPair(ka, kb string, kindA, kindB platformKind, slugA, slugB string, starts map[string]string) (int, bool) {
@@ -511,7 +505,7 @@ func crossPlatformFixturePairMatches(kindA, kindB platformKind, slugA, slugB, na
 		// 禁止仅凭队名模糊对齐（NCAA 男子 cbb 与女子 cwbb 标题相近时会误并到同一 map_key）。
 		return polyPredictFixtureSlugMatch(slugA, slugB)
 	case kindA == platformSxbet || kindB == platformSxbet:
-		// SX 场次 slug 为 sportXeventId，与 Poly slug 不一致；用标题队名 + event_start_time 约束成边。
+		// SX 场次 slug 为 sportXeventId，与 Poly slug 不一致；用标题队名 + 开赛时刻（见 fixturePairStartOK）约束成边。
 		return fixtureNamesMatch(nameA, nameB)
 	default:
 		return false

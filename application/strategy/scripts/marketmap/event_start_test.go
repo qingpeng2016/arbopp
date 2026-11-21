@@ -10,13 +10,19 @@ func TestFixturePairStartOKRejectsDayApart(t *testing.T) {
 	starts := map[string]string{
 		poly:   "2026-11-17 05:30:00",
 		kOld:   "2026-11-16 12:00:00",
-		kNew:   "2026-11-17 05:00:00",
+		kNew:   "2026-11-17 05:30:00",
 	}
 	if fixturePairStartOK(kOld, poly, starts) {
 		t.Fatal("16th kalshi should not pair with 17th poly kickoff")
 	}
 	if !fixturePairStartOK(kNew, poly, starts) {
-		t.Fatal("17th kalshi should pair with poly")
+		t.Fatal("17th kalshi with same kickoff should pair with poly")
+	}
+	if fixturePairStartOK(kNew, poly, map[string]string{
+		poly:   "2026-11-17 05:30:00",
+		kNew:   "2026-11-17 05:00:00",
+	}) {
+		t.Fatal("same day different kickoff must not pair")
 	}
 }
 
@@ -33,7 +39,7 @@ func TestLinkSplitsKalshiByEventStart(t *testing.T) {
 	starts := map[string]string{
 		poly: "2026-11-17 05:30:00",
 		kOld: "2026-11-16 12:00:00",
-		kNew: "2026-11-17 05:00:00",
+		kNew: "2026-11-17 05:30:00",
 	}
 	linked := linkPlatformFixtures(map[string]struct{}{poly: {}, kOld: {}, kNew: {}}, names, starts)
 	if linked[kOld] == linked[poly] {

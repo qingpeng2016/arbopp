@@ -306,6 +306,41 @@ func TestPlatformFixtureKeySxbet(t *testing.T) {
 	}
 }
 
+func TestFixturePairStartOKRequiresSameKickoffWhenBothPresent(t *testing.T) {
+	scope := testMatchScope("NCAA Basketball")
+	predictKey := scope + "|f:cbb-gast-jaxst-2026-11-20"
+	sxKey := scope + "|x:l20963156"
+	starts := map[string]string{
+		predictKey: "2026-11-21 00:00:00",
+		sxKey:      "2026-11-21 18:00:00",
+	}
+	if fixturePairStartOK(predictKey, sxKey, starts) {
+		t.Fatal("same calendar day different kickoff must not pair SX edge")
+	}
+	starts[sxKey] = "2026-11-21 00:00:00"
+	if !fixturePairStartOK(predictKey, sxKey, starts) {
+		t.Fatal("identical kickoff should allow SX edge time check")
+	}
+}
+
+func TestLinkSxbetNotMergedWhenKickoffDiffersDespiteLooseNames(t *testing.T) {
+	scope := testMatchScope("NCAA Basketball")
+	predictKey := scope + "|f:cbb-gast-jaxst-2026-11-20"
+	sxKey := scope + "|x:l20963156"
+	names := map[string]string{
+		predictKey: "Georgia State Panthers vs. Jacksonville State Gamecocks",
+		sxKey:      "Cleveland State vs Kent State",
+	}
+	starts := map[string]string{
+		predictKey: "2026-11-21 00:00:00",
+		sxKey:      "2026-11-21 18:00:00",
+	}
+	linked := linkPlatformFixtures(map[string]struct{}{predictKey: {}, sxKey: {}}, names, starts)
+	if linked[predictKey] == linked[sxKey] {
+		t.Fatalf("loose name + different kickoff must not merge: %#v", linked)
+	}
+}
+
 func TestLinkSxbetWithPolyAndPredict(t *testing.T) {
 	scope := testMatchScope("NCAA Football")
 	polySlug := "ncaaf-xxx-yyy-2026-11-21"
