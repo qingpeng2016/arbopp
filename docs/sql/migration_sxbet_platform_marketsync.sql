@@ -1,5 +1,6 @@
 -- SX Bet 平台与 market_sync 联赛配置（league_id 来自 GET /leagues/active）
 -- 应用后请将 platform.slug=SXBET 的 status 改为 ACTIVE。
+-- 若需与 POLYMARKET/PREDICT 联赛名对齐，请再执行 migration_sxbet_market_category_align.sql
 
 INSERT INTO `platform` (
   `slug`, `platform_type`, `quote_style`, `display_name`, `sort`,

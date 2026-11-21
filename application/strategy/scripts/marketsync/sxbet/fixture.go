@@ -50,7 +50,7 @@ func sxbetFixtureFromMarket(
 		Platform:         platform,
 		Name:             common.StrPtr(common.Truncate(title, 2000)),
 		PlatformMarketID: fid,
-		MarketURL:        buildSxbetEventURL(fid),
+		MarketURL:        buildSxbetEventURLFromMarket(m),
 		EventStartTime:   common.StrPtr255NilIfEmpty(evStart),
 		Status:           string(cryptoPredictionEnum.MarketStatusActive),
 		Category:         common.StrPtr200(category),
@@ -117,7 +117,7 @@ func sxbetOutcomeFromMarket(
 	if outcomeKind == "" {
 		outcomeKind = cryptoPredictionEnum.OutcomeMarketTypeMoneyline
 	}
-	url := buildSxbetMarketURL(hash, fixtureID)
+	url := buildSxbetMarketURLFromMarket(m)
 	var compPtr *string
 	if competition != "" {
 		compPtr = common.StrPtr128(competition)
