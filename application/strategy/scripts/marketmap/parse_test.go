@@ -292,6 +292,49 @@ func TestPlatformFixtureKeySeparatesSubCategory(t *testing.T) {
 	}
 }
 
+func TestPlatformFixtureKeySxbet(t *testing.T) {
+	comp, en := "NCAA Football", "NCAA Football"
+	slug := "l20940405"
+	m := testMarket(appcommon.PlatformSxbet, comp, en, slug)
+	_, gotEn, key, ok := platformFixtureKeyFromMarket(m)
+	if !ok || gotEn != en {
+		t.Fatalf("sxbet key: ok=%v key=%q en=%q", ok, key, gotEn)
+	}
+	wantScope := testMatchScope(en)
+	if !strings.HasPrefix(key, wantScope+"|x:"+slug) {
+		t.Fatalf("want prefix %s|x:%s got %q", wantScope, slug, key)
+	}
+}
+
+func TestLinkSxbetWithPolyAndPredict(t *testing.T) {
+	scope := testMatchScope("NCAA Football")
+	polySlug := "ncaaf-xxx-yyy-2026-11-21"
+	polyKey := scope + "|p:" + polySlug
+	predictKey := scope + "|f:" + polySlug
+	sxKey := scope + "|x:l20940405"
+	names := map[string]string{
+		polyKey:    "Ohio State vs Michigan",
+		predictKey: "Ohio State vs Michigan",
+		sxKey:      "Ohio State vs Michigan",
+	}
+	start := "2026-11-21 18:00:00"
+	starts := map[string]string{
+		polyKey:    start,
+		predictKey: start,
+		sxKey:      start,
+	}
+	keys := map[string]struct{}{polyKey: {}, predictKey: {}, sxKey: {}}
+	linked := linkPlatformFixtures(keys, names, starts)
+	for _, k := range []string{polyKey, predictKey, sxKey} {
+		if linked[k] != linked[polyKey] {
+			t.Fatalf("not linked with sx: %#v", linked)
+		}
+	}
+	if linked[polyKey] != polySlug {
+		t.Fatalf("canonical want poly slug, got %q", linked[polyKey])
+	}
+}
+
 func TestBuildFixtureMapKeyLength(t *testing.T) {
 	key := buildFixtureMapKey("英超", "epl-ast-sun-2026-11-21")
 	if key == "" || len(key) > 192 {

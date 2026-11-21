@@ -51,6 +51,8 @@ func platformFixtureKeyFromMarket(m *persistententity.Market) (competition, comp
 			base = slug
 		}
 		return competition, competitionEn, scope + "|f:" + base, true
+	case appcommon.PlatformSxbet:
+		return competition, competitionEn, scope + "|x:" + slug, true
 	default:
 		return "", "", "", false
 	}
@@ -88,6 +90,8 @@ func platformFixtureKey(m *persistententity.MarketOutcome) (competition, key str
 			return "", "", false
 		}
 		return competition, competition + "|f:" + base, true
+	case appcommon.PlatformSxbet:
+		return competition, competition + "|x:" + slug, true
 	default:
 		return "", "", false
 	}
@@ -99,6 +103,7 @@ const (
 	platformKalshi platformKind = iota
 	platformPoly
 	platformPredict
+	platformSxbet
 
 	// maxKalshiPolyAssignHours 唯一 Kalshi↔Poly 边若日期可解析且差超过此值，视为误配（如 bou-not 21 日 vs ful-bou 29 日）。
 	maxKalshiPolyAssignHours = 72
@@ -120,6 +125,8 @@ func platformKindFromKey(k string) platformKind {
 		return platformPoly
 	case strings.Contains(k, "|f:"):
 		return platformPredict
+	case strings.Contains(k, "|x:"):
+		return platformSxbet
 	default:
 		return -1
 	}
@@ -427,6 +434,8 @@ func platformFixtureSlugPayload(key string, kind platformKind) string {
 		return platformKeyPayload(key, "p:")
 	case platformPredict:
 		return platformKeyPayload(key, "f:")
+	case platformSxbet:
+		return platformKeyPayload(key, "x:")
 	default:
 		return ""
 	}
@@ -501,6 +510,9 @@ func crossPlatformFixturePairMatches(kindA, kindB platformKind, slugA, slugB, na
 	case kindA == platformPoly && kindB == platformPredict, kindA == platformPredict && kindB == platformPoly:
 		// 禁止仅凭队名模糊对齐（NCAA 男子 cbb 与女子 cwbb 标题相近时会误并到同一 map_key）。
 		return polyPredictFixtureSlugMatch(slugA, slugB)
+	case kindA == platformSxbet || kindB == platformSxbet:
+		// SX 场次 slug 为 sportXeventId，与 Poly slug 不一致；用标题队名 + event_start_time 约束成边。
+		return fixtureNamesMatch(nameA, nameB)
 	default:
 		return false
 	}
@@ -534,6 +546,8 @@ func fixtureDateDeltaForKinds(kindA, kindB platformKind, slugA, slugB string) (i
 		return fixtureDateDeltaHours(slugA, slugB)
 	case kindA == platformPredict && kindB == platformKalshi:
 		return fixtureDateDeltaHours(slugB, slugA)
+	case kindA == platformSxbet || kindB == platformSxbet:
+		return math.MaxInt, false
 	default:
 		return fixtureDateDeltaPolyStyle(slugA, slugB)
 	}

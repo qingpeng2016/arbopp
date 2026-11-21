@@ -21,7 +21,7 @@ type mapMember struct {
 	platform string
 }
 
-// MarketMap 按 category+sub_category+competition_en 归桶，在同桶内跨 Poly / Kalshi / Predict 对齐 slug，写 map_key 并置 map_verified=1。
+// MarketMap 按 category+sub_category+competition_en 归桶，在同桶内跨 Poly / Kalshi / Predict / SXBET 对齐场次，写 map_key 并置 map_verified=1。
 type MarketMap struct {
 	marketRepo  persistentrepo.MarketRepo
 	outcomeRepo persistentrepo.MarketOutcomeRepo
