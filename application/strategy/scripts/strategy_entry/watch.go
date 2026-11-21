@@ -296,8 +296,11 @@ func (w *watch) serveSxbet() {
 	defer w.reconnect(appcommon.PlatformSxbet)
 	hashes := sxbetws.MarketHashes(w.Outcomes)
 	if len(hashes) == 0 {
-		notification.SendErrorLog(w.Ctx, "strategy_entry-sxbet-ws-skip",
-			zap.String("map_key", w.MapKey), zap.String("reason", "no market hashes on outcomes"))
+		if w.platformExpected(appcommon.PlatformSxbet) {
+			notification.SendErrorLog(w.Ctx, "strategy_entry-sxbet-ws-skip",
+				zap.String("map_key", w.MapKey),
+				zap.String("reason", "group has SXBET market but outcomes lack marketHash"))
+		}
 		return
 	}
 	if w.entry == nil || w.entry.sxbet == nil || w.entry.sxbetAPIKey() == "" {
