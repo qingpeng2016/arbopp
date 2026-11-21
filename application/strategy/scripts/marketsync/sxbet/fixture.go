@@ -1,6 +1,7 @@
 package sxbet
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -62,24 +63,26 @@ func sxbetFixtureFromMarket(
 	}
 }
 
+// sxbetOutcomeTitle 与 sx.bet 盘口页一致：Yes 侧 / No 侧 + 玩法标签（避免多场共用一个「1X2」看不出是哪条腿）。
 func sxbetOutcomeTitle(m httpentity.SxbetMarket, kind cryptoPredictionEnum.OutcomeMarketType) string {
-	base := sxbetFixtureTitle(m)
+	yes := strings.TrimSpace(m.OutcomeOneName)
+	no := strings.TrimSpace(m.OutcomeTwoName)
 	typeLabel := marketTypeLabel(m)
 	if typeLabel == "" {
-		return base
+		typeLabel = "market"
 	}
 	line := ""
 	if m.Line != nil {
-		line = fmt.Sprintf(" (%.2g)", *m.Line)
+		line = fmt.Sprintf(" line=%.2g", *m.Line)
 	}
-	switch kind {
-	case cryptoPredictionEnum.OutcomeMarketTypeHandicap:
-		return common.Truncate(base+" — "+typeLabel+line, 2000)
-	case cryptoPredictionEnum.OutcomeMarketTypeTotal:
-		return common.Truncate(base+" — "+typeLabel+line, 2000)
-	default:
-		return common.Truncate(base+" — "+typeLabel, 2000)
+	if yes != "" && no != "" {
+		return common.Truncate(fmt.Sprintf("%s vs %s [%s%s]", yes, no, typeLabel, line), 2000)
 	}
+	base := sxbetFixtureTitle(m)
+	if line == "" {
+		return common.Truncate(base+" ["+typeLabel+"]", 2000)
+	}
+	return common.Truncate(base+" ["+typeLabel+line+"]", 2000)
 }
 
 func marketTypeLabel(m httpentity.SxbetMarket) string {
@@ -125,6 +128,18 @@ func sxbetOutcomeFromMarket(
 	yesSide := strings.TrimSpace(m.OutcomeOneName)
 	noSide := strings.TrimSpace(m.OutcomeTwoName)
 	desc := yesSide + " / " + noSide
+	var cfgPtr *string
+	if yesSide != "" || noSide != "" {
+		b, _ := json.Marshal(map[string]string{
+			"yes_label": yesSide,
+			"no_label":  noSide,
+		})
+		if len(b) > 0 {
+			s := string(b)
+			cfgPtr = &s
+		}
+	}
+	// 每个 marketHash 对应 SX 一张单簿（YES 视角）；勿与 Poly 双 token 混为两行。
 	return &persistententity.MarketOutcome{
 		Platform:                platform,
 		PlatformMarketID:        fixtureID,
@@ -134,8 +149,9 @@ func sxbetOutcomeFromMarket(
 		PlatformMarketOutcomeID: hash,
 		MarketURL:               url,
 		YesTokenID:              hash,
-		NoTokenID:               hash,
+		NoTokenID:               "",
 		Desc:                    common.StrPtrOptional(desc),
+		Config:                  cfgPtr,
 		MarketStartTime:         common.StrPtr255(evStart),
 		Category:                common.StrPtr200(category),
 		SubCategory:             common.StrPtr200(subCategory),
