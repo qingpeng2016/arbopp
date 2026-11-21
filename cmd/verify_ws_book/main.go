@@ -20,6 +20,9 @@ import (
 
 	"github.com/gph-tech/fgmm-strategy-bitfinex/boot"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/conf"
+	sxbetws "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/ws/sxbet"
+	httprepo "github.com/gph-tech/fgmm-strategy-bitfinex/domain/http/repository"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/infrastructure/mysql"
 )
 
 func main() {
@@ -109,6 +112,12 @@ func main() {
 		by[p] = append(by[p], x)
 	}
 
+	catalog, err := boot.NewPlatformCatalog(mysql.NewPlatformImpl(db))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "catalog: %v\n", err)
+		os.Exit(1)
+	}
+	sxbetAPI := boot.NewSxbetRepoFromPlatform(catalog, mysql.NewAccountImpl(db))
 	hc := &http.Client{Timeout: 20 * time.Second}
 	var okN, warnN, badN int
 	for _, plat := range []string{"SXBET", "POLYMARKET", "PREDICT", "KALSHI"} {
@@ -127,7 +136,10 @@ func main() {
 
 			switch plat {
 			case "SXBET":
-				apiAsks, apiBids, err := sxbetSnapshot(hc, x.Hash)
+				apiAsks, apiBids, err := sxbetSnapshotViaRepo(context.Background(), sxbetAPI, x.Hash)
+				if err != nil {
+					apiAsks, apiBids, err = sxbetSnapshot(hc, x.Hash)
+				}
 				if err != nil {
 					fmt.Printf("REST: %v\n", err)
 					badN++
@@ -204,6 +216,29 @@ func sxbetSnapshot(hc *http.Client, hash string) (asks, bids []lvl, err error) {
 		if validPrice(p) && s > 0 {
 			bids = append(bids, lvl{p, s})
 		}
+	}
+	sort.Slice(asks, func(i, j int) bool { return asks[i].P < asks[j].P })
+	sort.Slice(bids, func(i, j int) bool { return bids[i].P > bids[j].P })
+	return asks, bids, nil
+}
+
+func sxbetSnapshotViaRepo(ctx context.Context, api httprepo.SxbetRepo, hash string) (asks, bids []lvl, err error) {
+	if api == nil {
+		return nil, nil, fmt.Errorf("nil api")
+	}
+	snap, err := api.GetOrderbookSnapshot(ctx, hash)
+	if err != nil {
+		return nil, nil, err
+	}
+	msg, ok := sxbetws.MessageFromSnapshot(1, snap)
+	if !ok {
+		return nil, nil, fmt.Errorf("empty book")
+	}
+	for _, lv := range msg.Asks {
+		asks = append(asks, lvl{lv.Price, lv.Size})
+	}
+	for _, lv := range msg.Bids {
+		bids = append(bids, lvl{lv.Price, lv.Size})
 	}
 	sort.Slice(asks, func(i, j int) bool { return asks[i].P < asks[j].P })
 	sort.Slice(bids, func(i, j int) bool { return bids[i].P > bids[j].P })
