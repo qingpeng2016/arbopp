@@ -26,7 +26,7 @@ redis:
   pool_size: 200
   min_idle: 50
 
-# 通知配置
+# 通知配置1111111
 notification:
   lark:
     alert_webhook_url: "https://open.larksuite.com/open-apis/bot/v2/hook/a870bc3a-2c08-4b0d-9738-6f97652117d4"
