@@ -29,6 +29,9 @@ import (
 
 var errBusy = errors.New("strategy_entry event queue full")
 
+// WS 落库折中：不写每笔 price_change，同 token 限速，Redis 队列有上限（见 wsbookqueue）。
+const wsBookPersistMinInterval = 5 * time.Second
+
 type event struct {
 	Gen      int
 	Platform string
@@ -63,7 +66,9 @@ type watch struct {
 	yesno    *yesno.Runner
 	onextwo  *onextwo.Runner
 	negRisk  []bool
-	wsHealth *wsHealth
+	wsHealth       *wsHealth
+	wsPersistMu    sync.Mutex
+	wsPersistLast  map[string]time.Time
 }
 
 // newWatch 为一组 map_key 建内存盘口，并记下 token、ticker 对应哪条结果。
@@ -383,8 +388,7 @@ func (w *watch) write(e event) {
 	}
 	w.touchWS(e.Platform)
 
-	// 暂关闭：WS 盘口推 Redis（ob:ws:mysql_queue），避免 Redis 被打满。
-	// w.enqueueBookPersistWS(e)
+	w.enqueueBookPersistWS(e)
 
 	var outcomeID uint
 	var ok bool
@@ -505,6 +509,10 @@ func (w *watch) enqueueBookPersistWS(e event) {
 	if w.entry == nil || w.entry.wsBookQueue == nil {
 		return
 	}
+	// Poly 增量太密，落库只保留全量 book（订阅/成交触发的 poly_all_book）。
+	if e.Kind == "poly_price_change" || e.Kind == "kalshi_price_change" {
+		return
+	}
 	rows := w.orderBookRowsFromEvent(e)
 	if len(rows) == 0 {
 		return
@@ -523,6 +531,9 @@ func (w *watch) enqueueBookPersistWS(e event) {
 		if wsRow == nil {
 			continue
 		}
+		if !w.allowWSPersistRow(dup.Platform, dup.TokenID) {
+			continue
+		}
 		wsRow.SnapshotAtMs = snapshotMsForWSRow(dup, e)
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		err := q.Push(ctx, wsRow)
@@ -535,6 +546,25 @@ func (w *watch) enqueueBookPersistWS(e event) {
 				zap.String("token_id", dup.TokenID))
 		}
 	}
+}
+
+func (w *watch) allowWSPersistRow(platform, tokenID string) bool {
+	tokenID = strings.TrimSpace(tokenID)
+	if tokenID == "" {
+		return true
+	}
+	key := strings.ToUpper(strings.TrimSpace(platform)) + "|" + tokenID
+	now := time.Now()
+	w.wsPersistMu.Lock()
+	defer w.wsPersistMu.Unlock()
+	if w.wsPersistLast == nil {
+		w.wsPersistLast = make(map[string]time.Time)
+	}
+	if t, ok := w.wsPersistLast[key]; ok && now.Sub(t) < wsBookPersistMinInterval {
+		return false
+	}
+	w.wsPersistLast[key] = now
+	return true
 }
 
 func cloneOrderBookRow(src *persistententity.OrderBook) *persistententity.OrderBook {

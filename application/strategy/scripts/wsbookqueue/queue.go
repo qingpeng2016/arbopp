@@ -15,6 +15,8 @@ const (
 	RedisListKey = "ob:ws:mysql_queue"
 	// MaxPopBatch 单次批量弹出上限。
 	MaxPopBatch = 500
+	// MaxQueueLen 队列过长时不再 RPUSH，防止 Redis 被打满。
+	MaxQueueLen = 5000
 )
 
 var batchPop = redis.NewScript(`
@@ -43,6 +45,9 @@ func New(rdb redis.UniversalClient) *Queue {
 
 func (q *Queue) Push(ctx context.Context, row *persistententity.OrderBookWS) error {
 	if q == nil || q.rdb == nil || row == nil {
+		return nil
+	}
+	if n, err := q.rdb.LLen(ctx, q.key).Result(); err == nil && n >= MaxQueueLen {
 		return nil
 	}
 	b, err := json.Marshal(row)
