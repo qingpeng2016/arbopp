@@ -118,9 +118,15 @@ func (c *Collect) Run(ctx context.Context) {
 		return
 	}
 
-	compliant, compliantJSON, verifiedOK, verifiedJSON, invErr := c.loadCompliantGroupInventory(ctx)
+	compliant, compliantByCombo, verifiedOK, verifiedByCombo, invErr := c.loadCompliantGroupInventory(ctx)
 	if invErr != nil {
 		notification.SendErrorLog(ctx, "stat_collect-group_inventory-failed", zap.Error(invErr))
+	}
+	if compliantByCombo == nil {
+		compliantByCombo = map[string]int64{}
+	}
+	if verifiedByCombo == nil {
+		verifiedByCombo = map[string]int64{}
 	}
 	watchCounts, watchErr := c.loadWatchGroupCounts(ctx)
 	if watchErr != nil {
@@ -144,10 +150,10 @@ func (c *Collect) Run(ctx context.Context) {
 		PreEventGroups:      parsePreEventGroupsFromDesc(preRunnable.DescriptionJSON),
 		BadLt2:              badOnly.BadLt2,
 		BadDup:              badOnly.BadDup,
-		CompliantGroups:     compliant,
-		CompliantByPlatform: compliantJSON,
-		VerifiedCompliant:   verifiedOK,
-		VerifiedByPlatform:  verifiedJSON,
+		CompliantGroups:      compliant,
+		CompliantByCombo:     compliantByCombo,
+		VerifiedCompliant:    verifiedOK,
+		VerifiedByCombo:      verifiedByCombo,
 	}
 	auditRows := mapKeyAuditRows(audit)
 
@@ -193,10 +199,10 @@ type mapKeyAudit struct {
 	PreEventGroups        []preEventRunnableGroup
 	BadLt2                int64
 	BadDup                int64
-	CompliantGroups       int64
-	CompliantByPlatform   string // JSON：库内合规组按平台数分桶（ACTIVE+map_key，audit OK）
-	VerifiedCompliant     int64
-	VerifiedByPlatform    string // JSON：map_verified=1 且 platform 为 ACTIVE 的合规组分桶
+	CompliantGroups    int64
+	CompliantByCombo   map[string]int64 // 平台组合键，如 POLYMARKET|PREDICT
+	VerifiedCompliant  int64
+	VerifiedByCombo    map[string]int64
 }
 
 // mapKeyGroupsSnapshot 写入 stat_kv map_key_audit / groups 的 item_value（JSON）。
@@ -208,7 +214,8 @@ type mapKeyGroupsSnapshot struct {
 }
 
 type mapKeyGroupsLayer struct {
-	Total      int64            `json:"total"`
+	Total int64 `json:"total"`
+	// ByPlatform 键为平台组合，按字母序用 | 连接，如 POLYMARKET|PREDICT、POLYMARKET|PREDICT|SXBET。
 	ByPlatform map[string]int64 `json:"by_platform"`
 }
 
@@ -285,28 +292,28 @@ func (c *Collect) loadWatchGroupCounts(ctx context.Context) (strategyentry.Watch
 	})
 }
 
-type groupInventoryBucketRow struct {
-	PlatformCnt int64 `gorm:"column:platform_cnt"`
-	GroupCnt    int64 `gorm:"column:group_cnt"`
+type groupComboBucketRow struct {
+	PlatformCombo string `gorm:"column:platform_combo"`
+	GroupCnt      int64  `gorm:"column:group_cnt"`
 }
 
 // loadCompliantGroupInventory 库内 map_key 合规组（≥2 平台、同平台不重复），分「全 ACTIVE」与「已核对+ACTIVE 平台」两层。
-func (c *Collect) loadCompliantGroupInventory(ctx context.Context) (okAll int64, jsonAll string, okVerified int64, jsonVerified string, err error) {
+func (c *Collect) loadCompliantGroupInventory(ctx context.Context) (okAll int64, byAll map[string]int64, okVerified int64, byVerified map[string]int64, err error) {
 	if c.db == nil {
-		return 0, "{}", 0, "{}", nil
+		return 0, map[string]int64{}, 0, map[string]int64{}, nil
 	}
-	okAll, jsonAll, err = c.compliantGroupsWithFilter(ctx, false)
+	okAll, byAll, err = c.compliantGroupsByPlatformCombo(ctx, false)
 	if err != nil {
-		return 0, "", 0, "", err
+		return 0, nil, 0, nil, err
 	}
-	okVerified, jsonVerified, err = c.compliantGroupsWithFilter(ctx, true)
+	okVerified, byVerified, err = c.compliantGroupsByPlatformCombo(ctx, true)
 	if err != nil {
-		return 0, "", 0, "", err
+		return 0, nil, 0, nil, err
 	}
-	return okAll, jsonAll, okVerified, jsonVerified, nil
+	return okAll, byAll, okVerified, byVerified, nil
 }
 
-func (c *Collect) compliantGroupsWithFilter(ctx context.Context, verifiedOnly bool) (total int64, jsonBody string, err error) {
+func (c *Collect) compliantGroupsByPlatformCombo(ctx context.Context, verifiedOnly bool) (total int64, by map[string]int64, err error) {
 	verifiedClause := ""
 	if verifiedOnly {
 		verifiedClause = `
@@ -319,10 +326,11 @@ func (c *Collect) compliantGroupsWithFilter(ctx context.Context, verifiedOnly bo
       )`
 	}
 	q := `
-SELECT platform_cnt, COUNT(*) AS group_cnt
+SELECT platform_combo, COUNT(*) AS group_cnt
 FROM (
     SELECT
         TRIM(m.map_key) AS map_key,
+        GROUP_CONCAT(DISTINCT UPPER(TRIM(m.platform)) ORDER BY UPPER(TRIM(m.platform)) SEPARATOR '|') AS platform_combo,
         COUNT(*) AS market_rows,
         COUNT(DISTINCT UPPER(TRIM(m.platform))) AS platform_cnt
     FROM market m
@@ -333,23 +341,22 @@ FROM (
     HAVING platform_cnt >= 2
        AND market_rows = platform_cnt
 ) t
-GROUP BY platform_cnt
-ORDER BY platform_cnt`
-	var rows []groupInventoryBucketRow
+GROUP BY platform_combo
+ORDER BY platform_combo`
+	var rows []groupComboBucketRow
 	if err := c.db.WithContext(ctx).Raw(q).Scan(&rows).Error; err != nil {
-		return 0, "", err
+		return 0, nil, err
 	}
-	by := make(map[string]int64, len(rows))
+	by = make(map[string]int64, len(rows))
 	for _, r := range rows {
+		combo := strings.TrimSpace(r.PlatformCombo)
+		if combo == "" {
+			continue
+		}
+		by[combo] = r.GroupCnt
 		total += r.GroupCnt
-		by[strconv.FormatInt(r.PlatformCnt, 10)] = r.GroupCnt
 	}
-	by["total"] = total
-	b, err := json.Marshal(by)
-	if err != nil {
-		return total, "{}", nil
-	}
-	return total, string(b), nil
+	return total, by, nil
 }
 
 // countPreEventRunnableGroups 与 strategy_entry.loadGroups 的 pre_event_scan_minutes 窗口一致（默认 30 分钟）。
@@ -643,11 +650,11 @@ func buildMapKeyGroupsJSON(a mapKeyAudit) string {
 	snap := mapKeyGroupsSnapshot{
 		Compliant: mapKeyGroupsLayer{
 			Total:      a.CompliantGroups,
-			ByPlatform: platformCountsForSnapshot(a.CompliantByPlatform),
+			ByPlatform: cloneComboCounts(a.CompliantByCombo),
 		},
 		VerifiedCompliant: mapKeyGroupsLayer{
 			Total:      a.VerifiedCompliant,
-			ByPlatform: platformCountsForSnapshot(a.VerifiedByPlatform),
+			ByPlatform: cloneComboCounts(a.VerifiedByCombo),
 		},
 		Strategy: mapKeyStrategyLayer{
 			Matched:             a.Matched,
@@ -670,30 +677,13 @@ func buildMapKeyGroupsJSON(a mapKeyAudit) string {
 	return b
 }
 
-// platformCountsForSnapshot 分桶里去掉冗余的 total，仅保留 2/3/4… 平台组计数。
-func platformCountsForSnapshot(raw string) map[string]int64 {
-	m := parsePlatformCountJSON(raw)
+func cloneComboCounts(m map[string]int64) map[string]int64 {
 	if len(m) == 0 {
 		return map[string]int64{}
 	}
 	out := make(map[string]int64, len(m))
 	for k, v := range m {
-		if k == "total" {
-			continue
-		}
 		out[k] = v
-	}
-	return out
-}
-
-func parsePlatformCountJSON(raw string) map[string]int64 {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return map[string]int64{}
-	}
-	out := map[string]int64{}
-	if err := json.Unmarshal([]byte(raw), &out); err != nil {
-		return map[string]int64{}
 	}
 	return out
 }
