@@ -363,7 +363,10 @@ func (e *Entry) notifyWSHeartbeat(ctx context.Context) {
 		sumShould += want
 		sumOK += t.ok
 		val := "未配置"
-		if want > 0 || t.inRun > 0 {
+		if strings.EqualFold(p, appcommon.PlatformSxbet) && want > 0 && strings.TrimSpace(e.sxbetAPIKey()) == "" {
+			val = fmt.Sprintf("0/%d 未配置api_key", want)
+			allOK = false
+		} else if want > 0 || t.inRun > 0 {
 			if want != t.inRun || t.ok != want {
 				allOK = false
 			}

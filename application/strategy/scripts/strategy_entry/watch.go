@@ -295,7 +295,16 @@ func (w *watch) bootstrapPredictBooks(gen int) {
 func (w *watch) serveSxbet() {
 	defer w.reconnect(appcommon.PlatformSxbet)
 	hashes := sxbetws.MarketHashes(w.Outcomes)
-	if len(hashes) == 0 || w.entry == nil || w.entry.sxbet == nil || w.entry.sxbetAPIKey() == "" {
+	if len(hashes) == 0 {
+		notification.SendErrorLog(w.Ctx, "strategy_entry-sxbet-ws-skip",
+			zap.String("map_key", w.MapKey), zap.String("reason", "no market hashes on outcomes"))
+		return
+	}
+	if w.entry == nil || w.entry.sxbet == nil || w.entry.sxbetAPIKey() == "" {
+		notification.SendErrorLog(w.Ctx, "strategy_entry-sxbet-ws-skip",
+			zap.String("map_key", w.MapKey),
+			zap.String("reason", "missing sxbet client or api_key (platform.extra 或 account)"),
+			zap.Int("hashes", len(hashes)))
 		return
 	}
 	st := w.entry.wsStaggerBounds()

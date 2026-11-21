@@ -7,7 +7,9 @@ import (
 	"sync"
 
 	"github.com/centrifugal/centrifuge-go"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/common/dederi/logger"
 	httprepo "github.com/gph-tech/fgmm-strategy-bitfinex/domain/http/repository"
+	"go.uber.org/zap"
 )
 
 const realtimeWSURL = "wss://realtime.sx.bet/connection/websocket"
@@ -78,11 +80,21 @@ func Stream(ctx context.Context, api httprepo.SxbetRepo, marketHashes []string, 
 		apply(msg)
 	}
 
+	client.OnConnected(func(e centrifuge.ConnectedEvent) {
+		apply(Message{Gen: gen, Kind: "heartbeat"})
+		_ = e
+	})
+	client.OnError(func(e centrifuge.ErrorEvent) {
+		logger.WarnZ(ctx, "strategy_entry-sxbet-ws-client-error", zap.Error(e.Error))
+	})
+
 	if err := client.Connect(); err != nil {
 		client.Close()
 		return err
 	}
 	defer client.Close()
+
+	subCfg := centrifuge.SubscriptionConfig{Recoverable: true}
 
 	for _, h := range marketHashes {
 		hash := strings.TrimSpace(h)
@@ -90,7 +102,7 @@ func Stream(ctx context.Context, api httprepo.SxbetRepo, marketHashes []string, 
 			continue
 		}
 		ch := "orderbook_v3:" + hash
-		sub, err := client.NewSubscription(ch)
+		sub, err := client.NewSubscription(ch, subCfg)
 		if err != nil {
 			return err
 		}
@@ -99,13 +111,16 @@ func Stream(ctx context.Context, api httprepo.SxbetRepo, marketHashes []string, 
 			applyBook(hCopy, e.Data)
 		})
 		sub.OnSubscribed(func(e centrifuge.SubscribedEvent) {
+			apply(Message{Gen: gen, Kind: "heartbeat"})
 			if e.Recovered {
 				return
 			}
 			seedFromREST(hCopy)
 		})
 		sub.OnError(func(e centrifuge.SubscriptionErrorEvent) {
-			_ = e
+			logger.WarnZ(ctx, "strategy_entry-sxbet-ws-sub-error",
+				zap.String("channel", ch),
+				zap.Error(e.Error))
 		})
 		if err := sub.Subscribe(); err != nil {
 			return err

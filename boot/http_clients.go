@@ -97,23 +97,18 @@ type sxbetPlatformExtra struct {
 	APIKey string `json:"api_key"`
 }
 
-func NewSxbetRepoFromPlatform(catalog *PlatformCatalog) httprepo.SxbetRepo {
+func NewSxbetRepoFromPlatform(catalog *PlatformCatalog, accountRepo persistentrepo.AccountRepo) httprepo.SxbetRepo {
 	ctx := context.Background()
+	apiKey := resolveSxbetAPIKey(ctx, catalog, accountRepo)
+	if apiKey == "" {
+		notification.SendErrorLog(ctx, "platform-sxbet-missing-api-key",
+			zap.String("hint", "platform.extra_config {\"api_key\":\"...\"} 或 account.api_key (platform=SXBET, status=ACTIVE)"))
+	}
 	baseURL := defaultSxbetAPI
 	timeout := 20 * time.Second
-	var apiKey string
 	if p, ok := catalog.Get(string(cryptoPredictionEnum.PlatformSxbet)); ok {
 		baseURL = marketAPIBase(&p, defaultSxbetAPI)
 		timeout = platformTimeout(&p)
-		if p.ExtraConfig != nil {
-			raw := strings.TrimSpace(*p.ExtraConfig)
-			if raw != "" {
-				var extra sxbetPlatformExtra
-				if json.Unmarshal([]byte(raw), &extra) == nil {
-					apiKey = strings.TrimSpace(extra.APIKey)
-				}
-			}
-		}
 		logger.InfoZ(ctx, "platform-sxbet-loaded",
 			zap.String("market_api_base_url", baseURL),
 			zap.Duration("timeout", timeout),
@@ -125,6 +120,23 @@ func NewSxbetRepoFromPlatform(catalog *PlatformCatalog) httprepo.SxbetRepo {
 	}
 	hc := &http.Client{Timeout: timeout, Transport: sxbet.NewPooledTransport()}
 	return sxbet.NewClientWithOptions(baseURL, apiKey, hc)
+}
+
+func resolveSxbetAPIKey(ctx context.Context, catalog *PlatformCatalog, accountRepo persistentrepo.AccountRepo) string {
+	if catalog != nil {
+		if p, ok := catalog.Get(string(cryptoPredictionEnum.PlatformSxbet)); ok && p.ExtraConfig != nil {
+			raw := strings.TrimSpace(*p.ExtraConfig)
+			if raw != "" {
+				var extra sxbetPlatformExtra
+				if json.Unmarshal([]byte(raw), &extra) == nil {
+					if k := strings.TrimSpace(extra.APIKey); k != "" {
+						return k
+					}
+				}
+			}
+		}
+	}
+	return resolveActiveAccountAPIKey(ctx, accountRepo, string(cryptoPredictionEnum.PlatformSxbet))
 }
 
 func resolvePredictAPIKey(ctx context.Context, catalog *PlatformCatalog, accountRepo persistentrepo.AccountRepo) string {
@@ -141,11 +153,15 @@ func resolvePredictAPIKey(ctx context.Context, catalog *PlatformCatalog, account
 			}
 		}
 	}
+	return resolveActiveAccountAPIKey(ctx, accountRepo, string(cryptoPredictionEnum.PlatformPredict))
+}
+
+func resolveActiveAccountAPIKey(ctx context.Context, accountRepo persistentrepo.AccountRepo, platform string) string {
 	if accountRepo == nil {
 		return ""
 	}
 	_, list, err := accountRepo.List(ctx, nil, map[string]interface{}{
-		"platform = ?": string(cryptoPredictionEnum.PlatformPredict),
+		"platform = ?": platform,
 		"status = ?":   "ACTIVE",
 	}, "id asc", "")
 	if err != nil || len(list) == 0 {
