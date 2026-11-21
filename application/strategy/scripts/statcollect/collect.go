@@ -118,6 +118,10 @@ func (c *Collect) Run(ctx context.Context) {
 		return
 	}
 
+	compliant, compliantJSON, verifiedOK, verifiedJSON, invErr := c.loadCompliantGroupInventory(ctx)
+	if invErr != nil {
+		notification.SendErrorLog(ctx, "stat_collect-group_inventory-failed", zap.Error(invErr))
+	}
 	watchCounts, watchErr := c.loadWatchGroupCounts(ctx)
 	if watchErr != nil {
 		notification.SendErrorLog(ctx, "stat_collect-watch_groups-failed", zap.Error(watchErr))
@@ -135,6 +139,10 @@ func (c *Collect) Run(ctx context.Context) {
 		PreEventRunnableDesc: preRunnable.DescriptionJSON,
 		BadLt2:               badOnly.BadLt2,
 		BadDup:               badOnly.BadDup,
+		CompliantGroups:      compliant,
+		CompliantByPlatform:  compliantJSON,
+		VerifiedCompliant:    verifiedOK,
+		VerifiedByPlatform:   verifiedJSON,
 	}
 	auditRows := mapKeyAuditRows(audit)
 
@@ -156,6 +164,8 @@ func (c *Collect) Run(ctx context.Context) {
 		return
 	}
 	logger.InfoZ(ctx, "stat_collect-done",
+		zap.Int64("compliant_groups", audit.CompliantGroups),
+		zap.Int64("verified_compliant_groups", audit.VerifiedCompliant),
 		zap.Int64("matched_groups", audit.Matched),
 		zap.Int64("watchable_groups", audit.Watchable),
 		zap.Int64("market_running_count", audit.PreEventRunnable),
@@ -175,6 +185,10 @@ type mapKeyAudit struct {
 	PreEventRunnableDesc string
 	BadLt2               int64
 	BadDup               int64
+	CompliantGroups      int64
+	CompliantByPlatform  string // JSON：库内合规组按平台数分桶（ACTIVE+map_key，audit OK）
+	VerifiedCompliant    int64
+	VerifiedByPlatform   string // JSON：map_verified=1 且 platform 为 ACTIVE 的合规组分桶
 }
 
 type preEventRunnableStat struct {
@@ -212,67 +226,84 @@ FROM (
 	return mapKeyAudit{BadLt2: row.BadLt2, BadDup: row.BadDup}, nil
 }
 
-// loadWatchGroupCounts 与 loadGroups 同源；纯 SQL，不加载 market / market_outcome 行。
+// loadWatchGroupCounts 与 strategy_entry.loadGroups 同源（含开赛窗、outcome、ACTIVE 平台）。
 func (c *Collect) loadWatchGroupCounts(ctx context.Context) (strategyentry.WatchGroupCounts, error) {
-	if c.db == nil {
+	if c.marketRepo == nil || c.outcomeRepo == nil {
 		return strategyentry.WatchGroupCounts{}, nil
 	}
-	matched, err := c.countMatchedGroupsSQL(ctx)
-	if err != nil {
-		return strategyentry.WatchGroupCounts{}, err
-	}
-	limit := strategyentry.LoadMaxGroups(ctx, c.configStrategyRepo)
-	watchable := matched
-	if watchable > limit {
-		watchable = limit
-	}
-	return strategyentry.WatchGroupCounts{
-		Matched:   matched,
-		Watchable: watchable,
-		MaxGroups: limit,
-	}, nil
+	return strategyentry.CountWatchGroups(ctx, strategyentry.WatchGroupDeps{
+		MarketRepo:         c.marketRepo,
+		OutcomeRepo:        c.outcomeRepo,
+		ConfigStrategyRepo: c.configStrategyRepo,
+		PlatformRepo:       c.platformRepo,
+	})
 }
 
-func (c *Collect) countMatchedGroupsSQL(ctx context.Context) (int, error) {
-	const q = `
-SELECT COUNT(*) AS cnt FROM (
-	SELECT TRIM(m.map_key) AS map_key
-	FROM market m
-	INNER JOIN market_outcome o ON o.market_row_id = m.id
-	INNER JOIN (
-		SELECT TRIM(map_key) AS map_key
-		FROM market
-		WHERE status = 'ACTIVE'
-		  AND map_verified = 1
-		  AND map_key IS NOT NULL
-		  AND TRIM(map_key) <> ''
-		  AND (
-		    NOT EXISTS (SELECT 1 FROM platform WHERE status = 'ACTIVE' LIMIT 1)
-		    OR UPPER(TRIM(platform)) IN (
-		      SELECT UPPER(TRIM(slug)) FROM platform WHERE status = 'ACTIVE'
-		    )
-		  )
-		GROUP BY TRIM(map_key)
-		HAVING COUNT(DISTINCT UPPER(TRIM(platform))) >= 2
-		   AND COUNT(*) = COUNT(DISTINCT UPPER(TRIM(platform)))
-	) rk ON rk.map_key = TRIM(m.map_key)
-	WHERE m.status = 'ACTIVE'
-	  AND m.map_verified = 1
-	  AND (
-	    NOT EXISTS (SELECT 1 FROM platform WHERE status = 'ACTIVE' LIMIT 1)
-	    OR UPPER(TRIM(m.platform)) IN (
-	      SELECT UPPER(TRIM(slug)) FROM platform WHERE status = 'ACTIVE'
-	    )
-	  )
-	GROUP BY TRIM(m.map_key)
-) t`
-	var row struct {
-		Cnt int64 `gorm:"column:cnt"`
+type groupInventoryBucketRow struct {
+	PlatformCnt int64 `gorm:"column:platform_cnt"`
+	GroupCnt    int64 `gorm:"column:group_cnt"`
+}
+
+// loadCompliantGroupInventory 库内 map_key 合规组（≥2 平台、同平台不重复），分「全 ACTIVE」与「已核对+ACTIVE 平台」两层。
+func (c *Collect) loadCompliantGroupInventory(ctx context.Context) (okAll int64, jsonAll string, okVerified int64, jsonVerified string, err error) {
+	if c.db == nil {
+		return 0, "{}", 0, "{}", nil
 	}
-	if err := c.db.WithContext(ctx).Raw(q).Scan(&row).Error; err != nil {
-		return 0, err
+	okAll, jsonAll, err = c.compliantGroupsWithFilter(ctx, false)
+	if err != nil {
+		return 0, "", 0, "", err
 	}
-	return int(row.Cnt), nil
+	okVerified, jsonVerified, err = c.compliantGroupsWithFilter(ctx, true)
+	if err != nil {
+		return 0, "", 0, "", err
+	}
+	return okAll, jsonAll, okVerified, jsonVerified, nil
+}
+
+func (c *Collect) compliantGroupsWithFilter(ctx context.Context, verifiedOnly bool) (total int64, jsonBody string, err error) {
+	verifiedClause := ""
+	if verifiedOnly {
+		verifiedClause = `
+      AND m.map_verified = 1
+      AND (
+        NOT EXISTS (SELECT 1 FROM platform WHERE status = 'ACTIVE' LIMIT 1)
+        OR UPPER(TRIM(m.platform)) IN (
+          SELECT UPPER(TRIM(slug)) FROM platform WHERE status = 'ACTIVE'
+        )
+      )`
+	}
+	q := `
+SELECT platform_cnt, COUNT(*) AS group_cnt
+FROM (
+    SELECT
+        TRIM(m.map_key) AS map_key,
+        COUNT(*) AS market_rows,
+        COUNT(DISTINCT UPPER(TRIM(m.platform))) AS platform_cnt
+    FROM market m
+    WHERE m.status = 'ACTIVE'
+      AND m.map_key IS NOT NULL
+      AND TRIM(m.map_key) <> ''` + verifiedClause + `
+    GROUP BY TRIM(m.map_key)
+    HAVING platform_cnt >= 2
+       AND market_rows = platform_cnt
+) t
+GROUP BY platform_cnt
+ORDER BY platform_cnt`
+	var rows []groupInventoryBucketRow
+	if err := c.db.WithContext(ctx).Raw(q).Scan(&rows).Error; err != nil {
+		return 0, "", err
+	}
+	by := make(map[string]int64, len(rows))
+	for _, r := range rows {
+		total += r.GroupCnt
+		by[strconv.FormatInt(r.PlatformCnt, 10)] = r.GroupCnt
+	}
+	by["total"] = total
+	b, err := json.Marshal(by)
+	if err != nil {
+		return total, "{}", nil
+	}
+	return total, string(b), nil
 }
 
 // countPreEventRunnableGroups 与 strategy_entry.loadGroups 的 pre_event_scan_minutes 窗口一致（默认 30 分钟）。
@@ -548,17 +579,33 @@ WHERE map_key IS NOT NULL
 }
 
 func mapKeyAuditRows(a mapKeyAudit) []*persistententity.StatKV {
+	compliantJSON := strings.TrimSpace(a.CompliantByPlatform)
+	if compliantJSON == "" {
+		compliantJSON = "{}"
+	}
+	verifiedJSON := strings.TrimSpace(a.VerifiedByPlatform)
+	if verifiedJSON == "" {
+		verifiedJSON = "{}"
+	}
 	return []*persistententity.StatKV{
-		kvStat(groupMapKeyAudit, "watchable_groups", strconv.FormatInt(a.Watchable, 10), "int",
-			"strategy_entry 应对监控组数（与 loadGroups/max_groups 一致）", 1),
+		kvStat(groupMapKeyAudit, "compliant_groups", strconv.FormatInt(a.CompliantGroups, 10), "int",
+			"库内合规跨平台组合计（ACTIVE；≥2 平台且同平台不重复；见 compliant_groups_by_platform）", 1),
+		kvStat(groupMapKeyAudit, "compliant_groups_by_platform", compliantJSON, "json",
+			"合规组按平台数分桶，含 total；与裸 SQL audit D 一致", 2),
+		kvStat(groupMapKeyAudit, "verified_compliant_groups", strconv.FormatInt(a.VerifiedCompliant, 10), "int",
+			"已核对且属于 ACTIVE 平台的合规组合计；见 verified_compliant_by_platform", 3),
+		kvStat(groupMapKeyAudit, "verified_compliant_by_platform", verifiedJSON, "json",
+			"map_verified=1 + ACTIVE 平台 slugs 的合规组分桶", 4),
 		kvStat(groupMapKeyAudit, "matched_groups", strconv.FormatInt(a.Matched, 10), "int",
-			"strategy_entry 库内匹配组数（未截 max_groups，不含开赛前窗口）", 2),
+			"strategy_entry 可运行组（开赛窗+有 outcome+合规，未截 max_groups）", 5),
+		kvStat(groupMapKeyAudit, "watchable_groups", strconv.FormatInt(a.Watchable, 10), "int",
+			"strategy_entry 应对监控组数（matched 按成交额截断 max_groups）", 6),
 		kvStat(groupMapKeyAudit, "market_running_count", strconv.FormatInt(a.PreEventRunnable, 10), "int",
-			preEventRunnableAuditDesc(a), 3),
+			preEventRunnableAuditDesc(a), 7),
 		kvStat(groupMapKeyAudit, "bad_lt2_platform_groups", strconv.FormatInt(a.BadLt2, 10), "int",
-			"map_key 平台数<2 的组数（audit D）", 4),
+			"map_key 平台数<2 的组数（audit D）", 8),
 		kvStat(groupMapKeyAudit, "bad_dup_platform_groups", strconv.FormatInt(a.BadDup, 10), "int",
-			"map_key 同平台重复组数（audit D）", 5),
+			"map_key 同平台重复组数（audit D）", 9),
 	}
 }
 

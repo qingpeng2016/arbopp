@@ -1,6 +1,7 @@
 -- stat_kv 查询示例（见 migration_stat_kv.sql 建表）
 
--- map_key_audit：应对场次 + audit D 违规计数（不含 total_map_keys / ok_groups）
+-- map_key_audit：分层统计 — compliant_*（库内合规）、verified_*（已核对+ACTIVE 平台）、
+--   matched/watchable/market_running_count（strategy_entry 可跑）、bad_*（audit 违规）
 SELECT item_key, item_value, description, updated_at
 FROM stat_kv
 WHERE group_name = 'map_key_audit'

@@ -266,9 +266,22 @@ func LoadEndEventScanMinutes(ctx context.Context, configStrategyRepo persistentr
 
 // WatchGroupCounts 与 strategy_entry.loadGroups 同源的场次计数（stat_collect / 心跳应对场次）。
 type WatchGroupCounts struct {
-	Matched   int // 合规且有 outcome，未截 max_groups
+	Matched   int // 合规且有 outcome、在开赛扫描窗内，未截 max_groups
 	Watchable int // 按成交额取前 max_groups，应对监控组数
 	MaxGroups int // 当前 max_groups 配置
+}
+
+// CountWatchGroups 与 loadGroups 同口径计数（不加载完整 outcomes 连接，仅统计）。
+func CountWatchGroups(ctx context.Context, d WatchGroupDeps) (WatchGroupCounts, error) {
+	list, matched, err := loadWatchGroups(ctx, d, false)
+	if err != nil {
+		return WatchGroupCounts{}, err
+	}
+	return WatchGroupCounts{
+		Matched:   matched,
+		Watchable: len(list),
+		MaxGroups: LoadMaxGroups(ctx, d.ConfigStrategyRepo),
+	}, nil
 }
 
 // WatchGroupDeps loadGroups 所需仓储。
