@@ -21,6 +21,71 @@ type mapMember struct {
 	platform string
 }
 
+// crossPlatformGroupStats 跨平台对齐成功的场次组，按组内不同平台数量分桶。
+type crossPlatformGroupStats struct {
+	byPlatformCount map[int]int
+}
+
+func (s *crossPlatformGroupStats) add(platformCount int) {
+	if platformCount < 2 {
+		return
+	}
+	if s.byPlatformCount == nil {
+		s.byPlatformCount = make(map[int]int)
+	}
+	s.byPlatformCount[platformCount]++
+}
+
+func (s *crossPlatformGroupStats) merge(other crossPlatformGroupStats) {
+	if len(other.byPlatformCount) == 0 {
+		return
+	}
+	if s.byPlatformCount == nil {
+		s.byPlatformCount = make(map[int]int)
+	}
+	for n, c := range other.byPlatformCount {
+		s.byPlatformCount[n] += c
+	}
+}
+
+func (s crossPlatformGroupStats) total() int {
+	n := 0
+	for _, c := range s.byPlatformCount {
+		n += c
+	}
+	return n
+}
+
+func (s crossPlatformGroupStats) countFor(platformCount int) int {
+	if s.byPlatformCount == nil {
+		return 0
+	}
+	return s.byPlatformCount[platformCount]
+}
+
+func (s crossPlatformGroupStats) notificationFields() []notification.FieldPair {
+	out := []notification.FieldPair{
+		{Key: "2平台组", Value: strconv.Itoa(s.countFor(2))},
+		{Key: "3平台组", Value: strconv.Itoa(s.countFor(3))},
+		{Key: "4平台组", Value: strconv.Itoa(s.countFor(4))},
+	}
+	var extra []int
+	for n := range s.byPlatformCount {
+		if n >= 5 {
+			extra = append(extra, n)
+		}
+	}
+	sort.Ints(extra)
+	for _, n := range extra {
+		out = append(out, notification.FieldPair{
+			Key:   strconv.Itoa(n) + "平台组",
+			Value: strconv.Itoa(s.countFor(n)),
+		})
+	}
+	out = append(out, notification.FieldPair{Key: "跨平台组合计", Value: strconv.Itoa(s.total())})
+	return out
+}
+
 // MarketMap 按 category+sub_category+competition_en 归桶，在同桶内跨 Poly / Kalshi / Predict / SXBET 对齐场次，写 map_key 并置 map_verified=1。
 type MarketMap struct {
 	marketRepo  persistentrepo.MarketRepo
@@ -66,28 +131,33 @@ func (j *MarketMap) Run(ctx context.Context) {
 	}
 
 	leagues := groupMarketsByLeague(rows)
-	var updated, skippedVerified, crossPlatformGroups int
+	var updated, skippedVerified int
+	var groupStats crossPlatformGroupStats
 	for _, lg := range leagues {
-		groups, leagueUpdated, leagueSkipped := j.mapLeague(ctx, rows, lg)
-		crossPlatformGroups += groups
+		leagueStats, leagueUpdated, leagueSkipped := j.mapLeague(ctx, rows, lg)
+		groupStats.merge(leagueStats)
 		updated += leagueUpdated
 		skippedVerified += leagueSkipped
-		notifyMarketMapLeagueDone(ctx, lg, groups, leagueUpdated)
+		notifyMarketMapLeagueDone(ctx, lg, leagueStats, leagueUpdated)
 	}
 
 	logger.InfoZ(ctx, "market_map-Completed",
 		zap.Int("pending", len(pending)),
 		zap.Int("league_rows", len(rows)),
-		zap.Int("cross_platform_groups", crossPlatformGroups),
+		zap.Int("groups_2_platform", groupStats.countFor(2)),
+		zap.Int("groups_3_platform", groupStats.countFor(3)),
+		zap.Int("groups_4_platform", groupStats.countFor(4)),
+		zap.Int("cross_platform_groups", groupStats.total()),
 		zap.Int("updated", updated),
 		zap.Int("skipped_verified", skippedVerified))
 
-	_ = notification.GetGlobalNotificationManager().SendInfoAlert(ctx, "market_map 完成", []notification.FieldPair{
+	alertFields := []notification.FieldPair{
 		{Key: "待核对", Value: strconv.Itoa(len(pending))},
 		{Key: "联赛行数", Value: strconv.Itoa(len(rows))},
-		{Key: "跨平台组", Value: strconv.Itoa(crossPlatformGroups)},
-		{Key: "更新 map_key", Value: strconv.Itoa(updated)},
-	})
+	}
+	alertFields = append(alertFields, groupStats.notificationFields()...)
+	alertFields = append(alertFields, notification.FieldPair{Key: "更新 map_key", Value: strconv.Itoa(updated)})
+	_ = notification.GetGlobalNotificationManager().SendInfoAlert(ctx, "market_map 完成", alertFields)
 }
 
 type mapMatchScope struct {
@@ -167,7 +237,7 @@ func groupMarketsByLeague(rows []persistententity.Market) []leagueMarkets {
 	return out
 }
 
-func (j *MarketMap) mapLeague(ctx context.Context, rows []persistententity.Market, lg leagueMarkets) (groups, updated, skippedVerified int) {
+func (j *MarketMap) mapLeague(ctx context.Context, rows []persistententity.Market, lg leagueMarkets) (stats crossPlatformGroupStats, updated, skippedVerified int) {
 	names := make(map[string]string, len(lg.idxs))
 	starts := make(map[string]string, len(lg.idxs))
 	for _, idx := range lg.idxs {
@@ -215,14 +285,15 @@ func (j *MarketMap) mapLeague(ctx context.Context, rows []persistententity.Marke
 					zap.Uint("id", d.id), zap.String("platform", d.platform), zap.Error(err))
 			}
 		}
-		if len(distinctPlatforms(members)) < 2 {
+		plats := distinctPlatforms(members)
+		if len(plats) < 2 {
 			continue
 		}
 		mapKey := buildFixtureMapKey(gk.competition, gk.fixtureID)
 		if mapKey == "" {
 			continue
 		}
-		groups++
+		stats.add(len(plats))
 		for _, mem := range members {
 			row := findMarket(rows, mem.id)
 			if row == nil {
@@ -245,7 +316,7 @@ func (j *MarketMap) mapLeague(ctx context.Context, rows []persistententity.Marke
 			}
 		}
 	}
-	return groups, updated, skippedVerified
+	return stats, updated, skippedVerified
 }
 
 // marketRowNeedsUpdate 返回 (需改 map_key, 需置 map_verified)。

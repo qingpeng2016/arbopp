@@ -7,7 +7,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func notifyMarketMapLeagueDone(ctx context.Context, lg leagueMarkets, groups, updated int) {
+func notifyMarketMapLeagueDone(ctx context.Context, lg leagueMarkets, stats crossPlatformGroupStats, updated int) {
 	leagueEn := lg.competitionEn
 	if leagueEn == "" {
 		leagueEn = "-"
@@ -18,7 +18,7 @@ func notifyMarketMapLeagueDone(ctx context.Context, lg leagueMarkets, groups, up
 		zap.Int("polymarket", lg.poly),
 		zap.Int("kalshi", lg.kalshi),
 		zap.Int("predict", lg.predict),
-		zap.Int("cross_platform_groups", groups),
+		zap.Int("cross_platform_groups", stats.total()),
 		zap.Int("updated", updated))
 	// 仅本地日志；汇总 Lark 见 market_map.Run 末尾「market_map 完成」
 	// _ = notification.GetGlobalNotificationManager().SendInfoAlert(ctx, "market_map 联赛完成", ...)
