@@ -80,16 +80,7 @@ setup_go_path() {
       export PATH="${d}:${PATH}"
     fi
   done
-  if [[ -s /etc/profile ]]; then
-    # shellcheck disable=SC1091
-    source /etc/profile 2>/dev/null || true
-  fi
-  if [[ -s /etc/environment ]]; then
-    set -a
-    # shellcheck disable=SC1091
-    source /etc/environment 2>/dev/null || true
-    set +a
-  fi
+  # 勿 source /etc/profile：在 set -e 下 profile 里任一句失败会中断整段部署
 }
 
 resolve_go_bin() {
