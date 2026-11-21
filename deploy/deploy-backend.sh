@@ -29,6 +29,7 @@ REMOTE_LIB="$(deploy_remote_lib)"
 
 read -r -d '' REMOTE_SCRIPT_BODY <<EOF || true
 set -euo pipefail
+trap 'echo ">>> [服务器] 脚本异常: line=\${LINENO} \${BASH_COMMAND}" >&2' ERR
 
 APP_DIR="${APP_DIR}"
 BRANCH="${BRANCH}"
@@ -302,15 +303,15 @@ kill_all_run_bot_processes() {
 stop_mall() {
   echo ">>> [服务器] 停止 arbopp/\${MODE}"
   if [[ "\${RUN_BOT}" == "true" ]]; then
-    kill_all_run_bot_processes TERM
+    kill_all_run_bot_processes TERM || true
   else
-    kill_all_run_user_processes TERM
+    kill_all_run_user_processes TERM || true
   fi
   sleep 2
   if [[ "\${RUN_BOT}" == "true" ]]; then
-    kill_all_run_bot_processes KILL
+    kill_all_run_bot_processes KILL || true
   else
-    kill_all_run_user_processes KILL
+    kill_all_run_user_processes KILL || true
   fi
   if [[ "\${RUN_BOT}" == "false" && -n "\${LISTEN_PORT}" ]]; then
     sleep 1
@@ -392,13 +393,14 @@ wait_for_mall() {
 }
 
 start_mall() {
-  cd "\${APP_DIR}"
+  cd "\${APP_DIR}" || { echo "ERROR: 无法 cd \${APP_DIR}" >&2; exit 1; }
   mkdir -p "\${BIN_DIR}" "\${LOG_DIR}"
   local bin_path="\${BIN_DIR}/\${MALL_BIN_NAME}"
+  echo ">>> [服务器] start_mall: cwd=\$(pwd)"
   if [[ "\${RUN_BOT}" == "true" ]]; then
-    kill_all_run_bot_processes TERM
+    kill_all_run_bot_processes TERM || true
     sleep 2
-    kill_all_run_bot_processes KILL
+    kill_all_run_bot_processes KILL || true
     sleep 1
   else
     kill_all_run_user_processes TERM
@@ -406,7 +408,7 @@ start_mall() {
     kill_all_run_user_processes KILL
     sleep 1
   fi
-  : >"\${LOG_FILE}"
+  : >"\${LOG_FILE}" || { echo "ERROR: 无法写 \${LOG_FILE}" >&2; exit 1; }
   export GO111MODULE=on
   export GOPROXY="\${GOPROXY:-https://goproxy.cn,direct}"
   if [[ "\${PAPER_USE_GO_RUN}" == "1" ]]; then
@@ -454,8 +456,11 @@ deploy_sync_run_conf "$RUN_CONF"
 if ! run_remote_bash "$REMOTE_SCRIPT_BODY"; then
   echo ">>> 远程脚本返回非 0" >&2
   echo ">>> 服务器日志: ${APP_DIR}/logs/arbopp-${MODE}-nohup.log" >&2
-  echo ">>> 若上方已有 RUNNING，可: ./deploy-service.sh master status" >&2
+  echo ">>> 若上方已有 RUNNING，可: ./deploy-service.sh ${BRANCH} status" >&2
   exit 1
 fi
-echo ">>> 部署成功（远端 PID 见上方 RUNNING / pid 文件 行）"
-echo ">>> 查状态: ./deploy-service.sh ${BRANCH} status"
+if [[ "$ACTION" == "deploy" || "$ACTION" == "restart" ]]; then
+  echo ">>> 部署成功（远端 PID 见上方 RUNNING / pid 文件 行）"
+  echo ">>> 查状态: ./deploy/deploy-service.sh ${BRANCH} status"
+fi
+echo ">>> 后端完成"
