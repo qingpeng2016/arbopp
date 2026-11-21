@@ -383,7 +383,8 @@ func (w *watch) write(e event) {
 	}
 	w.touchWS(e.Platform)
 
-	w.enqueueBookPersistWS(e)
+	// 暂关闭：WS 盘口推 Redis（ob:ws:mysql_queue），避免 Redis 被打满。
+	// w.enqueueBookPersistWS(e)
 
 	var outcomeID uint
 	var ok bool
