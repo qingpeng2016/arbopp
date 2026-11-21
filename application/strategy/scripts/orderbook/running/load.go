@@ -85,10 +85,22 @@ func parseGroups(description string) ([]entrystat.Group, error) {
 		return nil, nil
 	}
 	var payload struct {
-		Groups []entrystat.Group `json:"groups"`
+		Groups  []entrystat.Group `json:"groups"`
+		MapKeys []string          `json:"map_keys"`
 	}
 	if err := json.Unmarshal([]byte(description), &payload); err != nil {
 		return nil, err
 	}
-	return payload.Groups, nil
+	if len(payload.Groups) > 0 {
+		return payload.Groups, nil
+	}
+	out := make([]entrystat.Group, 0, len(payload.MapKeys))
+	for _, mk := range payload.MapKeys {
+		mk = strings.TrimSpace(mk)
+		if mk == "" {
+			continue
+		}
+		out = append(out, entrystat.Group{MapKey: mk})
+	}
+	return out, nil
 }
