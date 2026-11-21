@@ -421,21 +421,9 @@ func (e *Entry) runningMarketGroupsForStat(wantByKey map[string]group) []entryst
 			out = append(out, entrystat.Group{MapKey: k})
 			continue
 		}
-		out = append(out, entrystat.Group{MapKey: k, MarketRowIDs: marketRowIDsFromGroup(g)})
+		out = append(out, entrystat.Group{MapKey: k, Markets: entrystat.MarketsByPlatform(g.MarketsByRowID)})
 	}
 	return out
-}
-
-func marketRowIDsFromGroup(g group) []uint {
-	if len(g.MarketsByRowID) == 0 {
-		return nil
-	}
-	ids := make([]uint, 0, len(g.MarketsByRowID))
-	for id := range g.MarketsByRowID {
-		ids = append(ids, id)
-	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-	return ids
 }
 
 func notifyWatchSummary(ctx context.Context, removed, added, running int) {

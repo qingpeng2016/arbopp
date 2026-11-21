@@ -12,6 +12,7 @@ import (
 
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketmap"
 	strategyentry "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry"
+	entrystat "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/stat"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/dederi/logger"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/notification"
 	persistententity "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/entity"
@@ -196,7 +197,7 @@ type mapKeyAudit struct {
 	PreEventRunnable      int64
 	PreEventScanMinutes   int
 	EndEventScanMinutes   int
-	PreEventGroups        []preEventRunnableGroup
+	PreEventGroups        []entrystat.Group
 	BadLt2                int64
 	BadDup                int64
 	CompliantGroups    int64
@@ -226,7 +227,7 @@ type mapKeyStrategyLayer struct {
 	PreEventRunnable    int64                    `json:"pre_event_runnable"`
 	PreEventScanMinutes int                      `json:"pre_event_scan_minutes"`
 	EndEventScanMinutes int                      `json:"end_event_scan_minutes"`
-	PreEventGroups      []preEventRunnableGroup  `json:"pre_event_groups"`
+	PreEventGroups      []entrystat.Group  `json:"pre_event_groups"`
 }
 
 type mapKeyAuditBad struct {
@@ -247,11 +248,6 @@ var mapKeyAuditLegacyItemKeys = []string{
 type preEventRunnableStat struct {
 	Count           int64
 	DescriptionJSON string
-}
-
-type preEventRunnableGroup struct {
-	MapKey        string `json:"map_key"`
-	MarketRowIDs  []uint `json:"market_row_ids"`
 }
 
 func (c *Collect) loadMapKeyAuditBadOnly(ctx context.Context) (mapKeyAudit, error) {
@@ -408,11 +404,11 @@ func (c *Collect) countPreEventRunnableGroups(ctx context.Context) (preEventRunn
 	return preEventRunnableStat{Count: int64(len(groups)), DescriptionJSON: desc}, nil
 }
 
-func buildPreEventRunnableGroups(fixtures map[uint]persistententity.Market, mapKeys map[string]struct{}) []preEventRunnableGroup {
+func buildPreEventRunnableGroups(fixtures map[uint]persistententity.Market, mapKeys map[string]struct{}) []entrystat.Group {
 	if len(mapKeys) == 0 {
 		return nil
 	}
-	idsByKey := make(map[string]map[uint]struct{})
+	marketsByKey := make(map[string]map[uint]persistententity.Market)
 	for id, fx := range fixtures {
 		if fx.MapKey == nil {
 			continue
@@ -421,37 +417,31 @@ func buildPreEventRunnableGroups(fixtures map[uint]persistententity.Market, mapK
 		if _, ok := mapKeys[k]; !ok {
 			continue
 		}
-		if idsByKey[k] == nil {
-			idsByKey[k] = make(map[uint]struct{})
+		if marketsByKey[k] == nil {
+			marketsByKey[k] = make(map[uint]persistententity.Market)
 		}
-		idsByKey[k][id] = struct{}{}
+		marketsByKey[k][id] = fx
 	}
 	keys := make([]string, 0, len(mapKeys))
 	for k := range mapKeys {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	out := make([]preEventRunnableGroup, 0, len(keys))
+	out := make([]entrystat.Group, 0, len(keys))
 	for _, k := range keys {
-		idSet := idsByKey[k]
-		ids := make([]uint, 0, len(idSet))
-		for id := range idSet {
-			ids = append(ids, id)
-		}
-		sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-		out = append(out, preEventRunnableGroup{MapKey: k, MarketRowIDs: ids})
+		out = append(out, entrystat.Group{MapKey: k, Markets: entrystat.MarketsByPlatform(marketsByKey[k])})
 	}
 	return out
 }
 
-func preEventRunnableDescJSON(preEventScanMinutes, endEventScanMinutes int, groups []preEventRunnableGroup) string {
+func preEventRunnableDescJSON(preEventScanMinutes, endEventScanMinutes int, groups []entrystat.Group) string {
 	if groups == nil {
-		groups = []preEventRunnableGroup{}
+		groups = []entrystat.Group{}
 	}
 	payload := struct {
-		PreEventScanMinutes int                     `json:"pre_event_scan_minutes"`
-		EndEventScanMinutes int                     `json:"end_event_scan_minutes"`
-		Groups              []preEventRunnableGroup `json:"groups"`
+		PreEventScanMinutes int               `json:"pre_event_scan_minutes"`
+		EndEventScanMinutes int               `json:"end_event_scan_minutes"`
+		Groups              []entrystat.Group `json:"groups"`
 	}{
 		PreEventScanMinutes: preEventScanMinutes,
 		EndEventScanMinutes: endEventScanMinutes,
@@ -645,7 +635,7 @@ func mapKeyAuditPurgeItemKeys() []string {
 func buildMapKeyGroupsJSON(a mapKeyAudit) string {
 	groups := a.PreEventGroups
 	if groups == nil {
-		groups = []preEventRunnableGroup{}
+		groups = []entrystat.Group{}
 	}
 	snap := mapKeyGroupsSnapshot{
 		Compliant: mapKeyGroupsLayer{
@@ -688,13 +678,13 @@ func cloneComboCounts(m map[string]int64) map[string]int64 {
 	return out
 }
 
-func parsePreEventGroupsFromDesc(descJSON string) []preEventRunnableGroup {
+func parsePreEventGroupsFromDesc(descJSON string) []entrystat.Group {
 	descJSON = strings.TrimSpace(descJSON)
 	if descJSON == "" {
 		return nil
 	}
 	var payload struct {
-		Groups []preEventRunnableGroup `json:"groups"`
+		Groups []entrystat.Group `json:"groups"`
 	}
 	if err := json.Unmarshal([]byte(descJSON), &payload); err != nil {
 		return nil

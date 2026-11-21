@@ -24,8 +24,27 @@ func ItemKeyMarketRunningCountStrategy() string { return itemKeyMarketRunningCou
 
 // Group 在跑 map_key 及关联 market.id（写入 stat_kv description）。
 type Group struct {
-	MapKey       string `json:"map_key"`
-	MarketRowIDs []uint `json:"market_row_ids"`
+	MapKey  string            `json:"map_key"`
+	Markets map[string]uint   `json:"markets,omitempty"` // 平台 slug 大写 → market.id
+}
+
+// MarketsByPlatform 从 map_key 组内 market 行得到各平台对应的 market_row_id。
+func MarketsByPlatform(markets map[uint]persistententity.Market) map[string]uint {
+	if len(markets) == 0 {
+		return nil
+	}
+	out := make(map[string]uint, len(markets))
+	for id, m := range markets {
+		p := strings.ToUpper(strings.TrimSpace(m.Platform))
+		if p == "" {
+			continue
+		}
+		out[p] = id
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // MarketRunningOpts FlushMarketRunningCountStrategy 入参。
