@@ -199,7 +199,7 @@ type mapKeyAudit struct {
 	VerifiedByPlatform    string // JSON：map_verified=1 且 platform 为 ACTIVE 的合规组分桶
 }
 
-// mapKeyGroupsSnapshot 写入 stat_kv map_key_audit / groups 的 description。
+// mapKeyGroupsSnapshot 写入 stat_kv map_key_audit / groups 的 item_value（JSON）。
 type mapKeyGroupsSnapshot struct {
 	Compliant         mapKeyGroupsLayer `json:"compliant"`
 	VerifiedCompliant mapKeyGroupsLayer `json:"verified_compliant"`
@@ -625,15 +625,10 @@ WHERE map_key IS NOT NULL
 }
 
 func mapKeyAuditRows(a mapKeyAudit) []*persistententity.StatKV {
-	desc := buildMapKeyGroupsDescription(a)
-	groups := a.PreEventGroups
-	if groups == nil {
-		groups = []preEventRunnableGroup{}
-	}
-	// item_value：应对监控组数，便于 SELECT 不用解析 JSON
+	body := buildMapKeyGroupsJSON(a)
 	return []*persistententity.StatKV{
-		kvStat(groupMapKeyAudit, mapKeyAuditGroupsItemKey, strconv.FormatInt(a.Watchable, 10), "int",
-			desc, 1),
+		kvStat(groupMapKeyAudit, mapKeyAuditGroupsItemKey, body, "json",
+			"跨平台 map_key 组分层统计（compliant / verified / strategy / audit_bad）", 1),
 	}
 }
 
@@ -642,7 +637,7 @@ func mapKeyAuditPurgeItemKeys() []string {
 	return keys
 }
 
-func buildMapKeyGroupsDescription(a mapKeyAudit) string {
+func buildMapKeyGroupsJSON(a mapKeyAudit) string {
 	groups := a.PreEventGroups
 	if groups == nil {
 		groups = []preEventRunnableGroup{}
@@ -650,11 +645,11 @@ func buildMapKeyGroupsDescription(a mapKeyAudit) string {
 	snap := mapKeyGroupsSnapshot{
 		Compliant: mapKeyGroupsLayer{
 			Total:      a.CompliantGroups,
-			ByPlatform: parsePlatformCountJSON(a.CompliantByPlatform),
+			ByPlatform: platformCountsForSnapshot(a.CompliantByPlatform),
 		},
 		VerifiedCompliant: mapKeyGroupsLayer{
 			Total:      a.VerifiedCompliant,
-			ByPlatform: parsePlatformCountJSON(a.VerifiedByPlatform),
+			ByPlatform: platformCountsForSnapshot(a.VerifiedByPlatform),
 		},
 		Strategy: mapKeyStrategyLayer{
 			Matched:             a.Matched,
@@ -670,11 +665,27 @@ func buildMapKeyGroupsDescription(a mapKeyAudit) string {
 			DupPlatformGroups: a.BadDup,
 		},
 	}
-	b, err := json.Marshal(snap)
+	b, err := json.MarshalIndent(snap, "", "  ")
 	if err != nil {
-		return `{"error":"marshal_map_key_groups_snapshot"}`
+		return "{\n  \"error\": \"marshal_map_key_groups_snapshot\"\n}\n"
 	}
 	return string(b)
+}
+
+// platformCountsForSnapshot 分桶里去掉冗余的 total，仅保留 2/3/4… 平台组计数。
+func platformCountsForSnapshot(raw string) map[string]int64 {
+	m := parsePlatformCountJSON(raw)
+	if len(m) == 0 {
+		return map[string]int64{}
+	}
+	out := make(map[string]int64, len(m))
+	for k, v := range m {
+		if k == "total" {
+			continue
+		}
+		out[k] = v
+	}
+	return out
 }
 
 func parsePlatformCountJSON(raw string) map[string]int64 {
