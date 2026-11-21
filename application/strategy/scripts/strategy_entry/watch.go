@@ -30,7 +30,7 @@ import (
 var errBusy = errors.New("strategy_entry event queue full")
 
 // WS 落库折中：不写每笔 price_change，同 token 限速，Redis 队列有上限（见 wsbookqueue）。
-const wsBookPersistMinInterval = 5 * time.Second
+const wsBookPersistMinInterval = 2 * time.Second
 
 type event struct {
 	Gen      int
@@ -507,10 +507,6 @@ func snapshotMsForWSRow(row *persistententity.OrderBook, e event) int64 {
 
 func (w *watch) enqueueBookPersistWS(e event) {
 	if w.entry == nil || w.entry.wsBookQueue == nil {
-		return
-	}
-	// Poly 增量太密，落库只保留全量 book（订阅/成交触发的 poly_all_book）。
-	if e.Kind == "poly_price_change" || e.Kind == "kalshi_price_change" {
 		return
 	}
 	rows := w.orderBookRowsFromEvent(e)
