@@ -6,7 +6,7 @@ import (
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/ws"
 )
 
-// Stream 订阅 market channel，每 10 秒发文本 PING。一条推送调用一次 on。
+// Stream 订阅 market channel。应用层每 10s 文本 PING（Poly 协议）；同时 WS Ping 帧续 ReadDeadline（冷场无盘口推送也不断线）。
 func Stream(ctx context.Context, mapKey string, assets []string, on func(Message) error) error {
 	raw, err := ws.Dial(ctx, ws.PolyURL, nil)
 	if err != nil {
@@ -23,6 +23,7 @@ func Stream(ctx context.Context, mapKey string, assets []string, on func(Message
 		return err
 	}
 	go ws.PingText(ctx, conn)
+	go ws.PingControl(ctx, conn)
 	return conn.Read(ctx, func(msg []byte) error {
 		msgs, err := Parse(msg)
 		if err != nil {
