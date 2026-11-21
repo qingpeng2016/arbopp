@@ -15,6 +15,7 @@ type Config struct {
 	Polymarket Platform `json:"polymarket"`
 	Kalshi     Platform `json:"kalshi"`
 	Predict    Platform `json:"predict"`
+	Sxbet      Platform `json:"sxbet"`
 }
 
 const (
@@ -32,6 +33,7 @@ func Parse(raw, valueType string) Config {
 		Polymarket platformWire `json:"polymarket"`
 		Kalshi     platformWire `json:"kalshi"`
 		Predict    platformWire `json:"predict"`
+		Sxbet      platformWire `json:"sxbet"`
 	}
 	if err := json.Unmarshal([]byte(raw), &wire); err != nil {
 		return Config{}
@@ -40,6 +42,7 @@ func Parse(raw, valueType string) Config {
 		Polymarket: Platform{LeagueConcurrency: wire.Polymarket.concurrency()},
 		Kalshi:     Platform{LeagueConcurrency: wire.Kalshi.concurrency()},
 		Predict:    Platform{LeagueConcurrency: wire.Predict.concurrency()},
+		Sxbet:      Platform{LeagueConcurrency: wire.Sxbet.concurrency()},
 	}
 }
 

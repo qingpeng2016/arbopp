@@ -9,7 +9,7 @@ import (
 	persistententity "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/entity"
 )
 
-const defaultLeagueFetch = `{"polymarket":{"concurrency":5},"kalshi":{"concurrency":3},"predict":{"concurrency":2}}`
+const defaultLeagueFetch = `{"polymarket":{"concurrency":5},"kalshi":{"concurrency":3},"predict":{"concurrency":2},"sxbet":{"concurrency":3}}`
 
 func maxInt(a, b int) int {
 	if a > b {
@@ -97,6 +97,8 @@ func mergeLeagueFetchFromRows(cats []persistententity.ConfigMarketCategory) (lea
 			merged.Kalshi.LeagueConcurrency = maxInt(merged.Kalshi.LeagueConcurrency, conc)
 		case appcommon.PlatformPredict:
 			merged.Predict.LeagueConcurrency = maxInt(merged.Predict.LeagueConcurrency, conc)
+		case appcommon.PlatformSxbet:
+			merged.Sxbet.LeagueConcurrency = maxInt(merged.Sxbet.LeagueConcurrency, conc)
 		}
 	}
 	return merged, got

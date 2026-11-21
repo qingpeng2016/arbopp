@@ -5,4 +5,5 @@ const (
 	PlatformPolymarket = "POLYMARKET"
 	PlatformKalshi     = "KALSHI"
 	PlatformPredict    = "PREDICT"
+	PlatformSxbet      = "SXBET"
 )

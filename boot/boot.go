@@ -88,6 +88,7 @@ func BuildContainer() *dig.Container {
 	_ = c.Provide(NewKalshiRepoFromPlatform)
 	_ = c.Provide(NewPolymarketRepoFromPlatform)
 	_ = c.Provide(NewPredictRepoFromPlatform)
+	_ = c.Provide(NewSxbetRepoFromPlatform)
 
 	_ = c.Provide(notification.NewLarkClient)
 	_ = c.Provide(notification.NewNotificationManager)

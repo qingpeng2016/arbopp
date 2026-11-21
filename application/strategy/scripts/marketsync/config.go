@@ -9,6 +9,7 @@ import (
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketsync/leagueopt"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketsync/predict"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketsync/polymarket"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketsync/sxbet"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/dederi/logger"
 	cryptoPredictionEnum "github.com/gph-tech/fgmm-strategy-bitfinex/common/enum/crypto/prediction"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/notification"
@@ -21,6 +22,7 @@ const (
 	configKeyKalshiGameSeries = "kalshi_game_series"
 	configKeyPolymarketSports = "polymarket_sports"
 	configKeyPredictSports    = "predict_sports"
+	configKeySxbetLeagues     = "sxbet_leagues"
 	configKeyConcurrency = "concurrency"
 )
 
@@ -159,7 +161,8 @@ func (j *MarketSync) resolveLeagueFetchConfig(ctx context.Context) leagueopt.Con
 			logger.InfoZ(ctx, "market_sync-league-fetch-config-catalog",
 				zap.Int("polymarket", cfg.Polymarket.Concurrency()),
 				zap.Int("kalshi", cfg.Kalshi.Concurrency()),
-				zap.Int("predict", cfg.Predict.Concurrency()))
+				zap.Int("predict", cfg.Predict.Concurrency()),
+				zap.Int("sxbet", cfg.Sxbet.Concurrency()))
 			return cfg
 		}
 	}
@@ -178,7 +181,8 @@ func (j *MarketSync) resolveLeagueFetchConfig(ctx context.Context) leagueopt.Con
 	logger.InfoZ(ctx, "market_sync-league-fetch-config-loaded",
 		zap.Int("polymarket", loaded.Polymarket.Concurrency()),
 		zap.Int("kalshi", loaded.Kalshi.Concurrency()),
-		zap.Int("predict", loaded.Predict.Concurrency()))
+		zap.Int("predict", loaded.Predict.Concurrency()),
+		zap.Int("sxbet", loaded.Sxbet.Concurrency()))
 	return loaded
 }
 
@@ -214,10 +218,38 @@ func (j *MarketSync) resolvePredictSportsConfig(ctx context.Context) predict.Spo
 	return loaded
 }
 
+func (j *MarketSync) resolveSxbetLeaguesConfig(ctx context.Context) sxbet.LeaguesConfig {
+	if j.marketCategoryRepo != nil {
+		if cfg, ok := leaguecfg.SxbetLeaguesConfig(ctx, j.marketCategoryRepo); ok {
+			logger.InfoZ(ctx, "market_sync-sxbet-leagues-config-catalog",
+				zap.Int("sub_categories", len(cfg.BySubCategory)))
+			return cfg
+		}
+	}
+	cfg, err := j.configStrategyRepo.FindOne(ctx, nil, map[string]interface{}{
+		"group_name = ?": configGroupMarketSync,
+		"item_key = ?":   configKeySxbetLeagues,
+		"is_enabled = ?": 1,
+	}, "")
+	if err != nil {
+		if err != gorm.ErrRecordNotFound {
+			notification.SendErrorLog(ctx, "market_sync-sxbet-leagues-config-read-failed", zap.Error(err))
+		}
+		return sxbet.LeaguesConfig{}
+	}
+	loaded := sxbet.LoadLeaguesConfig(cfg.ItemValue, cfg.ValueType)
+	if len(loaded.BySubCategory) == 0 {
+		return sxbet.LeaguesConfig{}
+	}
+	logger.InfoZ(ctx, "market_sync-sxbet-leagues-config-loaded", zap.Int("sub_categories", len(loaded.BySubCategory)))
+	return loaded
+}
+
 func marketSyncSupportedPlatforms() map[string]struct{} {
 	return map[string]struct{}{
 		string(cryptoPredictionEnum.PlatformPolymarket): {},
 		string(cryptoPredictionEnum.PlatformKalshi):     {},
 		string(cryptoPredictionEnum.PlatformPredict):    {},
+		string(cryptoPredictionEnum.PlatformSxbet):      {},
 	}
 }

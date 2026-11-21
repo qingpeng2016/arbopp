@@ -13,6 +13,7 @@ import (
 	leagueopt "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketsync/leagueopt"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketsync/predict"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketsync/polymarket"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketsync/sxbet"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/dederi/logger"
 	cryptoPredictionEnum "github.com/gph-tech/fgmm-strategy-bitfinex/common/enum/crypto/prediction"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/notification"
@@ -27,6 +28,7 @@ type MarketSync struct {
 	polymarket         httprepo.PolymarketRepo
 	kalshi             httprepo.KalshiRepo
 	predict            httprepo.PredictRepo
+	sxbet              httprepo.SxbetRepo
 	platformRepo       persistentrepo.PlatformRepo
 	marketRepo         persistentrepo.MarketRepo
 	outcomeRepo        persistentrepo.MarketOutcomeRepo
@@ -35,12 +37,14 @@ type MarketSync struct {
 	poly               *polymarket.Syncer
 	kal                *kalshi.Syncer
 	prd                *predict.Syncer
+	sx                 *sxbet.Syncer
 }
 
 func NewMarketSync(
 	polyRepo httprepo.PolymarketRepo,
 	kalRepo httprepo.KalshiRepo,
 	predictRepo httprepo.PredictRepo,
+	sxbetRepo httprepo.SxbetRepo,
 	platformRepo persistentrepo.PlatformRepo,
 	marketRepo persistentrepo.MarketRepo,
 	outcomeRepo persistentrepo.MarketOutcomeRepo,
@@ -51,6 +55,7 @@ func NewMarketSync(
 		polymarket:         polyRepo,
 		kalshi:             kalRepo,
 		predict:            predictRepo,
+		sxbet:              sxbetRepo,
 		platformRepo:       platformRepo,
 		marketRepo:         marketRepo,
 		outcomeRepo:        outcomeRepo,
@@ -60,6 +65,7 @@ func NewMarketSync(
 	j.poly = polymarket.NewSyncer(polyRepo, j)
 	j.kal = kalshi.NewSyncer(kalRepo, j)
 	j.prd = predict.NewSyncer(predictRepo, j)
+	j.sx = sxbet.NewSyncer(sxbetRepo, j)
 	return j
 }
 
@@ -88,6 +94,7 @@ func (j *MarketSync) Run(ctx context.Context) {
 	polyCfg := j.resolvePolymarketSportsConfig(ctx)
 	kalshiCfg := j.resolveKalshiGameSeriesConfig(ctx)
 	predictCfg := j.resolvePredictSportsConfig(ctx)
+	sxbetCfg := j.resolveSxbetLeaguesConfig(ctx)
 	outcomeTypes := j.resolveSyncOutcomeTypes(ctx)
 	leagueFetch := j.resolveLeagueFetchConfig(ctx)
 	catalogRows, catalogOK := leaguecfg.ListEnabled(ctx, j.marketCategoryRepo)
@@ -99,12 +106,14 @@ func (j *MarketSync) Run(ctx context.Context) {
 	polyKey := string(cryptoPredictionEnum.PlatformPolymarket)
 	kalKey := string(cryptoPredictionEnum.PlatformKalshi)
 	predictKey := string(cryptoPredictionEnum.PlatformPredict)
+	sxbetKey := string(cryptoPredictionEnum.PlatformSxbet)
 	_, syncPoly := platforms[polyKey]
 	_, syncKal := platforms[kalKey]
 	_, syncPredict := platforms[predictKey]
+	_, syncSxbet := platforms[sxbetKey]
 
 	var wg sync.WaitGroup
-	var polySaved, kalshiSaved, predictSaved leagueopt.SaveStats
+	var polySaved, kalshiSaved, predictSaved, sxbetSaved leagueopt.SaveStats
 	if syncPoly {
 		wg.Add(1)
 		go func() {
@@ -162,9 +171,32 @@ func (j *MarketSync) Run(ctx context.Context) {
 			}()
 		}
 	}
+	if syncSxbet {
+		if j.sxbet == nil {
+			notification.SendErrorLog(ctx, "market_sync-sxbet-skipped", zap.String("reason", "no SX Bet API client"))
+		} else if len(sxbetCfg.BySubCategory) == 0 {
+			notification.SendErrorLog(ctx, "market_sync-sxbet-skipped", zap.String("reason", "sxbet league config empty or disabled"))
+		} else {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				defer recoverSyncPlatform(ctx, "sxbet", "")
+				plan := platformCategoryPlan(catalogOK, catalogRows, sxbetKey, sxbetCfg.BySubCategory, leagueFetch.Sxbet.Concurrency())
+				logger.InfoZ(ctx, "market_sync-platform-start",
+					zap.String("platform", sxbetKey),
+					zap.Strings("sub_categories", categoryRunSubStrings(plan)))
+				start := time.Now()
+				sxbetSaved = j.syncPlatformCategoryRuns(ctx, sxbetKey, catalogRows, plan, func(subCat cryptoPredictionEnum.SubMarketCategory, concurrency int) (leagueopt.SaveStats, error) {
+					j.sx.LeagueConcurrency = concurrency
+					return j.sx.Sync(ctx, subCat, sxbetCfg, outcomeTypesForSub(outcomeTypes, subCat))
+				})
+				notifyPlatformDone(ctx, "market_sync SX Bet 完成", sxbetKey, sxbetSaved, categoryRunSubs(plan), time.Since(start))
+			}()
+		}
+	}
 	wg.Wait()
 
-	totalSaved := polySaved.Add(kalshiSaved).Add(predictSaved)
+	totalSaved := polySaved.Add(kalshiSaved).Add(predictSaved).Add(sxbetSaved)
 	elapsed := time.Since(runStart)
 	logger.InfoZ(ctx, "market_sync-Completed",
 		zap.Int("fixtures", totalSaved.Fixtures),
@@ -175,8 +207,10 @@ func (j *MarketSync) Run(ctx context.Context) {
 		zap.Int("kalshi_outcomes", kalshiSaved.Outcomes),
 		zap.Int("predict_fixtures", predictSaved.Fixtures),
 		zap.Int("predict_outcomes", predictSaved.Outcomes),
+		zap.Int("sxbet_fixtures", sxbetSaved.Fixtures),
+		zap.Int("sxbet_outcomes", sxbetSaved.Outcomes),
 		zap.String("elapsed", elapsed.Round(time.Second).String()))
-	notifyRunDone(ctx, syncPoly, syncKal, syncPredict, polySaved, kalshiSaved, predictSaved, elapsed)
+	notifyRunDone(ctx, syncPoly, syncKal, syncPredict, syncSxbet, polySaved, kalshiSaved, predictSaved, sxbetSaved, elapsed)
 }
 
 func subCategoryStrings(cats []cryptoPredictionEnum.SubMarketCategory) []string {
@@ -354,11 +388,11 @@ func notifyCategoryDone(
 // notifyRunDone 全平台 market_sync 一轮结束后发一条整体摘要。
 func notifyRunDone(
 	ctx context.Context,
-	syncPoly, syncKal, syncPredict bool,
-	polySaved, kalSaved, predSaved leagueopt.SaveStats,
+	syncPoly, syncKal, syncPredict, syncSxbet bool,
+	polySaved, kalSaved, predSaved, sxSaved leagueopt.SaveStats,
 	elapsed time.Duration,
 ) {
-	total := polySaved.Add(kalSaved).Add(predSaved)
+	total := polySaved.Add(kalSaved).Add(predSaved).Add(sxSaved)
 	title := "market_sync 完成"
 	fields := []notification.FieldPair{
 		{Key: "场次数", Value: strconv.Itoa(total.Fixtures)},
@@ -381,6 +415,12 @@ func notifyRunDone(
 		fields = append(fields,
 			notification.FieldPair{Key: "PREDICT 场次数", Value: strconv.Itoa(predSaved.Fixtures)},
 			notification.FieldPair{Key: "PREDICT 盘口数", Value: strconv.Itoa(predSaved.Outcomes)},
+		)
+	}
+	if syncSxbet {
+		fields = append(fields,
+			notification.FieldPair{Key: "SXBET 场次数", Value: strconv.Itoa(sxSaved.Fixtures)},
+			notification.FieldPair{Key: "SXBET 盘口数", Value: strconv.Itoa(sxSaved.Outcomes)},
 		)
 	}
 	if total.Empty() {

@@ -16,6 +16,7 @@ import (
 	"github.com/gph-tech/fgmm-strategy-bitfinex/infrastructure/http/crypto/prediction/kalshi"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/infrastructure/http/crypto/prediction/predict"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/infrastructure/http/crypto/prediction/polymarket"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/infrastructure/http/crypto/prediction/sxbet"
 	"go.uber.org/zap"
 )
 
@@ -24,6 +25,7 @@ const (
 	defaultPolyCLOB   = "https://clob.polymarket.com"
 	defaultKalshiAPI  = "https://api.elections.kalshi.com"
 	defaultPredictAPI = "https://api.predict.fun/v1"
+	defaultSxbetAPI   = "https://api.sx.bet"
 )
 
 func NewKalshiRepoFromPlatform(catalog *PlatformCatalog) httprepo.KalshiRepo {
@@ -89,6 +91,40 @@ func NewPredictRepoFromPlatform(catalog *PlatformCatalog, accountRepo persistent
 	}
 	hc := &http.Client{Timeout: timeout, Transport: predict.NewPooledTransport()}
 	return predict.NewClientWithOptions(baseURL, apiKey, hc)
+}
+
+type sxbetPlatformExtra struct {
+	APIKey string `json:"api_key"`
+}
+
+func NewSxbetRepoFromPlatform(catalog *PlatformCatalog) httprepo.SxbetRepo {
+	ctx := context.Background()
+	baseURL := defaultSxbetAPI
+	timeout := 20 * time.Second
+	var apiKey string
+	if p, ok := catalog.Get(string(cryptoPredictionEnum.PlatformSxbet)); ok {
+		baseURL = marketAPIBase(&p, defaultSxbetAPI)
+		timeout = platformTimeout(&p)
+		if p.ExtraConfig != nil {
+			raw := strings.TrimSpace(*p.ExtraConfig)
+			if raw != "" {
+				var extra sxbetPlatformExtra
+				if json.Unmarshal([]byte(raw), &extra) == nil {
+					apiKey = strings.TrimSpace(extra.APIKey)
+				}
+			}
+		}
+		logger.InfoZ(ctx, "platform-sxbet-loaded",
+			zap.String("market_api_base_url", baseURL),
+			zap.Duration("timeout", timeout),
+			zap.Bool("has_api_key", apiKey != ""))
+	} else {
+		logger.InfoZ(ctx, "platform-sxbet-not-active",
+			zap.String("fallback", defaultSxbetAPI),
+			zap.String("hint", "platform 未 ACTIVE 时使用内置基址；market_sync 不会同步 SXBET"))
+	}
+	hc := &http.Client{Timeout: timeout, Transport: sxbet.NewPooledTransport()}
+	return sxbet.NewClientWithOptions(baseURL, apiKey, hc)
 }
 
 func resolvePredictAPIKey(ctx context.Context, catalog *PlatformCatalog, accountRepo persistentrepo.AccountRepo) string {

@@ -10,6 +10,7 @@ import (
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketsync/leagueopt"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketsync/polymarket"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketsync/predict"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketsync/sxbet"
 	cryptoPredictionEnum "github.com/gph-tech/fgmm-strategy-bitfinex/common/enum/crypto/prediction"
 	persistententity "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/entity"
 	persistentrepo "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/repository"
@@ -49,6 +50,19 @@ func KalshiSeriesConfig(ctx context.Context, repo persistentrepo.ConfigMarketCat
 		return kalshi.SeriesConfig{}, false
 	}
 	cfg := kalshi.LoadSeriesConfig(raw, "json")
+	return cfg, cfg.Active && len(cfg.BySubCategory) > 0
+}
+
+func SxbetLeaguesConfig(ctx context.Context, repo persistentrepo.ConfigMarketCategoryRepo) (sxbet.LeaguesConfig, bool) {
+	cats, ok := listEnabled(ctx, repo)
+	if !ok {
+		return sxbet.LeaguesConfig{}, false
+	}
+	raw := groupsArrayForPlatformRows(cats, appcommon.PlatformSxbet)
+	if raw == "" {
+		return sxbet.LeaguesConfig{}, false
+	}
+	cfg := sxbet.LoadLeaguesConfig(raw, "json")
 	return cfg, cfg.Active && len(cfg.BySubCategory) > 0
 }
 

@@ -63,6 +63,7 @@ const (
 	PlatformPolymarket Platform = "POLYMARKET"
 	PlatformKalshi     Platform = "KALSHI"
 	PlatformPredict    Platform = "PREDICT"
+	PlatformSxbet      Platform = "SXBET"
 	PlatformForegate   Platform = "FOREGATE"
 	PlatformPinnacle   Platform = "PINNACLE"
 	PlatformBet365     Platform = "BET365"
@@ -71,7 +72,7 @@ const (
 // Type 返回平台大类
 func (p Platform) Type() PlatformType {
 	switch p {
-	case PlatformPolymarket, PlatformKalshi, PlatformPredict, PlatformForegate:
+	case PlatformPolymarket, PlatformKalshi, PlatformPredict, PlatformSxbet, PlatformForegate:
 		return PlatformTypePrediction
 	case PlatformPinnacle, PlatformBet365:
 		return PlatformTypeOdds
