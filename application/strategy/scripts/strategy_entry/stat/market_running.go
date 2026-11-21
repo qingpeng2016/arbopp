@@ -90,32 +90,5 @@ func marketRunningDescJSON(preEventScanMinutes, endEventScanMinutes int, groups 
 	if err != nil {
 		return `{"pre_event_scan_minutes":` + strconv.Itoa(preEventScanMinutes) + `,"groups":[]}`
 	}
-	s := string(b)
-	const descMax = 500
-	if len(s) > descMax {
-		compact := struct {
-			PreEventScanMinutes int      `json:"pre_event_scan_minutes"`
-			EndEventScanMinutes int      `json:"end_event_scan_minutes"`
-			Count               int      `json:"count"`
-			MapKeys             []string `json:"map_keys"`
-			Truncated           bool     `json:"truncated"`
-		}{
-			PreEventScanMinutes: preEventScanMinutes,
-			EndEventScanMinutes: endEventScanMinutes,
-			Count:               len(groups),
-			Truncated:           true,
-		}
-		for _, g := range groups {
-			compact.MapKeys = append(compact.MapKeys, strings.TrimSpace(g.MapKey))
-		}
-		b, err = json.Marshal(compact)
-		if err != nil {
-			return `{"truncated":true,"groups":[]}`
-		}
-		s = string(b)
-		if len(s) > descMax {
-			s = s[:descMax]
-		}
-	}
-	return s
+	return string(b)
 }
