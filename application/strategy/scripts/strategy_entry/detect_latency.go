@@ -123,7 +123,7 @@ func (e *Entry) flushDetectLatencyStat(ctx context.Context) {
 			continue
 		}
 		payload := spec.lat.snapshot()
-		raw, err := json.Marshal(payload)
+		raw, err := json.MarshalIndent(payload, "", "  ")
 		if err != nil {
 			notification.SendErrorLog(ctx, "strategy_entry-detect-latency-marshal", zap.String("item_key", spec.key), zap.Error(err))
 			continue

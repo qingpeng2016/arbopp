@@ -86,7 +86,7 @@ func marketRunningDescJSON(preEventScanMinutes, endEventScanMinutes int, groups 
 		EndEventScanMinutes: endEventScanMinutes,
 		Groups:              groups,
 	}
-	b, err := json.Marshal(payload)
+	b, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
 		return `{"pre_event_scan_minutes":` + strconv.Itoa(preEventScanMinutes) + `,"groups":[]}`
 	}

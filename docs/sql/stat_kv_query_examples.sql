@@ -14,7 +14,7 @@ ORDER BY sort_no;
 -- FROM stat_kv
 -- WHERE group_name = 'map_key_audit' AND item_key = 'groups';
 
--- 每平台 1 条 JSON：各子类 market 场次 + __total__
+-- 每平台 1 条 JSON（2 空格缩进）：各子类 market 场次 + __total__
 SELECT item_key, item_value, updated_at
 FROM stat_kv
 WHERE group_name = 'market_count'

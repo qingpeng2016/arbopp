@@ -450,11 +450,10 @@ func preEventRunnableDescJSON(preEventScanMinutes, endEventScanMinutes int, grou
 		EndEventScanMinutes: endEventScanMinutes,
 		Groups:              groups,
 	}
-	b, err := json.Marshal(payload)
+	s, err := marshalStatJSON(payload)
 	if err != nil {
 		return `{"pre_event_scan_minutes":` + strconv.Itoa(preEventScanMinutes) + `,"groups":[]}`
 	}
-	s := string(b)
 	const descMax = 500
 	if len(s) > descMax {
 		// description 列 varchar(500)：只保留 map_key + 组数，避免截断非法 JSON
@@ -473,11 +472,10 @@ func preEventRunnableDescJSON(preEventScanMinutes, endEventScanMinutes int, grou
 		for _, g := range groups {
 			compact.MapKeys = append(compact.MapKeys, g.MapKey)
 		}
-		b, err = json.Marshal(compact)
+		s, err = marshalStatJSON(compact)
 		if err != nil {
 			return `{"truncated":true,"groups":[]}`
 		}
-		s = string(b)
 		if len(s) > descMax {
 			s = s[:descMax]
 		}
@@ -600,7 +598,7 @@ func (c *Collect) loadPlatformJSONCounts(ctx context.Context, q, group string, d
 			}
 			subs[jsonTotalKey] = total
 		}
-		val, err := json.Marshal(subs)
+		val, err := marshalStatJSON(subs)
 		if err != nil {
 			return nil, err
 		}
@@ -665,11 +663,11 @@ func buildMapKeyGroupsJSON(a mapKeyAudit) string {
 			DupPlatformGroups: a.BadDup,
 		},
 	}
-	b, err := json.MarshalIndent(snap, "", "  ")
+	b, err := marshalStatJSON(snap)
 	if err != nil {
 		return "{\n  \"error\": \"marshal_map_key_groups_snapshot\"\n}\n"
 	}
-	return string(b)
+	return b
 }
 
 // platformCountsForSnapshot 分桶里去掉冗余的 total，仅保留 2/3/4… 平台组计数。
