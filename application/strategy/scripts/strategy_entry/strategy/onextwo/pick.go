@@ -8,27 +8,7 @@ import (
 )
 
 func (r *Runner) bestTriplePick() (TriplePick, bool) {
-	draw, tA, tB, ok := r.moneylineTripleGroups()
-	if !ok {
-		return TriplePick{}, false
-	}
-	lim := r.limits()
-	groups := [3]yesno.OutcomeGroup{draw, tA, tB}
-
-	var best TriplePick
-	found := false
-
-	if pick, hit := r.tripleAt(groups, true, lim.YesTripleMax, lim); hit {
-		if !found || pick.Per < best.Per {
-			best, found = pick, true
-		}
-	}
-	if pick, hit := r.tripleAt(groups, false, lim.NoTripleMax, lim); hit {
-		if !found || pick.Per < best.Per {
-			best, found = pick, true
-		}
-	}
-	return best, found
+	return bestTripleFrom(r.allTriplePicks())
 }
 
 func (r *Runner) tripleAt(groups [3]yesno.OutcomeGroup, buyYes bool, maxCost float64, lim Limits) (TriplePick, bool) {
@@ -76,37 +56,4 @@ func (r *Runner) tripleAt(groups [3]yesno.OutcomeGroup, buyYes bool, maxCost flo
 	return TriplePick{
 		Kind: kind, BuyYes: buyYes, Legs: legs, Prices: prices, Qty: qty, Per: per,
 	}, true
-}
-
-func (r *Runner) bestLeg(g yesno.OutcomeGroup, buyYes bool) (yesno.ExecSide, float64, float64, bool) {
-	var best yesno.ExecSide
-	bestPx := math.MaxFloat64
-	bestSz := 0.0
-	found := false
-	for _, plat := range g.PlatformList() {
-		idx, ok := g.PlatformIndex(plat)
-		if !ok {
-			continue
-		}
-		side, ok := r.execSide(idx)
-		if !ok {
-			continue
-		}
-		px := yesno.SidePx(side.Side, buyYes)
-		sz := side.Side.YesSz
-		if !buyYes {
-			sz = side.Side.NoSz
-		}
-		if !book.ValidPrice(px) || sz <= 0 {
-			continue
-		}
-		per := px + yesno.Fee(px, side.Side.Fee)
-		if per < bestPx {
-			bestPx, bestSz, best, found = per, sz, side, true
-		}
-	}
-	if !found {
-		return yesno.ExecSide{}, 0, 0, false
-	}
-	return best, bestPx, bestSz, true
 }

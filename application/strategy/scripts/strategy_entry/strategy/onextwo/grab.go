@@ -13,7 +13,8 @@ type GrabHit struct {
 
 func (r *Runner) grabOne(outcomeID uint) {
 	_ = outcomeID
-	pick, ok := r.bestTriplePick()
+	all := r.allTriplePicks()
+	pick, ok := bestTripleFrom(all)
 	if !ok {
 		return
 	}
@@ -27,14 +28,16 @@ func (r *Runner) grabOne(outcomeID uint) {
 	}
 	defer r.orderMu.Unlock()
 	lim := r.limits()
-	hit := GrabHit{Pick: pick, Limits: lim, DryRun: true}
+	bestHit := GrabHit{Pick: pick, Limits: lim, DryRun: true}
 	ctx := r.w.Context()
 	mapKey := r.w.MapKey
 	deps := r.persistDeps()
-	go func(ctx context.Context, mapKey string, hit GrabHit, d persistDeps) {
-		NotifyGrab(ctx, mapKey, hit)
-		SaveGrabHit(ctx, d, mapKey, hit)
-	}(ctx, mapKey, hit, deps)
+	go func(ctx context.Context, mapKey string, picks []TriplePick, best GrabHit, d persistDeps) {
+		for _, p := range picks {
+			SaveGrabHit(ctx, d, mapKey, GrabHit{Pick: p, Limits: best.Limits, DryRun: best.DryRun})
+		}
+		NotifyGrab(ctx, mapKey, best)
+	}(ctx, mapKey, all, bestHit, deps)
 }
 
 // OnBookUpdateAfterReplay 回测：本 snapshot 全部盘口写入后试一次 1X2（避免同一毫秒重复落库）。
@@ -51,7 +54,8 @@ func (r *Runner) TryTriplePick() (TriplePick, bool) {
 }
 
 func (r *Runner) grabOneBacktest() {
-	pick, ok := r.bestTriplePick()
+	all := r.allTriplePicks()
+	_, ok := bestTripleFrom(all)
 	if !ok {
 		return
 	}
@@ -60,8 +64,12 @@ func (r *Runner) grabOneBacktest() {
 	}
 	defer r.orderMu.Unlock()
 	lim := r.limits()
-	hit := GrabHit{Pick: pick, Limits: lim}
-	SaveGrabHit(r.w.Context(), r.persistDeps(), r.w.MapKey, hit)
+	ctx := r.w.Context()
+	deps := r.persistDeps()
+	mapKey := r.w.MapKey
+	for _, p := range all {
+		SaveGrabHit(ctx, deps, mapKey, GrabHit{Pick: p, Limits: lim})
+	}
 }
 
 func (r *Runner) canTrade(platform string) bool {

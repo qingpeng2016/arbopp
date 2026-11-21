@@ -46,24 +46,29 @@ func (r *Runner) TryPickForOutcome(outcomeID uint) (pick FilledPick, ok bool) {
 
 // tryPickForGrab 盘口更新后在同一 OutcomeGroup 内选最优可成交组合（只读，不加锁）。
 func (r *Runner) tryPickForGrab(outcomeID uint) (pick FilledPick, ok bool) {
+	_, pick, ok = r.tryAllPicksForGrab(outcomeID)
+	return pick, ok
+}
+
+func (r *Runner) tryAllPicksForGrab(outcomeID uint) (all []FilledPick, best FilledPick, ok bool) {
 	outcomeIndex, okIdx := r.outcomeIndex(outcomeID)
 	if !okIdx {
-		return FilledPick{}, false
+		return nil, FilledPick{}, false
 	}
 	groupKey := r.outcomeGroupKeyAt(outcomeIndex)
 	if groupKey == "" {
-		return FilledPick{}, false
+		return nil, FilledPick{}, false
 	}
 	group, okGrp := r.outcomeGroups[groupKey]
 	if !okGrp {
-		return FilledPick{}, false
+		return nil, FilledPick{}, false
 	}
-	return r.bestFilledPick(group)
+	return r.AllFilledPicks(group, r.limits())
 }
 
 // grabOne 实盘/联调：命中后异步落库（当前 DryRun，不发单）。
 func (r *Runner) grabOne(outcomeID uint) {
-	pick, ok := r.tryPickForGrab(outcomeID)
+	all, pick, ok := r.tryAllPicksForGrab(outcomeID)
 	if !ok {
 		return
 	}
@@ -79,7 +84,7 @@ func (r *Runner) grabOne(outcomeID uint) {
 	var yesFill, noFill float64
 	var yesErr, noErr error
 	// yesFill, noFill, yesErr, noErr = Fire(outcomeSender{r}, pick.Yes.Side, pick.No.Side, pick.YesBuyYes, pick.NoBuyYes, pick.Qty)
-	hit := GrabHit{
+	bestHit := GrabHit{
 		Pick: pick, MaxCost: lim.MaxCost,
 		YesFill: yesFill, NoFill: noFill, YesErr: yesErr, NoErr: noErr,
 		DryRun: true,
@@ -87,15 +92,20 @@ func (r *Runner) grabOne(outcomeID uint) {
 	ctx := r.grabContext()
 	mapKey := r.w.MapKey
 	persist := r.grabPersist()
-	go func(ctx context.Context, mapKey string, hit GrabHit, persist PersistGrab) {
-		NotifyGrab(ctx, mapKey, hit)
-		SaveGrabHit(ctx, persist, mapKey, hit)
-	}(ctx, mapKey, hit, persist)
+	go func(ctx context.Context, mapKey string, all []FilledPick, best GrabHit, persist PersistGrab) {
+		for _, fp := range all {
+			SaveGrabHit(ctx, persist, mapKey, GrabHit{
+				Pick: fp, MaxCost: best.MaxCost,
+				YesFill: best.YesFill, NoFill: best.NoFill, DryRun: best.DryRun,
+			})
+		}
+		NotifyGrab(ctx, mapKey, best)
+	}(ctx, mapKey, all, bestHit, persist)
 }
 
 // grabOneBacktest 历史回放：不发真实单，同步写入 backtest_arb_*（由 Ops.BacktestTaskID 决定落库表）。
 func (r *Runner) grabOneBacktest(outcomeID uint) {
-	pick, ok := r.tryPickForGrab(outcomeID)
+	all, pick, ok := r.tryAllPicksForGrab(outcomeID)
 	if !ok {
 		return
 	}
@@ -104,13 +114,14 @@ func (r *Runner) grabOneBacktest(outcomeID uint) {
 	mapKey := r.w.MapKey
 	persist := r.grabPersist()
 	qty := pick.Qty
-	hit := GrabHit{
-		Pick: pick, MaxCost: lim.MaxCost,
-		YesFill: qty, NoFill: qty,
-	}
 	if !r.orderMu.TryLock() {
 		return
 	}
 	defer r.orderMu.Unlock()
-	SaveGrabHit(ctx, persist, mapKey, hit)
+	for _, fp := range all {
+		SaveGrabHit(ctx, persist, mapKey, GrabHit{
+			Pick: fp, MaxCost: lim.MaxCost,
+			YesFill: qty, NoFill: qty,
+		})
+	}
 }
