@@ -30,7 +30,7 @@ import (
 var errBusy = errors.New("strategy_entry event queue full")
 
 // WS 落库折中：不写每笔 price_change，同 token 限速，Redis 队列有上限（见 wsbookqueue）。
-const wsBookPersistMinInterval = 2 * time.Second
+const wsBookPersistMinInterval = 1 * time.Second
 
 type event struct {
 	Gen      int
