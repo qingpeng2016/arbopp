@@ -656,6 +656,11 @@ var reFixtureVs = regexp.MustCompile(`(?i)\s+vs\.?\s+`)
 
 // fixtureNamesMatch 用标题里的队名对齐。两边各取「vs」两侧，每侧至少有一个完整词相同。
 // Kalshi 常写成 Kashima vs Shimizu，Poly 写成 Kashima Antlers vs. Shimizu S-Pulse。
+// FixtureNamesMatchForAudit 跨平台队名粗匹配（供离线审计工具使用）。
+func FixtureNamesMatchForAudit(nameA, nameB string) bool {
+	return fixtureNamesMatch(nameA, nameB)
+}
+
 func fixtureNamesMatch(kalshiName, polyName string) bool {
 	k1, k2, okK := fixtureSides(kalshiName)
 	p1, p2, okP := fixtureSides(polyName)
