@@ -127,12 +127,12 @@ func (r *Runner) allTriplePicks() []TriplePick {
 	lim := r.limits()
 	groups := [3]yesno.OutcomeGroup{draw, tA, tB}
 	lists := [3][]string{draw.PlatformList(), tA.PlatformList(), tB.PlatformList()}
-	type job struct {
+	type tripleJob struct {
 		buyYes  bool
 		maxCost float64
 		plats   [3]string
 	}
-	var jobs []job
+	var jobs []tripleJob
 	for _, buyYes := range []bool{true, false} {
 		maxCost := lim.YesTripleMax
 		if !buyYes {
@@ -141,7 +141,7 @@ func (r *Runner) allTriplePicks() []TriplePick {
 		for _, pd := range lists[0] {
 			for _, pa := range lists[1] {
 				for _, pb := range lists[2] {
-					jobs = append(jobs, job{buyYes: buyYes, maxCost: maxCost, plats: [3]string{pd, pa, pb}})
+					jobs = append(jobs, tripleJob{buyYes: buyYes, maxCost: maxCost, plats: [3]string{pd, pa, pb}})
 				}
 			}
 		}
@@ -151,16 +151,16 @@ func (r *Runner) allTriplePicks() []TriplePick {
 		out []TriplePick
 		wg  sync.WaitGroup
 	)
-	for _, job := range jobs {
+	for _, j := range jobs {
 		wg.Add(1)
-		go func(job job) {
+		go func(j tripleJob) {
 			defer wg.Done()
-			if pick, hit := r.tripleForPlatforms(groups, job.plats, job.buyYes, job.maxCost, lim); hit {
+			if pick, hit := r.tripleForPlatforms(groups, j.plats, j.buyYes, j.maxCost, lim); hit {
 				mu.Lock()
 				out = append(out, pick)
 				mu.Unlock()
 			}
-		}(job)
+		}(j)
 	}
 	wg.Wait()
 	return out

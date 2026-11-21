@@ -120,12 +120,6 @@ mall_bot_ready() {
   if [[ -n "\${pid}" ]] && kill -0 "\${pid}" 2>/dev/null; then
     return 0
   fi
-  if [[ -f "\${PID_FILE}" ]]; then
-    pid=\$(tr -d '[:space:]' <"\${PID_FILE}" 2>/dev/null || true)
-    if [[ -n "\${pid}" ]] && kill -0 "\${pid}" 2>/dev/null; then
-      return 0
-    fi
-  fi
   if [[ -f "\${LOG_FILE}" ]] && grep -qE 'strategy-started|scheduler-Started' "\${LOG_FILE}" 2>/dev/null; then
     if [[ -f "\${PID_FILE}" ]]; then
       pid=\$(tr -d '[:space:]' <"\${PID_FILE}" 2>/dev/null || true)
@@ -326,6 +320,19 @@ stop_mall() {
   fi
 }
 
+mall_any_running() {
+  local pid_path pid
+  for pid_path in /proc/[0-9]*; do
+    [[ -e "\${pid_path}" ]] || continue
+    pid=\${pid_path#/proc/}
+    [[ "\${pid}" =~ ^[0-9]+\$ ]] || continue
+    pid_is_deploy_guard "\${pid}" && continue
+    cmdline_matches_mode "\${pid}" || continue
+    return 0
+  done
+  return 1
+}
+
 show_mall_status() {
   local found=0 pid cmd cwd
   for pid_path in /proc/[0-9]*; do
@@ -377,7 +384,7 @@ wait_for_mall() {
         return 0
       fi
     fi
-    if [[ -f "\${LOG_FILE}" ]] && grep -qE 'panic:|FATAL|run_conf parameter is required' "\${LOG_FILE}"; then
+    if [[ -f "\${LOG_FILE}" ]] && grep -qE 'panic:|FATAL|run_conf parameter is required| imported and not used|is not a type|build failed|cannot find package' "\${LOG_FILE}"; then
       echo "ERROR: [服务器] 启动失败，日志:" >&2
       tail -n 50 "\${LOG_FILE}" >&2
       exit 1
@@ -426,6 +433,11 @@ case "\${ACTION}" in
     stop_mall
     start_mall
     deploy_report_pids
+    if [[ "\${RUN_BOT}" == "true" ]] && ! mall_any_running; then
+      echo "ERROR: [服务器] bot 未在运行（无匹配进程），见 \${LOG_FILE}" >&2
+      tail -n 40 "\${LOG_FILE}" 2>/dev/null >&2 || true
+      exit 1
+    fi
     ;;
   restart)
     if [[ "\${PAPER_USE_GO_RUN}" != "1" ]]; then
@@ -434,6 +446,11 @@ case "\${ACTION}" in
     stop_mall
     start_mall
     deploy_report_pids
+    if [[ "\${RUN_BOT}" == "true" ]] && ! mall_any_running; then
+      echo "ERROR: [服务器] bot 未在运行（无匹配进程），见 \${LOG_FILE}" >&2
+      tail -n 40 "\${LOG_FILE}" 2>/dev/null >&2 || true
+      exit 1
+    fi
     ;;
   stop) stop_mall ;;
   status) show_mall_status ;;
