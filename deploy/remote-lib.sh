@@ -147,13 +147,16 @@ install_go_on_server() {
 }
 
 ensure_go() {
+  local gv
   if resolve_go_bin; then
-    echo ">>> [服务器] ${GO_BIN} $("${GO_BIN}" version)"
+    gv=$("${GO_BIN}" version 2>/dev/null) || gv="(version failed)"
+    echo ">>> [服务器] ${GO_BIN} ${gv}"
     return 0
   fi
   install_go_on_server || true
   if resolve_go_bin; then
-    echo ">>> [服务器] ${GO_BIN} $("${GO_BIN}" version)"
+    gv=$("${GO_BIN}" version 2>/dev/null) || gv="(version failed)"
+    echo ">>> [服务器] ${GO_BIN} ${gv}"
     return 0
   fi
   echo "ERROR: [服务器] 未找到 go（非交互 SSH 不会加载 .bashrc 的 PATH）。" >&2

@@ -394,15 +394,16 @@ wait_for_mall() {
 }
 
 start_mall() {
+  local bin_path="\${BIN_DIR}/\${MALL_BIN_NAME}"
   cd "\${APP_DIR}" || { echo "ERROR: 无法 cd \${APP_DIR}" >&2; exit 1; }
   mkdir -p "\${BIN_DIR}" "\${LOG_DIR}"
-  local bin_path="\${BIN_DIR}/\${MALL_BIN_NAME}"
   echo ">>> [服务器] start_mall: cwd=\$(pwd)"
   : >"\${LOG_FILE}" || { echo "ERROR: 无法写 \${LOG_FILE}" >&2; exit 1; }
+  echo ">>> [服务器] 日志已清空: \${LOG_FILE}"
   export GO111MODULE=on
   export GOPROXY="\${GOPROXY:-https://goproxy.cn,direct}"
   if [[ "\${PAPER_USE_GO_RUN}" == "1" ]]; then
-    ensure_go
+    ensure_go || { echo "ERROR: ensure_go 失败" >&2; exit 1; }
     echo ">>> [服务器] 启动 \${GO_BIN} run main.go --run_conf=\${RUN_CONF} --run_bot=\${RUN_BOT}"
     nohup "\${GO_BIN}" run main.go --run_conf="\${RUN_CONF}" --run_bot="\${RUN_BOT}" >>"\${LOG_FILE}" 2>&1 &
     echo ">>> [服务器] nohup 父进程 PID=\$!"
