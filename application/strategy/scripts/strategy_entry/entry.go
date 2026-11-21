@@ -39,6 +39,7 @@ type Entry struct {
 	poly               httprepo.PolymarketRepo
 	kalshi             httprepo.KalshiRepo
 	predict            httprepo.PredictRepo
+	sxbet              httprepo.SxbetRepo
 
 	mu      sync.Mutex
 	run     bool               // 为真表示监控循环已启动
@@ -81,6 +82,7 @@ func NewEntry(
 	poly httprepo.PolymarketRepo,
 	kalshi httprepo.KalshiRepo,
 	predict httprepo.PredictRepo,
+	sxbet httprepo.SxbetRepo,
 ) *Entry {
 	e := &Entry{
 		marketRepo:         marketRepo,
@@ -98,6 +100,7 @@ func NewEntry(
 		poly:               poly,
 		kalshi:             kalshi,
 		predict:            predict,
+		sxbet:              sxbet,
 		watches:            map[string]*running{},
 		detectLatYesno:     NewDetectLatency(),
 		detectLatOnextwo:   NewDetectLatency(),
@@ -125,6 +128,13 @@ func (e *Entry) predictAPIKey() string {
 		return strings.TrimSpace(c.predictAPIKey)
 	}
 	return ""
+}
+
+func (e *Entry) sxbetAPIKey() string {
+	if e == nil || e.sxbet == nil {
+		return ""
+	}
+	return strings.TrimSpace(e.sxbet.APIKey())
 }
 
 // canTrade 这家交易所有可用账号才允许发单。
@@ -281,11 +291,7 @@ func (e *Entry) notifyWSHeartbeat(ctx context.Context) {
 	if e == nil {
 		return
 	}
-	platforms := []string{
-		appcommon.PlatformPolymarket,
-		appcommon.PlatformKalshi,
-		appcommon.PlatformPredict,
-	}
+	platforms := WSHeartbeatPlatforms()
 	shouldGroups, matched, loadErr := e.loadGroups(ctx)
 	shouldN := len(shouldGroups)
 	shouldWS := expectedWSCounts(e, shouldGroups)
@@ -311,7 +317,7 @@ func (e *Entry) notifyWSHeartbeat(ctx context.Context) {
 			if rw.ws != nil {
 				exp, healthy = rw.ws.wsLinkOK(p)
 			} else if g, ok := wantByKey[rw.mapKey]; ok {
-				exp = outcomesPlatformWSExpected(e, g.Outcomes, p)
+				exp = groupHasPlatformMarket(g.MarketsByRowID, p)
 			}
 			if !exp {
 				continue
@@ -358,23 +364,28 @@ func (e *Entry) notifyWSHeartbeat(ctx context.Context) {
 		sumOK += t.ok
 		val := "未配置"
 		if want > 0 || t.inRun > 0 {
-			diff := want - t.ok
-			if want != t.inRun {
+			if want != t.inRun || t.ok != want {
 				allOK = false
 			}
-			if diff != 0 {
-				allOK = false
+			state := "正常"
+			if t.ok != want || t.inRun != want {
+				state = "异常"
 			}
-			val = fmt.Sprintf("应%d 在连%d 正常%d", want, t.inRun, t.ok)
-			if want != t.inRun || diff != 0 {
-				val += fmt.Sprintf(" (缺%d)", want-t.ok)
+			val = fmt.Sprintf("%d/%d %s", t.ok, want, state)
+			if t.inRun != want {
+				val += fmt.Sprintf(" (在连%d)", t.inRun)
 			}
 		}
 		fields = append(fields, notification.FieldPair{Key: p + " WS", Value: val})
 	}
+	totalState := "正常"
+	if sumOK != sumShould {
+		totalState = "异常"
+		allOK = false
+	}
 	fields = append(fields, notification.FieldPair{
 		Key:   "WS 合计",
-		Value: fmt.Sprintf("应%d 正常%d", sumShould, sumOK),
+		Value: fmt.Sprintf("%d/%d %s", sumOK, sumShould, totalState),
 	})
 	if sumShould != sumOK {
 		allOK = false

@@ -39,7 +39,7 @@ func TopFromStore(store *book.Store, oc BookOutcome, index int, fee float64) (Si
 			return Side{}, false
 		}
 		return st, true
-	case appcommon.PlatformKalshi, appcommon.PlatformPredict:
+	case appcommon.PlatformKalshi, appcommon.PlatformPredict, appcommon.PlatformSxbet:
 		bookID := strings.TrimSpace(oc.MarketID)
 		var ok1, ok2 bool
 		st.YesPx, st.YesSz, ok1 = store.Ask(oc.Platform, bookID)

@@ -21,6 +21,7 @@ import (
 	kalshiws "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/ws/kalshi"
 	polyws "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/ws/polymarket"
 	predictws "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/ws/predict"
+	sxbetws "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/ws/sxbet"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/notification"
 	httpentity "github.com/gph-tech/fgmm-strategy-bitfinex/domain/http/entity"
 	persistententity "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/entity"
@@ -85,6 +86,7 @@ func newWatch(ctx context.Context, e *Entry, g group) *watch {
 		ByToken:        map[string]int{},
 		ByTicker:       map[string]int{},
 		ByPredict:      map[string]int{},
+		BySxbet:        map[string]int{},
 		Books:          book.NewStore(),
 	}
 	w := &watch{
@@ -112,6 +114,11 @@ func newWatch(ctx context.Context, e *Entry, g group) *watch {
 		if strings.EqualFold(oc.Platform, appcommon.PlatformPredict) {
 			if id := strings.TrimSpace(oc.PlatformMarketOutcomeID); id != "" {
 				w.ByPredict[id] = i
+			}
+		}
+		if strings.EqualFold(oc.Platform, appcommon.PlatformSxbet) {
+			if id := strings.TrimSpace(oc.PlatformMarketOutcomeID); id != "" {
+				w.BySxbet[id] = i
 			}
 		}
 		w.negRisk[i] = broker.ReadNegRisk(oc.Config)
@@ -174,7 +181,7 @@ func newWatch(ctx context.Context, e *Entry, g group) *watch {
 // run 同时盯多平台行情，这组被换掉或进程停时一起退出。
 func (w *watch) run() {
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(4)
 	go func() {
 		defer wg.Done()
 		w.servePoly()
@@ -186,6 +193,10 @@ func (w *watch) run() {
 	go func() {
 		defer wg.Done()
 		w.servePredict()
+	}()
+	go func() {
+		defer wg.Done()
+		w.serveSxbet()
 	}()
 	<-w.Ctx.Done()
 	wg.Wait()
@@ -280,6 +291,58 @@ func (w *watch) bootstrapPredictBooks(gen int) {
 	}
 }
 
+// serveSxbet 有 SX marketHash 且配置 API Key 时维持 orderbook_v3 WS。
+func (w *watch) serveSxbet() {
+	defer w.reconnect(appcommon.PlatformSxbet)
+	hashes := sxbetws.MarketHashes(w.Outcomes)
+	if len(hashes) == 0 || w.entry == nil || w.entry.sxbet == nil || w.entry.sxbetAPIKey() == "" {
+		return
+	}
+	st := w.entry.wsStaggerBounds()
+	entryws.StaggerConnect(w.Ctx, st.MinMs, st.MaxMs)
+	sxbetws.Run(w.Ctx, w.entry.sxbet, w.Outcomes, w.MapKey, sxbetws.Session{
+		Begin: func() (context.Context, int) { return w.beginConn(appcommon.PlatformSxbet) },
+		Apply: w.applySxbet,
+		Snapshot: func(gen int) {
+			w.bootstrapSxbetBooks(gen)
+		},
+	})
+}
+
+func (w *watch) bootstrapSxbetBooks(gen int) {
+	if w.entry == nil || w.entry.sxbet == nil {
+		return
+	}
+	for _, hash := range sxbetws.MarketHashes(w.Outcomes) {
+		ctx, cancel := context.WithTimeout(w.Ctx, 15*time.Second)
+		snap, err := w.entry.sxbet.GetOrderbookSnapshot(ctx, hash)
+		cancel()
+		if err != nil || snap == nil {
+			continue
+		}
+		msg, ok := sxbetws.MessageFromSnapshot(gen, snap)
+		if !ok {
+			continue
+		}
+		w.applySxbet(msg)
+	}
+}
+
+func (w *watch) applySxbet(msg sxbetws.Message) {
+	recv := time.Now()
+	switch msg.Kind {
+	case "heartbeat":
+		w.touchWS(appcommon.PlatformSxbet)
+	case "pause":
+		w.write(event{Gen: msg.Gen, Platform: appcommon.PlatformSxbet, Kind: "pause"})
+	case "book":
+		w.write(event{
+			Gen: msg.Gen, Platform: appcommon.PlatformSxbet, Kind: "sxbet_all_book", ID: msg.ID,
+			Bids: msg.Bids, Asks: msg.Asks, TS: msg.TS, RecvAt: recv,
+		})
+	}
+}
+
 func (w *watch) applyPredict(msg predictws.Message) {
 	recv := time.Now()
 	switch msg.Kind {
@@ -364,6 +427,10 @@ func (w *watch) write(e event) {
 		}
 	case "predict_all_book":
 		if !w.Books.ApplyPredictBook(e.ID, e.Bids, e.Asks, e.TS) {
+			return
+		}
+	case "sxbet_all_book":
+		if !w.Books.ApplySxbetBook(e.ID, e.Bids, e.Asks, e.TS) {
 			return
 		}
 	case "kalshi_price_change":
@@ -668,6 +735,8 @@ func (w *watch) orderBookRowsFromEvent(e event) []*persistententity.OrderBook {
 		return w.bookRowsForKalshiTicker(e.ID)
 	case "predict_all_book":
 		return w.bookRowsForPredictMarket(e)
+	case "sxbet_all_book":
+		return w.bookRowsForSxbetMarket(e)
 	default:
 		return nil
 	}
@@ -708,6 +777,44 @@ func (w *watch) bookRowsForPolyToken(token string) []*persistententity.OrderBook
 		return nil
 	}
 	return []*persistententity.OrderBook{row}
+}
+
+func (w *watch) bookRowsForSxbetMarket(e event) []*persistententity.OrderBook {
+	marketHash := strings.TrimSpace(e.ID)
+	idx, ok := w.BySxbet[marketHash]
+	if !ok {
+		return nil
+	}
+	b, ok := w.Books.Get(appcommon.PlatformSxbet, marketHash)
+	if !ok {
+		return nil
+	}
+	return w.sxbetPersistRows(&w.Outcomes[idx], b.Bids, b.Asks, eventSnapshotMs(e))
+}
+
+func (w *watch) sxbetPersistRows(oc *persistententity.MarketOutcome, yesBids, yesAsks []book.Level, updateTimestampMs int64) []*persistententity.OrderBook {
+	if w == nil || oc == nil {
+		return nil
+	}
+	var fx *persistententity.Market
+	if m, ok := w.MarketsByRowID[oc.MarketRowID]; ok {
+		fx = &m
+	}
+	snapMs := updateTimestampMs
+	if snapMs <= 0 {
+		snapMs = time.Now().UnixMilli()
+	}
+	rows := obcommon.PredictBookRowsWithFixture(oc, fx, yesBids, yesAsks, snapMs)
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([]*persistententity.OrderBook, 0, len(rows))
+	for _, r := range rows {
+		if r != nil {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 func (w *watch) bookRowsForPredictMarket(e event) []*persistententity.OrderBook {
@@ -803,6 +910,8 @@ func (w *watch) bookRowsForHit(aIndex, bIndex int) []*persistententity.OrderBook
 			idx, ok = w.ByTicker[bookID]
 		case appcommon.PlatformPredict:
 			idx, ok = w.ByPredict[bookID]
+		case appcommon.PlatformSxbet:
+			idx, ok = w.BySxbet[bookID]
 		default:
 			continue
 		}
@@ -815,6 +924,10 @@ func (w *watch) bookRowsForHit(aIndex, bIndex int) []*persistententity.OrderBook
 		}
 		if strings.EqualFold(oc.Platform, appcommon.PlatformPredict) {
 			rows = append(rows, w.predictPersistRows(&w.Outcomes[idx], bk.Bids, bk.Asks, 0)...)
+			continue
+		}
+		if strings.EqualFold(oc.Platform, appcommon.PlatformSxbet) {
+			rows = append(rows, w.sxbetPersistRows(&w.Outcomes[idx], bk.Bids, bk.Asks, 0)...)
 			continue
 		}
 		hitOc := &w.Outcomes[idx]

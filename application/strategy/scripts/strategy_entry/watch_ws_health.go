@@ -6,9 +6,11 @@ import (
 	"time"
 
 	appcommon "github.com/gph-tech/fgmm-strategy-bitfinex/application/common"
+	entrystat "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/stat"
 	kalshiws "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/ws/kalshi"
 	polyws "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/ws/polymarket"
 	predictws "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/ws/predict"
+	sxbetws "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/ws/sxbet"
 	persistententity "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/entity"
 )
 
@@ -16,6 +18,18 @@ const (
 	wsStaleAfter   = 4 * time.Minute
 	wsConnectGrace = 90 * time.Second
 )
+
+// WSHeartbeatPlatforms strategy_entry 心跳统计的平台列表（与每场应连 WS 一致）。
+func WSHeartbeatPlatforms() []string {
+	return []string{
+		appcommon.PlatformPolymarket,
+		appcommon.PlatformKalshi,
+		appcommon.PlatformPredict,
+		appcommon.PlatformSxbet,
+	}
+}
+
+func wsHeartbeatPlatforms() []string { return WSHeartbeatPlatforms() }
 
 // wsHealth 单组 map_key 上各平台 WS 最近活动（book/心跳），非 pause 窗口内视为在连。
 type wsHealth struct {
@@ -48,6 +62,8 @@ func outcomesPlatformWSExpected(e *Entry, outcomes []persistententity.MarketOutc
 		return len(kalshiws.Tickers(outcomes)) > 0 && e.kalshi != nil
 	case appcommon.PlatformPredict:
 		return len(predictws.MarketIDs(outcomes)) > 0 && e.predict != nil && e.predictAPIKey() != ""
+	case appcommon.PlatformSxbet:
+		return len(sxbetws.MarketHashes(outcomes)) > 0 && e.sxbet != nil && e.sxbetAPIKey() != ""
 	default:
 		return false
 	}
@@ -57,23 +73,30 @@ func (w *watch) platformExpected(platform string) bool {
 	if w == nil {
 		return false
 	}
-	return outcomesPlatformWSExpected(w.entry, w.Outcomes, platform)
+	return groupHasPlatformMarket(w.MarketsByRowID, platform)
 }
 
-// expectedWSCounts 按库内应对场次统计各平台应开的 WS 条数（每组每平台最多 1 条）。
-func expectedWSCounts(e *Entry, groups []group) map[string]int {
-	platforms := []string{
-		appcommon.PlatformPolymarket,
-		appcommon.PlatformKalshi,
-		appcommon.PlatformPredict,
-	}
+func groupHasPlatformMarket(markets map[uint]persistententity.Market, platform string) bool {
+	by := entrystat.MarketsByPlatform(markets)
+	_, ok := by[strings.ToUpper(strings.TrimSpace(platform))]
+	return ok
+}
+
+// expectedWSCounts 与 stat_kv groups[].markets 一致：每组每平台至多 1 条 WS。
+func expectedWSCounts(_ *Entry, groups []group) map[string]int {
+	platforms := wsHeartbeatPlatforms()
 	out := make(map[string]int, len(platforms))
 	for _, p := range platforms {
 		out[p] = 0
 	}
+	platSet := make(map[string]struct{}, len(platforms))
+	for _, p := range platforms {
+		platSet[strings.ToUpper(p)] = struct{}{}
+	}
 	for _, g := range groups {
-		for _, p := range platforms {
-			if outcomesPlatformWSExpected(e, g.Outcomes, p) {
+		by := entrystat.MarketsByPlatform(g.MarketsByRowID)
+		for p := range by {
+			if _, ok := platSet[p]; ok {
 				out[p]++
 			}
 		}

@@ -42,6 +42,7 @@ type Watch struct {
 	ByToken   map[string]int
 	ByTicker  map[string]int
 	ByPredict map[string]int
+	BySxbet   map[string]int
 	Books     *book.Store
 	Ops       Ops
 }

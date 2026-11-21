@@ -21,7 +21,10 @@ type SxbetListActiveMarketsParams struct {
 
 // SxbetRepo SX Bet REST（公开市场数据无需 API Key；下单/盘口快照等另需 x-sx-api-key）。
 type SxbetRepo interface {
+	APIKey() string
 	GetActiveMarkets(ctx context.Context, params SxbetListActiveMarketsParams) (*entity.SxbetActiveMarketsResponse, error)
 	GetActiveLeagues(ctx context.Context) ([]entity.SxbetLeague, error)
 	GetSports(ctx context.Context) ([]entity.SxbetSport, error)
+	GetRealtimeToken(ctx context.Context) (string, error)
+	GetOrderbookSnapshot(ctx context.Context, marketHash string) (*entity.SxbetOrderbookV3, error)
 }

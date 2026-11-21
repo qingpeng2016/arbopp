@@ -175,3 +175,52 @@ func (c *Client) GetSports(ctx context.Context) ([]entity.SxbetSport, error) {
 	}
 	return resp.Data, nil
 }
+
+// APIKey 配置在 platform.extra 的 API Key（realtime / 盘口快照）。
+func (c *Client) APIKey() string {
+	if c == nil {
+		return ""
+	}
+	return c.apiKey
+}
+
+// GetRealtimeToken GET /user/realtime-token-v3/api-key（Centrifugo 连接用）。
+func (c *Client) GetRealtimeToken(ctx context.Context) (string, error) {
+	if c == nil {
+		return "", fmt.Errorf("sxbet client is nil")
+	}
+	if strings.TrimSpace(c.apiKey) == "" {
+		return "", fmt.Errorf("sxbet: missing api key for realtime")
+	}
+	var resp entity.SxbetRealtimeTokenResponse
+	if err := c.doGET(ctx, "/user/realtime-token-v3/api-key", nil, &resp); err != nil {
+		return "", err
+	}
+	tok := strings.TrimSpace(resp.Token)
+	if tok == "" {
+		return "", fmt.Errorf("sxbet realtime token empty (status=%s)", resp.Status)
+	}
+	return tok, nil
+}
+
+// GetOrderbookSnapshot GET /orderbook-v3/snapshot/market。
+func (c *Client) GetOrderbookSnapshot(ctx context.Context, marketHash string) (*entity.SxbetOrderbookV3, error) {
+	marketHash = strings.TrimSpace(marketHash)
+	if marketHash == "" {
+		return nil, fmt.Errorf("sxbet snapshot: empty marketHash")
+	}
+	q := url.Values{}
+	q.Set("marketHash", marketHash)
+	var resp entity.SxbetOrderbookSnapshotResponse
+	if err := c.doGET(ctx, "/orderbook-v3/snapshot/market", q, &resp); err != nil {
+		return nil, err
+	}
+	if strings.EqualFold(resp.Status, "failure") {
+		return nil, fmt.Errorf("sxbet orderbook snapshot: status failure")
+	}
+	out := resp.Data
+	if strings.TrimSpace(out.MarketHash) == "" {
+		out.MarketHash = marketHash
+	}
+	return &out, nil
+}

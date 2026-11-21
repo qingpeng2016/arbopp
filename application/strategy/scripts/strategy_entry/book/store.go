@@ -229,6 +229,25 @@ func applyPolyLevel(b *Book, side string, price, size float64, ts time.Time) str
 	return ""
 }
 
+// ApplySxbetBook SXBet orderbook_v3 全量（YES 单簿，与 Predict 一致）。
+func (s *Store) ApplySxbetBook(marketHash string, bids, asks []Level, ts time.Time) bool {
+	tick := 0.01
+	defer func() {
+		noteBadLevels(appcommon.PlatformSxbet, marketHash, bids, tick)
+		noteBadLevels(appcommon.PlatformSxbet, marketHash, asks, tick)
+	}()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	b := s.ensure(appcommon.PlatformSxbet, marketHash)
+	b.Tick = tick
+	b.Bids = SortDesc(OnTick(bids, tick))
+	b.Asks = SortAsc(OnTick(asks, tick))
+	b.NoBids = nil
+	b.ExchangeTS = ts
+	b.Live = true
+	return true
+}
+
 // ApplyPredictBook Predict WS 全量：盘口为 YES 视角，NO 卖一由 YES 买一换算（见 yesno.TopFromStore）。
 func (s *Store) ApplyPredictBook(marketID string, bids, asks []Level, ts time.Time) bool {
 	tick := 0.01
