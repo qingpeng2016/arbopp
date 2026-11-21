@@ -132,22 +132,27 @@ func (c *Collect) Run(ctx context.Context) {
 		notification.SendErrorLog(ctx, "stat_collect-market_running_count-failed", zap.Error(preErr))
 		preRunnable = preEventRunnableStat{}
 	}
+	preMins := strategyentry.LoadPreEventScanMinutes(ctx, c.configStrategyRepo)
+	endMins := strategyentry.LoadEndEventScanMinutes(ctx, c.configStrategyRepo)
 	audit := mapKeyAudit{
-		Watchable:            int64(watchCounts.Watchable),
-		Matched:              int64(watchCounts.Matched),
-		PreEventRunnable:     preRunnable.Count,
-		PreEventRunnableDesc: preRunnable.DescriptionJSON,
-		BadLt2:               badOnly.BadLt2,
-		BadDup:               badOnly.BadDup,
-		CompliantGroups:      compliant,
-		CompliantByPlatform:  compliantJSON,
-		VerifiedCompliant:    verifiedOK,
-		VerifiedByPlatform:   verifiedJSON,
+		Watchable:           int64(watchCounts.Watchable),
+		Matched:             int64(watchCounts.Matched),
+		MaxGroups:           watchCounts.MaxGroups,
+		PreEventRunnable:    preRunnable.Count,
+		PreEventScanMinutes: preMins,
+		EndEventScanMinutes: endMins,
+		PreEventGroups:      parsePreEventGroupsFromDesc(preRunnable.DescriptionJSON),
+		BadLt2:              badOnly.BadLt2,
+		BadDup:              badOnly.BadDup,
+		CompliantGroups:     compliant,
+		CompliantByPlatform: compliantJSON,
+		VerifiedCompliant:   verifiedOK,
+		VerifiedByPlatform:  verifiedJSON,
 	}
 	auditRows := mapKeyAuditRows(audit)
 
 	err = c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := c.statRepo.DeleteByGroupItems(ctx, tx, groupMapKeyAudit, mapKeyAuditKeysFromRows(auditRows)); err != nil {
+		if err := c.statRepo.DeleteByGroupItems(ctx, tx, groupMapKeyAudit, mapKeyAuditPurgeItemKeys()); err != nil {
 			return err
 		}
 		if err := c.statRepo.UpsertBatch(ctx, tx, auditRows); err != nil {
@@ -179,16 +184,57 @@ func (c *Collect) Run(ctx context.Context) {
 }
 
 type mapKeyAudit struct {
-	Matched              int64
-	Watchable            int64
-	PreEventRunnable     int64
-	PreEventRunnableDesc string
-	BadLt2               int64
-	BadDup               int64
-	CompliantGroups      int64
-	CompliantByPlatform  string // JSON：库内合规组按平台数分桶（ACTIVE+map_key，audit OK）
-	VerifiedCompliant    int64
-	VerifiedByPlatform   string // JSON：map_verified=1 且 platform 为 ACTIVE 的合规组分桶
+	Matched               int64
+	Watchable             int64
+	MaxGroups             int
+	PreEventRunnable      int64
+	PreEventScanMinutes   int
+	EndEventScanMinutes   int
+	PreEventGroups        []preEventRunnableGroup
+	BadLt2                int64
+	BadDup                int64
+	CompliantGroups       int64
+	CompliantByPlatform   string // JSON：库内合规组按平台数分桶（ACTIVE+map_key，audit OK）
+	VerifiedCompliant     int64
+	VerifiedByPlatform    string // JSON：map_verified=1 且 platform 为 ACTIVE 的合规组分桶
+}
+
+// mapKeyGroupsSnapshot 写入 stat_kv map_key_audit / groups 的 description。
+type mapKeyGroupsSnapshot struct {
+	Compliant         mapKeyGroupsLayer `json:"compliant"`
+	VerifiedCompliant mapKeyGroupsLayer `json:"verified_compliant"`
+	Strategy          mapKeyStrategyLayer `json:"strategy"`
+	AuditBad          mapKeyAuditBad      `json:"audit_bad"`
+}
+
+type mapKeyGroupsLayer struct {
+	Total      int64            `json:"total"`
+	ByPlatform map[string]int64 `json:"by_platform"`
+}
+
+type mapKeyStrategyLayer struct {
+	Matched             int64                    `json:"matched"`
+	Watchable           int64                    `json:"watchable"`
+	MaxGroups           int                      `json:"max_groups"`
+	PreEventRunnable    int64                    `json:"pre_event_runnable"`
+	PreEventScanMinutes int                      `json:"pre_event_scan_minutes"`
+	EndEventScanMinutes int                      `json:"end_event_scan_minutes"`
+	PreEventGroups      []preEventRunnableGroup  `json:"pre_event_groups"`
+}
+
+type mapKeyAuditBad struct {
+	Lt2PlatformGroups int64 `json:"lt2_platform_groups"`
+	DupPlatformGroups int64 `json:"dup_platform_groups"`
+}
+
+const mapKeyAuditGroupsItemKey = "groups"
+
+// 历次 map_key_audit 分项键；删除时一并清理，避免 stat_kv 堆积。
+var mapKeyAuditLegacyItemKeys = []string{
+	"compliant_groups", "compliant_groups_by_platform",
+	"verified_compliant_groups", "verified_compliant_by_platform",
+	"matched_groups", "watchable_groups", "market_running_count",
+	"bad_lt2_platform_groups", "bad_dup_platform_groups",
 }
 
 type preEventRunnableStat struct {
@@ -579,56 +625,82 @@ WHERE map_key IS NOT NULL
 }
 
 func mapKeyAuditRows(a mapKeyAudit) []*persistententity.StatKV {
-	compliantJSON := strings.TrimSpace(a.CompliantByPlatform)
-	if compliantJSON == "" {
-		compliantJSON = "{}"
+	desc := buildMapKeyGroupsDescription(a)
+	groups := a.PreEventGroups
+	if groups == nil {
+		groups = []preEventRunnableGroup{}
 	}
-	verifiedJSON := strings.TrimSpace(a.VerifiedByPlatform)
-	if verifiedJSON == "" {
-		verifiedJSON = "{}"
-	}
+	// item_value：应对监控组数，便于 SELECT 不用解析 JSON
 	return []*persistententity.StatKV{
-		kvStat(groupMapKeyAudit, "compliant_groups", strconv.FormatInt(a.CompliantGroups, 10), "int",
-			"库内合规跨平台组合计（ACTIVE；≥2 平台且同平台不重复；见 compliant_groups_by_platform）", 1),
-		kvStat(groupMapKeyAudit, "compliant_groups_by_platform", compliantJSON, "json",
-			"合规组按平台数分桶，含 total；与裸 SQL audit D 一致", 2),
-		kvStat(groupMapKeyAudit, "verified_compliant_groups", strconv.FormatInt(a.VerifiedCompliant, 10), "int",
-			"已核对且属于 ACTIVE 平台的合规组合计；见 verified_compliant_by_platform", 3),
-		kvStat(groupMapKeyAudit, "verified_compliant_by_platform", verifiedJSON, "json",
-			"map_verified=1 + ACTIVE 平台 slugs 的合规组分桶", 4),
-		kvStat(groupMapKeyAudit, "matched_groups", strconv.FormatInt(a.Matched, 10), "int",
-			"strategy_entry 可运行组（开赛窗+有 outcome+合规，未截 max_groups）", 5),
-		kvStat(groupMapKeyAudit, "watchable_groups", strconv.FormatInt(a.Watchable, 10), "int",
-			"strategy_entry 应对监控组数（matched 按成交额截断 max_groups）", 6),
-		kvStat(groupMapKeyAudit, "market_running_count", strconv.FormatInt(a.PreEventRunnable, 10), "int",
-			preEventRunnableAuditDesc(a), 7),
-		kvStat(groupMapKeyAudit, "bad_lt2_platform_groups", strconv.FormatInt(a.BadLt2, 10), "int",
-			"map_key 平台数<2 的组数（audit D）", 8),
-		kvStat(groupMapKeyAudit, "bad_dup_platform_groups", strconv.FormatInt(a.BadDup, 10), "int",
-			"map_key 同平台重复组数（audit D）", 9),
+		kvStat(groupMapKeyAudit, mapKeyAuditGroupsItemKey, strconv.FormatInt(a.Watchable, 10), "int",
+			desc, 1),
 	}
 }
 
-func mapKeyAuditKeysFromRows(rows []*persistententity.StatKV) []string {
-	keys := make([]string, 0, len(rows))
-	for _, r := range rows {
-		if r == nil {
-			continue
-		}
-		k := strings.TrimSpace(r.ItemKey)
-		if k == "" {
-			continue
-		}
-		keys = append(keys, k)
-	}
+func mapKeyAuditPurgeItemKeys() []string {
+	keys := append([]string{mapKeyAuditGroupsItemKey}, mapKeyAuditLegacyItemKeys...)
 	return keys
 }
 
-func preEventRunnableAuditDesc(a mapKeyAudit) string {
-	if strings.TrimSpace(a.PreEventRunnableDesc) != "" {
-		return a.PreEventRunnableDesc
+func buildMapKeyGroupsDescription(a mapKeyAudit) string {
+	groups := a.PreEventGroups
+	if groups == nil {
+		groups = []preEventRunnableGroup{}
 	}
-	return `{"pre_event_scan_minutes":30,"end_event_scan_minutes":180,"groups":[]}`
+	snap := mapKeyGroupsSnapshot{
+		Compliant: mapKeyGroupsLayer{
+			Total:      a.CompliantGroups,
+			ByPlatform: parsePlatformCountJSON(a.CompliantByPlatform),
+		},
+		VerifiedCompliant: mapKeyGroupsLayer{
+			Total:      a.VerifiedCompliant,
+			ByPlatform: parsePlatformCountJSON(a.VerifiedByPlatform),
+		},
+		Strategy: mapKeyStrategyLayer{
+			Matched:             a.Matched,
+			Watchable:           a.Watchable,
+			MaxGroups:           a.MaxGroups,
+			PreEventRunnable:    a.PreEventRunnable,
+			PreEventScanMinutes: a.PreEventScanMinutes,
+			EndEventScanMinutes: a.EndEventScanMinutes,
+			PreEventGroups:      groups,
+		},
+		AuditBad: mapKeyAuditBad{
+			Lt2PlatformGroups: a.BadLt2,
+			DupPlatformGroups: a.BadDup,
+		},
+	}
+	b, err := json.Marshal(snap)
+	if err != nil {
+		return `{"error":"marshal_map_key_groups_snapshot"}`
+	}
+	return string(b)
+}
+
+func parsePlatformCountJSON(raw string) map[string]int64 {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return map[string]int64{}
+	}
+	out := map[string]int64{}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return map[string]int64{}
+	}
+	return out
+}
+
+func parsePreEventGroupsFromDesc(descJSON string) []preEventRunnableGroup {
+	descJSON = strings.TrimSpace(descJSON)
+	if descJSON == "" {
+		return nil
+	}
+	var payload struct {
+		Groups []preEventRunnableGroup `json:"groups"`
+	}
+	if err := json.Unmarshal([]byte(descJSON), &payload); err != nil {
+		return nil
+	}
+	return payload.Groups
 }
 
 func kvStat(group, key, val, valType, desc string, sortNo int) *persistententity.StatKV {

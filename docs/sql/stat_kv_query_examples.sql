@@ -1,11 +1,21 @@
 -- stat_kv 查询示例（见 migration_stat_kv.sql 建表）
 
--- map_key_audit：分层统计 — compliant_*（库内合规）、verified_*（已核对+ACTIVE 平台）、
---   matched/watchable/market_running_count（strategy_entry 可跑）、bad_*（audit 违规）
-SELECT item_key, item_value, description, updated_at
+-- map_key_audit：groups 一行汇总（item_value=watchable；description=JSON 全量分层）
+--   + strategy_entry 心跳写的 market_running_count_strategy
+SELECT item_key, item_value, LEFT(description, 200) AS description_head, updated_at
 FROM stat_kv
 WHERE group_name = 'map_key_audit'
 ORDER BY sort_no;
+
+-- MySQL 8：解析 groups.description
+-- SELECT
+--   item_value AS watchable,
+--   description->>'$.compliant.total' AS compliant_total,
+--   description->>'$.verified_compliant.total' AS verified_total,
+--   description->>'$.strategy.matched' AS matched,
+--   description->>'$.audit_bad.lt2_platform_groups' AS bad_lt2
+-- FROM stat_kv
+-- WHERE group_name = 'map_key_audit' AND item_key = 'groups';
 
 -- 每平台 1 条 JSON：各子类 market 场次 + __total__
 SELECT item_key, item_value, updated_at
