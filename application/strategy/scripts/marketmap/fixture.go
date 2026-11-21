@@ -650,6 +650,7 @@ var reFixtureVs = regexp.MustCompile(`(?i)\s+vs\.?\s+`)
 
 // fixtureNamesMatch 用标题里的队名对齐。两边各取「vs」两侧，每侧至少有一个完整词相同。
 // Kalshi 常写成 Kashima vs Shimizu，Poly 写成 Kashima Antlers vs. Shimizu S-Pulse。
+// 单侧重合须「有意义」：≥2 个 token 相同，或至少 1 个非弱词（避免 NCAA 仅靠 state/michigan 误并不同场次）。
 // FixtureNamesMatchForAudit 跨平台队名粗匹配（供离线审计工具使用）。
 func FixtureNamesMatchForAudit(nameA, nameB string) bool {
 	return fixtureNamesMatch(nameA, nameB)
@@ -661,8 +662,8 @@ func fixtureNamesMatch(kalshiName, polyName string) bool {
 	if !okK || !okP {
 		return false
 	}
-	return (sideTokensOverlap(k1, p1) && sideTokensOverlap(k2, p2)) ||
-		(sideTokensOverlap(k1, p2) && sideTokensOverlap(k2, p1))
+	return (sideTokensOverlapMeaningful(k1, p1) && sideTokensOverlapMeaningful(k2, p2)) ||
+		(sideTokensOverlapMeaningful(k1, p2) && sideTokensOverlapMeaningful(k2, p1))
 }
 
 func fixtureSides(name string) ([]string, []string, bool) {
@@ -678,15 +679,21 @@ func fixtureSides(name string) ([]string, []string, bool) {
 	return a, b, true
 }
 
-func sideTokensOverlap(a, b []string) bool {
+func sideTokensOverlapMeaningful(a, b []string) bool {
+	nWeak, nStrong := 0, 0
 	for _, x := range a {
 		for _, y := range b {
-			if x == y {
-				return true
+			if x != y {
+				continue
+			}
+			if _, weak := fixtureWeakNameTokens[x]; weak {
+				nWeak++
+			} else {
+				nStrong++
 			}
 		}
 	}
-	return false
+	return nStrong >= 1 || nWeak+nStrong >= 2
 }
 
 func significantNameTokens(side string) []string {
@@ -711,6 +718,13 @@ var fixtureNameStopwords = map[string]struct{}{
 	"the": {}, "and": {}, "club": {},
 	"fc": {}, "sc": {}, "cf": {}, "ac": {}, "afc": {},
 	"de": {}, "da": {}, "do": {}, "of": {},
+}
+
+// fixtureWeakNameTokens 美式校园队名里常见弱词，不能单独支撑「同场」判定。
+var fixtureWeakNameTokens = map[string]struct{}{
+	"state": {}, "tech": {}, "central": {}, "northern": {}, "southern": {},
+	"eastern": {}, "western": {}, "north": {}, "south": {}, "east": {}, "west": {},
+	"university": {}, "college": {},
 }
 
 func foldFixtureName(name string) string {

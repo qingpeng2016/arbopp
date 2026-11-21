@@ -341,6 +341,30 @@ func TestLinkSxbetNotMergedWhenKickoffDiffersDespiteLooseNames(t *testing.T) {
 	}
 }
 
+func TestFixtureNamesMatchRejectsCMUvsOSUMichigan(t *testing.T) {
+	a := "Central Michigan vs. Ball State"
+	b := "Ohio State Buckeyes vs Michigan Wolverines"
+	if fixtureNamesMatch(a, b) {
+		t.Fatal("cmich-ballst must not match osu-michigan")
+	}
+}
+
+func TestFixtureNamesMatchAcceptsKentCleveland(t *testing.T) {
+	a := "Kent State Golden Flashes vs. Cleveland State Vikings"
+	b := "Cleveland State vs Kent State"
+	if !fixtureNamesMatch(a, b) {
+		t.Fatal("kent-cleveland should match")
+	}
+}
+
+func TestFixtureNamesMatchAcceptsHawaiiNevada(t *testing.T) {
+	a := "Hawai'i vs. Nevada"
+	b := "Nevada Wolf Pack vs Hawaii Rainbow Warriors"
+	if !fixtureNamesMatch(a, b) {
+		t.Fatal("hawaii-nevada should match")
+	}
+}
+
 func TestLinkSxbetWithPolyAndPredict(t *testing.T) {
 	scope := testMatchScope("NCAA Football")
 	polySlug := "ncaaf-xxx-yyy-2026-11-21"

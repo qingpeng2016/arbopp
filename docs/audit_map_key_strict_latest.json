@@ -1,0 +1,2207 @@
+{
+  "generated_note": "Strict: same scope bucket, fixtureNamesMatch, event_start_time equal when both set",
+  "counts": {
+    "unlinked_pairs": 80,
+    "missing_third": 5
+  },
+  "unlinked_by_platform_pair": {
+    "POLYMARKET|PREDICT": 69,
+    "POLYMARKET|SXBET": 6,
+    "PREDICT|SXBET": 5
+  },
+  "unlinked_top_leagues": [
+    [
+      "UFC",
+      58
+    ],
+    [
+      "College Football",
+      13
+    ],
+    [
+      "NCAA Basketball",
+      5
+    ],
+    [
+      "International",
+      4
+    ]
+  ],
+  "missing_third_pattern": {
+    "has=('POLYMARKET', 'PREDICT') miss=SXBET": 5
+  },
+  "unlinked_pairs": [
+    {
+      "competition_en": "International",
+      "scope": [
+        "Sports",
+        "Cricket",
+        "International"
+      ],
+      "a": {
+        "id": 261,
+        "platform": "PREDICT",
+        "name": "ICC Women's Emerging Nations Trophy T20s: Ireland Women vs Netherlands Women",
+        "map_key": "v1|International|crint-irlw-nldw-2026-11-23",
+        "event_start_time": "2026-11-23 09:15:00",
+        "competition_en": "International"
+      },
+      "b": {
+        "id": 4599,
+        "platform": "POLYMARKET",
+        "name": "ICC Women's Emerging Nations Trophy T20s: Zimbabwe Women vs Scotland Women",
+        "map_key": "v1|International|crint-zwew-scow-2026-11-23",
+        "event_start_time": "2026-11-23 09:15:00",
+        "competition_en": "International"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "International",
+      "scope": [
+        "Sports",
+        "Cricket",
+        "International"
+      ],
+      "a": {
+        "id": 264,
+        "platform": "PREDICT",
+        "name": "ICC Women's Emerging Nations Trophy T20s: Netherlands Women vs Sri Lanka Women",
+        "map_key": "v1|International|crint-nldw-lkaw-2026-11-22",
+        "event_start_time": "2026-11-22 05:00:00",
+        "competition_en": "International"
+      },
+      "b": {
+        "id": 4594,
+        "platform": "POLYMARKET",
+        "name": "ICC Women's Emerging Nations Trophy T20s: Pakistan Women vs Scotland Women",
+        "map_key": "v1|International|crint-pakw-scow-2026-11-22",
+        "event_start_time": "2026-11-22 05:00:00",
+        "competition_en": "International"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "International",
+      "scope": [
+        "Sports",
+        "Cricket",
+        "International"
+      ],
+      "a": {
+        "id": 266,
+        "platform": "PREDICT",
+        "name": "ICC Women's Emerging Nations Trophy T20s: Pakistan Women vs Scotland Women",
+        "map_key": "v1|International|crint-pakw-scow-2026-11-22",
+        "event_start_time": "2026-11-22 05:00:00",
+        "competition_en": "International"
+      },
+      "b": {
+        "id": 4592,
+        "platform": "POLYMARKET",
+        "name": "ICC Women's Emerging Nations Trophy T20s: Netherlands Women vs Sri Lanka Women",
+        "map_key": "v1|International|crint-nldw-lkaw-2026-11-22",
+        "event_start_time": "2026-11-22 05:00:00",
+        "competition_en": "International"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "International",
+      "scope": [
+        "Sports",
+        "Cricket",
+        "International"
+      ],
+      "a": {
+        "id": 271,
+        "platform": "PREDICT",
+        "name": "ICC Women's Emerging Nations Trophy T20s: Zimbabwe Women vs Scotland Women",
+        "map_key": "v1|International|crint-zwew-scow-2026-11-23",
+        "event_start_time": "2026-11-23 09:15:00",
+        "competition_en": "International"
+      },
+      "b": {
+        "id": 4588,
+        "platform": "POLYMARKET",
+        "name": "ICC Women's Emerging Nations Trophy T20s: Ireland Women vs Netherlands Women",
+        "map_key": "v1|International|crint-irlw-nldw-2026-11-23",
+        "event_start_time": "2026-11-23 09:15:00",
+        "competition_en": "International"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "NCAA Basketball",
+      "scope": [
+        "Sports",
+        "Basketball",
+        "NCAA Basketball"
+      ],
+      "a": {
+        "id": 465,
+        "platform": "PREDICT",
+        "name": "Coppin State Eagles vs. Villanova Wildcats",
+        "map_key": "v1|NCAA篮球|cbb-coppst-vill-2026-11-24",
+        "event_start_time": "2026-11-25 00:00:00",
+        "competition_en": "NCAA Basketball"
+      },
+      "b": {
+        "id": 4140,
+        "platform": "POLYMARKET",
+        "name": "Tarleton State Texans vs. Weber State Wildcats",
+        "map_key": "v1|NCAA篮球|cbb-tarl-webst-2026-11-24",
+        "event_start_time": "2026-11-25 00:00:00",
+        "competition_en": "NCAA Basketball"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "NCAA Basketball",
+      "scope": [
+        "Sports",
+        "Basketball",
+        "NCAA Basketball"
+      ],
+      "a": {
+        "id": 473,
+        "platform": "PREDICT",
+        "name": "Eastern Michigan Eagles vs. Kennesaw State Owls",
+        "map_key": "v1|NCAA篮球|cbb-emich-kenest-2026-11-24",
+        "event_start_time": "2026-11-24 23:00:00",
+        "competition_en": "NCAA Basketball"
+      },
+      "b": {
+        "id": 3475,
+        "platform": "POLYMARKET",
+        "name": "Georgia Southern Eagles vs. Cleveland State Vikings (W)",
+        "map_key": null,
+        "event_start_time": "2026-11-24 23:00:00",
+        "competition_en": "NCAA Basketball"
+      },
+      "reason": "b_no_key"
+    },
+    {
+      "competition_en": "NCAA Basketball",
+      "scope": [
+        "Sports",
+        "Basketball",
+        "NCAA Basketball"
+      ],
+      "a": {
+        "id": 529,
+        "platform": "PREDICT",
+        "name": "Tarleton State Texans vs. Weber State Wildcats",
+        "map_key": "v1|NCAA篮球|cbb-tarl-webst-2026-11-24",
+        "event_start_time": "2026-11-25 00:00:00",
+        "competition_en": "NCAA Basketball"
+      },
+      "b": {
+        "id": 4073,
+        "platform": "POLYMARKET",
+        "name": "Coppin State Eagles vs. Villanova Wildcats",
+        "map_key": "v1|NCAA篮球|cbb-coppst-vill-2026-11-24",
+        "event_start_time": "2026-11-25 00:00:00",
+        "competition_en": "NCAA Basketball"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "NCAA Basketball",
+      "scope": [
+        "Sports",
+        "Basketball",
+        "NCAA Basketball"
+      ],
+      "a": {
+        "id": 580,
+        "platform": "PREDICT",
+        "name": "Cal State Fullerton Titans vs. Portland State Vikings",
+        "map_key": "v1|NCAA篮球|cbb-csufl-portst-2026-11-22",
+        "event_start_time": "2026-11-22 22:00:00",
+        "competition_en": "NCAA Basketball"
+      },
+      "b": {
+        "id": 3815,
+        "platform": "POLYMARKET",
+        "name": "Wichita State Shockers vs. Oklahoma State Cowboys (W)",
+        "map_key": null,
+        "event_start_time": "2026-11-22 22:00:00",
+        "competition_en": "NCAA Basketball"
+      },
+      "reason": "b_no_key"
+    },
+    {
+      "competition_en": "NCAA Basketball",
+      "scope": [
+        "Sports",
+        "Basketball",
+        "NCAA Basketball"
+      ],
+      "a": {
+        "id": 3325,
+        "platform": "POLYMARKET",
+        "name": "Louisiana-Lafayette Ragin' Cajuns vs. Northwestern State Demons (W)",
+        "map_key": null,
+        "event_start_time": "2026-11-27 20:00:00",
+        "competition_en": "NCAA Basketball"
+      },
+      "b": {
+        "id": 1050429,
+        "platform": "PREDICT",
+        "name": "Texas State Bobcats vs. Louisiana Tech Bulldogs",
+        "map_key": "v1|NCAA篮球|cbb-txst-loutch-2026-11-27",
+        "event_start_time": "2026-11-27 20:00:00",
+        "competition_en": "NCAA Basketball"
+      },
+      "reason": "a_no_key"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 842,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Aleksandre Topuria vs. Santiago Luna (Bantamweight, Main Card)",
+        "map_key": "v1|UFC|ufc-ale58-san6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5637,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Aljamain Sterling vs. Kevin Vallejos (Featherweight, Main Card)",
+        "map_key": "v1|UFC|ufc-alj-kev16-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 842,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Aleksandre Topuria vs. Santiago Luna (Bantamweight, Main Card)",
+        "map_key": "v1|UFC|ufc-ale58-san6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5639,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Brian Ortega vs. Dan Hooker (Lightweight, Main Card)",
+        "map_key": "v1|UFC|ufc-bri3-dan6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 842,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Aleksandre Topuria vs. Santiago Luna (Bantamweight, Main Card)",
+        "map_key": "v1|UFC|ufc-ale58-san6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5642,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Jared Cannonier vs. Ikram Aliskerov (Middleweight, Main Card)",
+        "map_key": "v1|UFC|ufc-jar-ikr-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 842,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Aleksandre Topuria vs. Santiago Luna (Bantamweight, Main Card)",
+        "map_key": "v1|UFC|ufc-ale58-san6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5643,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Jirí Procházka vs. Navajo Stirling (Light Heavyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-jproch-nav-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 842,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Aleksandre Topuria vs. Santiago Luna (Bantamweight, Main Card)",
+        "map_key": "v1|UFC|ufc-ale58-san6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5644,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Kyoji Horiguchi vs. Asu Almabayev (Flyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-kyo-asu-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 843,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Aljamain Sterling vs. Kevin Vallejos (Featherweight, Main Card)",
+        "map_key": "v1|UFC|ufc-alj-kev16-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5636,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Aleksandre Topuria vs. Santiago Luna (Bantamweight, Main Card)",
+        "map_key": "v1|UFC|ufc-ale58-san6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 843,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Aljamain Sterling vs. Kevin Vallejos (Featherweight, Main Card)",
+        "map_key": "v1|UFC|ufc-alj-kev16-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5639,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Brian Ortega vs. Dan Hooker (Lightweight, Main Card)",
+        "map_key": "v1|UFC|ufc-bri3-dan6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 843,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Aljamain Sterling vs. Kevin Vallejos (Featherweight, Main Card)",
+        "map_key": "v1|UFC|ufc-alj-kev16-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5642,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Jared Cannonier vs. Ikram Aliskerov (Middleweight, Main Card)",
+        "map_key": "v1|UFC|ufc-jar-ikr-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 843,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Aljamain Sterling vs. Kevin Vallejos (Featherweight, Main Card)",
+        "map_key": "v1|UFC|ufc-alj-kev16-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5643,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Jirí Procházka vs. Navajo Stirling (Light Heavyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-jproch-nav-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 843,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Aljamain Sterling vs. Kevin Vallejos (Featherweight, Main Card)",
+        "map_key": "v1|UFC|ufc-alj-kev16-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5644,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Kyoji Horiguchi vs. Asu Almabayev (Flyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-kyo-asu-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 844,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Amir Albazi vs. Alessandro Costa (Flyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-ami-ale35-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5640,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Diyar Nurgozhay vs. Alik Lorenz (Light Heavyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-diy-ali8-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 844,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Amir Albazi vs. Alessandro Costa (Flyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-ami-ale35-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5641,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Jake Matthews vs. Tahir Abdullayev (Welterweight, Prelims)",
+        "map_key": "v1|UFC|ufc-jak-tabdul-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 844,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Amir Albazi vs. Alessandro Costa (Flyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-ami-ale35-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5644,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Kyoji Horiguchi vs. Asu Almabayev (Flyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-kyo-asu-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 844,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Amir Albazi vs. Alessandro Costa (Flyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-ami-ale35-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5645,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Nikolas Motta vs. Dom Mar Fan (Lightweight, Prelims)",
+        "map_key": "v1|UFC|ufc-nik4-dom6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 844,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Amir Albazi vs. Alessandro Costa (Flyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-ami-ale35-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5646,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Shamil Gaziev vs. Tallison Teixeira (Heavyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-sha27-tal2-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 845,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Brian Ortega vs. Dan Hooker (Lightweight, Main Card)",
+        "map_key": "v1|UFC|ufc-bri3-dan6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5636,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Aleksandre Topuria vs. Santiago Luna (Bantamweight, Main Card)",
+        "map_key": "v1|UFC|ufc-ale58-san6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 845,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Brian Ortega vs. Dan Hooker (Lightweight, Main Card)",
+        "map_key": "v1|UFC|ufc-bri3-dan6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5637,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Aljamain Sterling vs. Kevin Vallejos (Featherweight, Main Card)",
+        "map_key": "v1|UFC|ufc-alj-kev16-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 845,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Brian Ortega vs. Dan Hooker (Lightweight, Main Card)",
+        "map_key": "v1|UFC|ufc-bri3-dan6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5642,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Jared Cannonier vs. Ikram Aliskerov (Middleweight, Main Card)",
+        "map_key": "v1|UFC|ufc-jar-ikr-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 845,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Brian Ortega vs. Dan Hooker (Lightweight, Main Card)",
+        "map_key": "v1|UFC|ufc-bri3-dan6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5643,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Jirí Procházka vs. Navajo Stirling (Light Heavyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-jproch-nav-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 845,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Brian Ortega vs. Dan Hooker (Lightweight, Main Card)",
+        "map_key": "v1|UFC|ufc-bri3-dan6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5644,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Kyoji Horiguchi vs. Asu Almabayev (Flyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-kyo-asu-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 845,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Brian Ortega vs. Dan Hooker (Lightweight, Main Card)",
+        "map_key": "v1|UFC|ufc-bri3-dan6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5645,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Nikolas Motta vs. Dom Mar Fan (Lightweight, Prelims)",
+        "map_key": "v1|UFC|ufc-nik4-dom6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 846,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Diyar Nurgozhay vs. Alik Lorenz (Light Heavyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-diy-ali8-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5638,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Amir Albazi vs. Alessandro Costa (Flyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-ami-ale35-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 846,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Diyar Nurgozhay vs. Alik Lorenz (Light Heavyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-diy-ali8-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5641,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Jake Matthews vs. Tahir Abdullayev (Welterweight, Prelims)",
+        "map_key": "v1|UFC|ufc-jak-tabdul-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 846,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Diyar Nurgozhay vs. Alik Lorenz (Light Heavyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-diy-ali8-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5643,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Jirí Procházka vs. Navajo Stirling (Light Heavyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-jproch-nav-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 846,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Diyar Nurgozhay vs. Alik Lorenz (Light Heavyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-diy-ali8-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5645,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Nikolas Motta vs. Dom Mar Fan (Lightweight, Prelims)",
+        "map_key": "v1|UFC|ufc-nik4-dom6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 846,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Diyar Nurgozhay vs. Alik Lorenz (Light Heavyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-diy-ali8-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5646,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Shamil Gaziev vs. Tallison Teixeira (Heavyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-sha27-tal2-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 847,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Jake Matthews vs. Tahir Abdullayev (Welterweight, Prelims)",
+        "map_key": "v1|UFC|ufc-jak-tabdul-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5638,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Amir Albazi vs. Alessandro Costa (Flyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-ami-ale35-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 847,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Jake Matthews vs. Tahir Abdullayev (Welterweight, Prelims)",
+        "map_key": "v1|UFC|ufc-jak-tabdul-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5640,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Diyar Nurgozhay vs. Alik Lorenz (Light Heavyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-diy-ali8-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 847,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Jake Matthews vs. Tahir Abdullayev (Welterweight, Prelims)",
+        "map_key": "v1|UFC|ufc-jak-tabdul-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5645,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Nikolas Motta vs. Dom Mar Fan (Lightweight, Prelims)",
+        "map_key": "v1|UFC|ufc-nik4-dom6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 847,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Jake Matthews vs. Tahir Abdullayev (Welterweight, Prelims)",
+        "map_key": "v1|UFC|ufc-jak-tabdul-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5646,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Shamil Gaziev vs. Tallison Teixeira (Heavyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-sha27-tal2-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 848,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Jared Cannonier vs. Ikram Aliskerov (Middleweight, Main Card)",
+        "map_key": "v1|UFC|ufc-jar-ikr-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5636,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Aleksandre Topuria vs. Santiago Luna (Bantamweight, Main Card)",
+        "map_key": "v1|UFC|ufc-ale58-san6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 848,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Jared Cannonier vs. Ikram Aliskerov (Middleweight, Main Card)",
+        "map_key": "v1|UFC|ufc-jar-ikr-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5637,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Aljamain Sterling vs. Kevin Vallejos (Featherweight, Main Card)",
+        "map_key": "v1|UFC|ufc-alj-kev16-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 848,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Jared Cannonier vs. Ikram Aliskerov (Middleweight, Main Card)",
+        "map_key": "v1|UFC|ufc-jar-ikr-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5639,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Brian Ortega vs. Dan Hooker (Lightweight, Main Card)",
+        "map_key": "v1|UFC|ufc-bri3-dan6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 848,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Jared Cannonier vs. Ikram Aliskerov (Middleweight, Main Card)",
+        "map_key": "v1|UFC|ufc-jar-ikr-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5643,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Jirí Procházka vs. Navajo Stirling (Light Heavyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-jproch-nav-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 848,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Jared Cannonier vs. Ikram Aliskerov (Middleweight, Main Card)",
+        "map_key": "v1|UFC|ufc-jar-ikr-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5644,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Kyoji Horiguchi vs. Asu Almabayev (Flyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-kyo-asu-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 849,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Jirí Procházka vs. Navajo Stirling (Light Heavyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-jproch-nav-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5636,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Aleksandre Topuria vs. Santiago Luna (Bantamweight, Main Card)",
+        "map_key": "v1|UFC|ufc-ale58-san6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 849,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Jirí Procházka vs. Navajo Stirling (Light Heavyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-jproch-nav-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5637,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Aljamain Sterling vs. Kevin Vallejos (Featherweight, Main Card)",
+        "map_key": "v1|UFC|ufc-alj-kev16-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 849,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Jirí Procházka vs. Navajo Stirling (Light Heavyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-jproch-nav-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5639,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Brian Ortega vs. Dan Hooker (Lightweight, Main Card)",
+        "map_key": "v1|UFC|ufc-bri3-dan6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 849,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Jirí Procházka vs. Navajo Stirling (Light Heavyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-jproch-nav-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5640,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Diyar Nurgozhay vs. Alik Lorenz (Light Heavyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-diy-ali8-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 849,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Jirí Procházka vs. Navajo Stirling (Light Heavyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-jproch-nav-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5642,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Jared Cannonier vs. Ikram Aliskerov (Middleweight, Main Card)",
+        "map_key": "v1|UFC|ufc-jar-ikr-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 849,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Jirí Procházka vs. Navajo Stirling (Light Heavyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-jproch-nav-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5644,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Kyoji Horiguchi vs. Asu Almabayev (Flyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-kyo-asu-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 849,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Jirí Procházka vs. Navajo Stirling (Light Heavyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-jproch-nav-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5646,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Shamil Gaziev vs. Tallison Teixeira (Heavyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-sha27-tal2-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 850,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Kyoji Horiguchi vs. Asu Almabayev (Flyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-kyo-asu-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5636,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Aleksandre Topuria vs. Santiago Luna (Bantamweight, Main Card)",
+        "map_key": "v1|UFC|ufc-ale58-san6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 850,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Kyoji Horiguchi vs. Asu Almabayev (Flyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-kyo-asu-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5637,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Aljamain Sterling vs. Kevin Vallejos (Featherweight, Main Card)",
+        "map_key": "v1|UFC|ufc-alj-kev16-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 850,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Kyoji Horiguchi vs. Asu Almabayev (Flyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-kyo-asu-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5638,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Amir Albazi vs. Alessandro Costa (Flyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-ami-ale35-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 850,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Kyoji Horiguchi vs. Asu Almabayev (Flyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-kyo-asu-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5639,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Brian Ortega vs. Dan Hooker (Lightweight, Main Card)",
+        "map_key": "v1|UFC|ufc-bri3-dan6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 850,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Kyoji Horiguchi vs. Asu Almabayev (Flyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-kyo-asu-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5642,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Jared Cannonier vs. Ikram Aliskerov (Middleweight, Main Card)",
+        "map_key": "v1|UFC|ufc-jar-ikr-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 850,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Kyoji Horiguchi vs. Asu Almabayev (Flyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-kyo-asu-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5643,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Jirí Procházka vs. Navajo Stirling (Light Heavyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-jproch-nav-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 851,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Nikolas Motta vs. Dom Mar Fan (Lightweight, Prelims)",
+        "map_key": "v1|UFC|ufc-nik4-dom6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5638,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Amir Albazi vs. Alessandro Costa (Flyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-ami-ale35-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 851,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Nikolas Motta vs. Dom Mar Fan (Lightweight, Prelims)",
+        "map_key": "v1|UFC|ufc-nik4-dom6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5639,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Brian Ortega vs. Dan Hooker (Lightweight, Main Card)",
+        "map_key": "v1|UFC|ufc-bri3-dan6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 851,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Nikolas Motta vs. Dom Mar Fan (Lightweight, Prelims)",
+        "map_key": "v1|UFC|ufc-nik4-dom6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5640,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Diyar Nurgozhay vs. Alik Lorenz (Light Heavyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-diy-ali8-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 851,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Nikolas Motta vs. Dom Mar Fan (Lightweight, Prelims)",
+        "map_key": "v1|UFC|ufc-nik4-dom6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5641,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Jake Matthews vs. Tahir Abdullayev (Welterweight, Prelims)",
+        "map_key": "v1|UFC|ufc-jak-tabdul-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 851,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Nikolas Motta vs. Dom Mar Fan (Lightweight, Prelims)",
+        "map_key": "v1|UFC|ufc-nik4-dom6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5646,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Shamil Gaziev vs. Tallison Teixeira (Heavyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-sha27-tal2-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 852,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Shamil Gaziev vs. Tallison Teixeira (Heavyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-sha27-tal2-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5638,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Amir Albazi vs. Alessandro Costa (Flyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-ami-ale35-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 852,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Shamil Gaziev vs. Tallison Teixeira (Heavyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-sha27-tal2-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5640,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Diyar Nurgozhay vs. Alik Lorenz (Light Heavyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-diy-ali8-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 852,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Shamil Gaziev vs. Tallison Teixeira (Heavyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-sha27-tal2-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5641,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Jake Matthews vs. Tahir Abdullayev (Welterweight, Prelims)",
+        "map_key": "v1|UFC|ufc-jak-tabdul-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 852,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Shamil Gaziev vs. Tallison Teixeira (Heavyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-sha27-tal2-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5643,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Jirí Procházka vs. Navajo Stirling (Light Heavyweight, Main Card)",
+        "map_key": "v1|UFC|ufc-jproch-nav-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "UFC",
+      "scope": [
+        "Sports",
+        "MMA",
+        "UFC"
+      ],
+      "a": {
+        "id": 852,
+        "platform": "PREDICT",
+        "name": "UFC Fight Night: Shamil Gaziev vs. Tallison Teixeira (Heavyweight, Prelims)",
+        "map_key": "v1|UFC|ufc-sha27-tal2-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "b": {
+        "id": 5645,
+        "platform": "POLYMARKET",
+        "name": "UFC Fight Night: Nikolas Motta vs. Dom Mar Fan (Lightweight, Prelims)",
+        "map_key": "v1|UFC|ufc-nik4-dom6-2026-11-21",
+        "event_start_time": "2026-11-21 15:00:00",
+        "competition_en": "UFC"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "College Football",
+      "scope": [
+        "Sports",
+        "NFL",
+        "College Football"
+      ],
+      "a": {
+        "id": 4614,
+        "platform": "POLYMARKET",
+        "name": "Central Michigan vs. Ball State",
+        "map_key": "v1|NCAA橄榄球|cfb-cmich-ballst-2026-11-28",
+        "event_start_time": "2026-11-28 17:00:00",
+        "competition_en": "College Football"
+      },
+      "b": {
+        "id": 1098993,
+        "platform": "SXBET",
+        "name": "Ohio State Buckeyes vs Michigan Wolverines",
+        "map_key": "v1|NCAA橄榄球|cfb-mich-ohiost-2026-11-28",
+        "event_start_time": "2026-11-28 17:00:00",
+        "competition_en": "College Football"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "College Football",
+      "scope": [
+        "Sports",
+        "NFL",
+        "College Football"
+      ],
+      "a": {
+        "id": 4630,
+        "platform": "POLYMARKET",
+        "name": "Indiana State vs. South Dakota State",
+        "map_key": "v1|NCAA橄榄球|cfb-indst-sdkst-2026-11-21",
+        "event_start_time": "2026-11-21 20:00:00",
+        "competition_en": "College Football"
+      },
+      "b": {
+        "id": 156855,
+        "platform": "PREDICT",
+        "name": "Jackson State vs. Alcorn State",
+        "map_key": "v1|NCAA橄榄球|cfb-jackst-alcst-2026-11-21",
+        "event_start_time": "2026-11-21 20:00:00",
+        "competition_en": "College Football"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "College Football",
+      "scope": [
+        "Sports",
+        "NFL",
+        "College Football"
+      ],
+      "a": {
+        "id": 4630,
+        "platform": "POLYMARKET",
+        "name": "Indiana State vs. South Dakota State",
+        "map_key": "v1|NCAA橄榄球|cfb-indst-sdkst-2026-11-21",
+        "event_start_time": "2026-11-21 20:00:00",
+        "competition_en": "College Football"
+      },
+      "b": {
+        "id": 1098863,
+        "platform": "SXBET",
+        "name": "Alcorn State vs Jackson State",
+        "map_key": null,
+        "event_start_time": "2026-11-21 20:00:00",
+        "competition_en": "College Football"
+      },
+      "reason": "b_no_key"
+    },
+    {
+      "competition_en": "College Football",
+      "scope": [
+        "Sports",
+        "NFL",
+        "College Football"
+      ],
+      "a": {
+        "id": 4630,
+        "platform": "POLYMARKET",
+        "name": "Indiana State vs. South Dakota State",
+        "map_key": "v1|NCAA橄榄球|cfb-indst-sdkst-2026-11-21",
+        "event_start_time": "2026-11-21 20:00:00",
+        "competition_en": "College Football"
+      },
+      "b": {
+        "id": 1098929,
+        "platform": "SXBET",
+        "name": "South Dakota State Jackrabbits vs Indiana State",
+        "map_key": null,
+        "event_start_time": "2026-11-21 20:00:00",
+        "competition_en": "College Football"
+      },
+      "reason": "b_no_key"
+    },
+    {
+      "competition_en": "College Football",
+      "scope": [
+        "Sports",
+        "NFL",
+        "College Football"
+      ],
+      "a": {
+        "id": 4631,
+        "platform": "POLYMARKET",
+        "name": "Jackson State vs. Alcorn State",
+        "map_key": "v1|NCAA橄榄球|cfb-jackst-alcst-2026-11-21",
+        "event_start_time": "2026-11-21 20:00:00",
+        "competition_en": "College Football"
+      },
+      "b": {
+        "id": 156853,
+        "platform": "PREDICT",
+        "name": "Indiana State vs. South Dakota State",
+        "map_key": "v1|NCAA橄榄球|cfb-indst-sdkst-2026-11-21",
+        "event_start_time": "2026-11-21 20:00:00",
+        "competition_en": "College Football"
+      },
+      "reason": "key_diff"
+    },
+    {
+      "competition_en": "College Football",
+      "scope": [
+        "Sports",
+        "NFL",
+        "College Football"
+      ],
+      "a": {
+        "id": 4631,
+        "platform": "POLYMARKET",
+        "name": "Jackson State vs. Alcorn State",
+        "map_key": "v1|NCAA橄榄球|cfb-jackst-alcst-2026-11-21",
+        "event_start_time": "2026-11-21 20:00:00",
+        "competition_en": "College Football"
+      },
+      "b": {
+        "id": 1098863,
+        "platform": "SXBET",
+        "name": "Alcorn State vs Jackson State",
+        "map_key": null,
+        "event_start_time": "2026-11-21 20:00:00",
+        "competition_en": "College Football"
+      },
+      "reason": "b_no_key"
+    },
+    {
+      "competition_en": "College Football",
+      "scope": [
+        "Sports",
+        "NFL",
+        "College Football"
+      ],
+      "a": {
+        "id": 4631,
+        "platform": "POLYMARKET",
+        "name": "Jackson State vs. Alcorn State",
+        "map_key": "v1|NCAA橄榄球|cfb-jackst-alcst-2026-11-21",
+        "event_start_time": "2026-11-21 20:00:00",
+        "competition_en": "College Football"
+      },
+      "b": {
+        "id": 1098929,
+        "platform": "SXBET",
+        "name": "South Dakota State Jackrabbits vs Indiana State",
+        "map_key": null,
+        "event_start_time": "2026-11-21 20:00:00",
+        "competition_en": "College Football"
+      },
+      "reason": "b_no_key"
+    },
+    {
+      "competition_en": "College Football",
+      "scope": [
+        "Sports",
+        "NFL",
+        "College Football"
+      ],
+      "a": {
+        "id": 4758,
+        "platform": "POLYMARKET",
+        "name": "Hawai'i vs. Nevada",
+        "map_key": "v1|NCAA橄榄球|cfb-hawaii-nevada-2026-11-21",
+        "event_start_time": "2026-11-22 03:30:00",
+        "competition_en": "College Football"
+      },
+      "b": {
+        "id": 1098751,
+        "platform": "SXBET",
+        "name": "Nevada Wolf Pack vs Hawaii Rainbow Warriors",
+        "map_key": null,
+        "event_start_time": "2026-11-22 03:30:00",
+        "competition_en": "College Football"
+      },
+      "reason": "b_no_key"
+    },
+    {
+      "competition_en": "College Football",
+      "scope": [
+        "Sports",
+        "NFL",
+        "College Football"
+      ],
+      "a": {
+        "id": 156848,
+        "platform": "PREDICT",
+        "name": "Hawai'i vs. Nevada",
+        "map_key": "v1|NCAA橄榄球|cfb-hawaii-nevada-2026-11-21",
+        "event_start_time": "2026-11-22 03:30:00",
+        "competition_en": "College Football"
+      },
+      "b": {
+        "id": 1098751,
+        "platform": "SXBET",
+        "name": "Nevada Wolf Pack vs Hawaii Rainbow Warriors",
+        "map_key": null,
+        "event_start_time": "2026-11-22 03:30:00",
+        "competition_en": "College Football"
+      },
+      "reason": "b_no_key"
+    },
+    {
+      "competition_en": "College Football",
+      "scope": [
+        "Sports",
+        "NFL",
+        "College Football"
+      ],
+      "a": {
+        "id": 156853,
+        "platform": "PREDICT",
+        "name": "Indiana State vs. South Dakota State",
+        "map_key": "v1|NCAA橄榄球|cfb-indst-sdkst-2026-11-21",
+        "event_start_time": "2026-11-21 20:00:00",
+        "competition_en": "College Football"
+      },
+      "b": {
+        "id": 1098863,
+        "platform": "SXBET",
+        "name": "Alcorn State vs Jackson State",
+        "map_key": null,
+        "event_start_time": "2026-11-21 20:00:00",
+        "competition_en": "College Football"
+      },
+      "reason": "b_no_key"
+    },
+    {
+      "competition_en": "College Football",
+      "scope": [
+        "Sports",
+        "NFL",
+        "College Football"
+      ],
+      "a": {
+        "id": 156853,
+        "platform": "PREDICT",
+        "name": "Indiana State vs. South Dakota State",
+        "map_key": "v1|NCAA橄榄球|cfb-indst-sdkst-2026-11-21",
+        "event_start_time": "2026-11-21 20:00:00",
+        "competition_en": "College Football"
+      },
+      "b": {
+        "id": 1098929,
+        "platform": "SXBET",
+        "name": "South Dakota State Jackrabbits vs Indiana State",
+        "map_key": null,
+        "event_start_time": "2026-11-21 20:00:00",
+        "competition_en": "College Football"
+      },
+      "reason": "b_no_key"
+    },
+    {
+      "competition_en": "College Football",
+      "scope": [
+        "Sports",
+        "NFL",
+        "College Football"
+      ],
+      "a": {
+        "id": 156855,
+        "platform": "PREDICT",
+        "name": "Jackson State vs. Alcorn State",
+        "map_key": "v1|NCAA橄榄球|cfb-jackst-alcst-2026-11-21",
+        "event_start_time": "2026-11-21 20:00:00",
+        "competition_en": "College Football"
+      },
+      "b": {
+        "id": 1098863,
+        "platform": "SXBET",
+        "name": "Alcorn State vs Jackson State",
+        "map_key": null,
+        "event_start_time": "2026-11-21 20:00:00",
+        "competition_en": "College Football"
+      },
+      "reason": "b_no_key"
+    },
+    {
+      "competition_en": "College Football",
+      "scope": [
+        "Sports",
+        "NFL",
+        "College Football"
+      ],
+      "a": {
+        "id": 156855,
+        "platform": "PREDICT",
+        "name": "Jackson State vs. Alcorn State",
+        "map_key": "v1|NCAA橄榄球|cfb-jackst-alcst-2026-11-21",
+        "event_start_time": "2026-11-21 20:00:00",
+        "competition_en": "College Football"
+      },
+      "b": {
+        "id": 1098929,
+        "platform": "SXBET",
+        "name": "South Dakota State Jackrabbits vs Indiana State",
+        "map_key": null,
+        "event_start_time": "2026-11-21 20:00:00",
+        "competition_en": "College Football"
+      },
+      "reason": "b_no_key"
+    }
+  ],
+  "missing_third": [
+    {
+      "map_key": "v1|NCAA橄榄球|cfb-indst-sdkst-2026-11-21",
+      "has_platforms": [
+        "POLYMARKET",
+        "PREDICT"
+      ],
+      "missing_platform": "SXBET",
+      "group_sample": [
+        {
+          "id": 4630,
+          "platform": "POLYMARKET",
+          "name": "Indiana State vs. South Dakota State",
+          "map_key": "v1|NCAA橄榄球|cfb-indst-sdkst-2026-11-21",
+          "event_start_time": "2026-11-21 20:00:00",
+          "competition_en": "College Football"
+        },
+        {
+          "id": 156853,
+          "platform": "PREDICT",
+          "name": "Indiana State vs. South Dakota State",
+          "map_key": "v1|NCAA橄榄球|cfb-indst-sdkst-2026-11-21",
+          "event_start_time": "2026-11-21 20:00:00",
+          "competition_en": "College Football"
+        }
+      ],
+      "orphan": {
+        "id": 1098863,
+        "platform": "SXBET",
+        "name": "Alcorn State vs Jackson State",
+        "map_key": null,
+        "event_start_time": "2026-11-21 20:00:00",
+        "competition_en": "College Football"
+      }
+    },
+    {
+      "map_key": "v1|NCAA橄榄球|cfb-indst-sdkst-2026-11-21",
+      "has_platforms": [
+        "POLYMARKET",
+        "PREDICT"
+      ],
+      "missing_platform": "SXBET",
+      "group_sample": [
+        {
+          "id": 4630,
+          "platform": "POLYMARKET",
+          "name": "Indiana State vs. South Dakota State",
+          "map_key": "v1|NCAA橄榄球|cfb-indst-sdkst-2026-11-21",
+          "event_start_time": "2026-11-21 20:00:00",
+          "competition_en": "College Football"
+        },
+        {
+          "id": 156853,
+          "platform": "PREDICT",
+          "name": "Indiana State vs. South Dakota State",
+          "map_key": "v1|NCAA橄榄球|cfb-indst-sdkst-2026-11-21",
+          "event_start_time": "2026-11-21 20:00:00",
+          "competition_en": "College Football"
+        }
+      ],
+      "orphan": {
+        "id": 1098929,
+        "platform": "SXBET",
+        "name": "South Dakota State Jackrabbits vs Indiana State",
+        "map_key": null,
+        "event_start_time": "2026-11-21 20:00:00",
+        "competition_en": "College Football"
+      }
+    },
+    {
+      "map_key": "v1|NCAA橄榄球|cfb-jackst-alcst-2026-11-21",
+      "has_platforms": [
+        "POLYMARKET",
+        "PREDICT"
+      ],
+      "missing_platform": "SXBET",
+      "group_sample": [
+        {
+          "id": 4631,
+          "platform": "POLYMARKET",
+          "name": "Jackson State vs. Alcorn State",
+          "map_key": "v1|NCAA橄榄球|cfb-jackst-alcst-2026-11-21",
+          "event_start_time": "2026-11-21 20:00:00",
+          "competition_en": "College Football"
+        },
+        {
+          "id": 156855,
+          "platform": "PREDICT",
+          "name": "Jackson State vs. Alcorn State",
+          "map_key": "v1|NCAA橄榄球|cfb-jackst-alcst-2026-11-21",
+          "event_start_time": "2026-11-21 20:00:00",
+          "competition_en": "College Football"
+        }
+      ],
+      "orphan": {
+        "id": 1098863,
+        "platform": "SXBET",
+        "name": "Alcorn State vs Jackson State",
+        "map_key": null,
+        "event_start_time": "2026-11-21 20:00:00",
+        "competition_en": "College Football"
+      }
+    },
+    {
+      "map_key": "v1|NCAA橄榄球|cfb-jackst-alcst-2026-11-21",
+      "has_platforms": [
+        "POLYMARKET",
+        "PREDICT"
+      ],
+      "missing_platform": "SXBET",
+      "group_sample": [
+        {
+          "id": 4631,
+          "platform": "POLYMARKET",
+          "name": "Jackson State vs. Alcorn State",
+          "map_key": "v1|NCAA橄榄球|cfb-jackst-alcst-2026-11-21",
+          "event_start_time": "2026-11-21 20:00:00",
+          "competition_en": "College Football"
+        },
+        {
+          "id": 156855,
+          "platform": "PREDICT",
+          "name": "Jackson State vs. Alcorn State",
+          "map_key": "v1|NCAA橄榄球|cfb-jackst-alcst-2026-11-21",
+          "event_start_time": "2026-11-21 20:00:00",
+          "competition_en": "College Football"
+        }
+      ],
+      "orphan": {
+        "id": 1098929,
+        "platform": "SXBET",
+        "name": "South Dakota State Jackrabbits vs Indiana State",
+        "map_key": null,
+        "event_start_time": "2026-11-21 20:00:00",
+        "competition_en": "College Football"
+      }
+    },
+    {
+      "map_key": "v1|NCAA橄榄球|cfb-hawaii-nevada-2026-11-21",
+      "has_platforms": [
+        "POLYMARKET",
+        "PREDICT"
+      ],
+      "missing_platform": "SXBET",
+      "group_sample": [
+        {
+          "id": 4758,
+          "platform": "POLYMARKET",
+          "name": "Hawai'i vs. Nevada",
+          "map_key": "v1|NCAA橄榄球|cfb-hawaii-nevada-2026-11-21",
+          "event_start_time": "2026-11-22 03:30:00",
+          "competition_en": "College Football"
+        },
+        {
+          "id": 156848,
+          "platform": "PREDICT",
+          "name": "Hawai'i vs. Nevada",
+          "map_key": "v1|NCAA橄榄球|cfb-hawaii-nevada-2026-11-21",
+          "event_start_time": "2026-11-22 03:30:00",
+          "competition_en": "College Football"
+        }
+      ],
+      "orphan": {
+        "id": 1098751,
+        "platform": "SXBET",
+        "name": "Nevada Wolf Pack vs Hawaii Rainbow Warriors",
+        "map_key": null,
+        "event_start_time": "2026-11-22 03:30:00",
+        "competition_en": "College Football"
+      }
+    }
+  ]
+}
