@@ -35,3 +35,9 @@ conf/local.conf.yaml
 deploy/.deploy.env
 conf/dev.conf-test.yaml
 .idea
+
+# 本地分析数据（自行导出，勿提交）
+/data/*.jsonl
+/data/*.csv
+/data/ws_book.jsonl
+/data/market_outcome.jsonl
