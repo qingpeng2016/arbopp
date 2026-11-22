@@ -39,7 +39,7 @@ func buildOutcomeGroups(w *watchgroup.Watch) map[string]yesno.OutcomeGroup {
 			continue
 		}
 		group := groups[key]
-		group.Add(oc.Platform, i)
+		group.AddMarketOutcome(oc, i, w.OutcomeAt)
 		groups[key] = group
 	}
 	return groups
