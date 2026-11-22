@@ -23,6 +23,7 @@ func main() {
 		{"backtest_task.progress", ensureBacktestTaskProgress},
 		{"backtest_opp_uk", ensureBacktestOppUniqueKey},
 		{"arb_opp_leg_info", ensureArbOppLegInfo},
+		{"arb_opp_leg_slots", ensureArbOppLegSlots},
 		{"bot stat_collect", ensureBotStatCollect},
 		{"data_task.ingest_source", ensureDataTaskIngestSource},
 	}
@@ -220,6 +221,32 @@ func ensureArbOppLegInfo(db *gorm.DB) error {
 		}
 		if hasColumn(db, table, "leg3_market_outcome_id") {
 			_ = db.Exec(`ALTER TABLE ` + "`" + table + "`" + ` DROP COLUMN leg3_market_outcome_id`).Error
+		}
+	}
+	return nil
+}
+
+func ensureArbOppLegSlots(db *gorm.DB) error {
+	tables := []string{"arb_binary_opportunity", "backtest_arb_binary_opportunity"}
+	for _, table := range tables {
+		if !hasTable(db, table) {
+			continue
+		}
+		if hasColumn(db, table, "leg_1_info") || !hasColumn(db, table, "draw_info") {
+			continue
+		}
+		q := `ALTER TABLE ` + "`" + table + "`" + `
+  CHANGE COLUMN draw_info leg_1_info mediumtext NOT NULL COMMENT '组合腿1 JSON',
+  CHANGE COLUMN draw_order_books leg_1_order_books mediumtext NOT NULL,
+  CHANGE COLUMN draw_best_ask leg_1_best_ask decimal(20,8) NULL,
+  CHANGE COLUMN yes_info leg_2_info mediumtext NOT NULL,
+  CHANGE COLUMN yes_order_books leg_2_order_books mediumtext NOT NULL,
+  CHANGE COLUMN yes_best_ask leg_2_best_ask decimal(20,8) NULL,
+  CHANGE COLUMN no_info leg_3_info mediumtext NOT NULL,
+  CHANGE COLUMN no_order_books leg_3_order_books mediumtext NOT NULL,
+  CHANGE COLUMN no_best_ask leg_3_best_ask decimal(20,8) NULL`
+		if err := db.Exec(q).Error; err != nil {
+			return err
 		}
 	}
 	return nil

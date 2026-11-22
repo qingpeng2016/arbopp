@@ -9,7 +9,7 @@ import (
 	persistententity "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/entity"
 )
 
-// YesLegInfo 机会表 yes_info 字段（键顺序固定）。
+// YesLegInfo 腿2 JSON（BINARY_YES_NO 的 YES；1X2 的主队），键顺序固定。
 type YesLegInfo struct {
 	YesMarketID    string `json:"yes_market_id"`
 	YesMarketName  string `json:"yes_market_name"`
@@ -19,7 +19,7 @@ type YesLegInfo struct {
 	YesTokenName   string `json:"yes_token_name"`
 }
 
-// DrawLegInfo 1X2 平局腿 draw_info 字段（键顺序固定）；二元机会为空 JSON。
+// DrawLegInfo 腿1 JSON（1X2 平局；二元为 {}），键顺序固定。
 type DrawLegInfo struct {
 	DrawMarketID    string `json:"draw_market_id"`
 	DrawMarketName  string `json:"draw_market_name"`
@@ -29,7 +29,7 @@ type DrawLegInfo struct {
 	DrawTokenName   string `json:"draw_token_name"`
 }
 
-// NoLegInfo 机会表 no_info 字段（键顺序固定）。
+// NoLegInfo 腿3 JSON（BINARY 的 NO；1X2 的客队），键顺序固定。
 type NoLegInfo struct {
 	NoMarketID    string `json:"no_market_id"`
 	NoMarketName  string `json:"no_market_name"`

@@ -19,7 +19,7 @@ func TestYesLegInfoJSONKeyOrder(t *testing.T) {
 	raw := w.YesLegInfoJSON(0, true)
 	wantPrefix := "{\n  \"yes_market_id\": \"fx-1\",\n  \"yes_market_name\": \"Lakers vs Celtics\",\n  \"yes_outcome_id\": 42"
 	if !strings.HasPrefix(raw, wantPrefix) {
-		t.Fatalf("unexpected yes_info prefix:\n%s", raw)
+		t.Fatalf("unexpected leg2 JSON prefix:\n%s", raw)
 	}
 	if !strings.Contains(raw, "\"yes_token_id\": \"yt\"") {
 		t.Fatalf("missing token_id:\n%s", raw)

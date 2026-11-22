@@ -126,19 +126,19 @@ func buildOppBacktest(d persistDeps, mapKey string, hit GrabHit) *persistententi
 		thKey = ThresholdKeyNoTriple
 		thVal = hit.Limits.NoTripleMax
 	}
-	drawInfo, drawBooks, yesInfo, noInfo, yesBooks, noBooks := onextwoLegFields(d, pick)
-	drawAsk := decimal.NewFromFloat(pick.Prices[0]).Round(8)
-	yesAsk := decimal.NewFromFloat(pick.Prices[1]).Round(8)
-	noAsk := decimal.NewFromFloat(pick.Prices[2]).Round(8)
+	leg1Info, leg1Books, leg2Info, leg2Books, leg3Info, leg3Books := tripleLegFields(d, pick)
+	leg1Ask := decimal.NewFromFloat(pick.Prices[0]).Round(8)
+	leg2Ask := decimal.NewFromFloat(pick.Prices[1]).Round(8)
+	leg3Ask := decimal.NewFromFloat(pick.Prices[2]).Round(8)
 	mapKeyPtr := mapKey
 	return &persistententity.BacktestArbBinaryOpportunity{
 		BacktestTaskID: d.task,
 		OppKind:        pick.Kind, MapKey: &mapKeyPtr,
 		Category: scope.Category, SubCategory: scope.SubCategory,
 		Competition: scope.Competition, CompetitionEn: scope.CompetitionEn,
-		DrawInfo: drawInfo, DrawOrderBooks: drawBooks,
-		YesInfo: yesInfo, NoInfo: noInfo, YesOrderBooks: yesBooks, NoOrderBooks: noBooks,
-		DrawBestAsk: &drawAsk, YesBestAsk: &yesAsk, NoBestAsk: &noAsk,
+		Leg1Info: leg1Info, Leg1OrderBooks: leg1Books, Leg1BestAsk: &leg1Ask,
+		Leg2Info: leg2Info, Leg2OrderBooks: leg2Books, Leg2BestAsk: &leg2Ask,
+		Leg3Info: leg3Info, Leg3OrderBooks: leg3Books, Leg3BestAsk: &leg3Ask,
 		TotalCost: decimal.NewFromFloat(pick.Per).Round(8),
 		ProfitSpace: decimal.NewFromFloat(profitBase - pick.Per).Round(8),
 		ThresholdKey: thKey, ThresholdValue: decimal.NewFromFloat(thVal).Round(8),
@@ -174,9 +174,9 @@ func saveLive(ctx context.Context, d persistDeps, mapKey string, hit GrabHit) {
 		OppKind: bt.OppKind, MapKey: bt.MapKey,
 		Category: bt.Category, SubCategory: bt.SubCategory,
 		Competition: bt.Competition, CompetitionEn: bt.CompetitionEn,
-		DrawInfo: bt.DrawInfo, DrawOrderBooks: bt.DrawOrderBooks,
-		YesInfo: bt.YesInfo, NoInfo: bt.NoInfo, YesOrderBooks: bt.YesOrderBooks, NoOrderBooks: bt.NoOrderBooks,
-		DrawBestAsk: bt.DrawBestAsk, YesBestAsk: bt.YesBestAsk, NoBestAsk: bt.NoBestAsk,
+		Leg1Info: bt.Leg1Info, Leg1OrderBooks: bt.Leg1OrderBooks, Leg1BestAsk: bt.Leg1BestAsk,
+		Leg2Info: bt.Leg2Info, Leg2OrderBooks: bt.Leg2OrderBooks, Leg2BestAsk: bt.Leg2BestAsk,
+		Leg3Info: bt.Leg3Info, Leg3OrderBooks: bt.Leg3OrderBooks, Leg3BestAsk: bt.Leg3BestAsk,
 		TotalCost: bt.TotalCost, ProfitSpace: bt.ProfitSpace,
 		ThresholdKey: bt.ThresholdKey, ThresholdValue: bt.ThresholdValue,
 		BookUpdatedAt: bt.BookUpdatedAt, SnapshotAt: bt.SnapshotAt, SnapshotAtMs: bt.SnapshotAtMs,
@@ -211,24 +211,24 @@ func ordersForHit(taskID uint, strategyType, mapKey string, oppID uint, hit Grab
 	return out
 }
 
-func onextwoLegFields(d persistDeps, pick TriplePick) (drawInfo, drawBooks, yesInfo, noInfo, yesBooks, noBooks string) {
-	drawInfo, drawBooks, yesInfo, noInfo, yesBooks, noBooks = "{}\n", "{}\n", "{}\n", "{}\n", "{}\n", "{}\n"
+func tripleLegFields(d persistDeps, pick TriplePick) (leg1Info, leg1Books, leg2Info, leg2Books, leg3Info, leg3Books string) {
+	leg1Info, leg1Books, leg2Info, leg2Books, leg3Info, leg3Books = "{}\n", "{}\n", "{}\n", "{}\n", "{}\n", "{}\n"
 	buy := pick.BuyYes
 	if d.drawLegInfo != nil {
-		drawInfo = d.drawLegInfo(pick.Legs[0].Index, buy)
+		leg1Info = d.drawLegInfo(pick.Legs[0].Index, buy)
 	}
 	if d.yesLegInfo != nil {
-		yesInfo = d.yesLegInfo(pick.Legs[1].Index, buy)
+		leg2Info = d.yesLegInfo(pick.Legs[1].Index, buy)
 	}
 	if d.noLegInfo != nil {
-		noInfo = d.noLegInfo(pick.Legs[2].Index, buy)
+		leg3Info = d.noLegInfo(pick.Legs[2].Index, buy)
 	}
 	if d.legBooks != nil {
-		drawBooks = d.legBooks(pick.Legs[0].Index)
-		yesBooks = d.legBooks(pick.Legs[1].Index)
-		noBooks = d.legBooks(pick.Legs[2].Index)
+		leg1Books = d.legBooks(pick.Legs[0].Index)
+		leg2Books = d.legBooks(pick.Legs[1].Index)
+		leg3Books = d.legBooks(pick.Legs[2].Index)
 	}
-	for _, p := range []*string{&drawInfo, &drawBooks, &yesInfo, &noInfo, &yesBooks, &noBooks} {
+	for _, p := range []*string{&leg1Info, &leg1Books, &leg2Info, &leg2Books, &leg3Info, &leg3Books} {
 		if strings.TrimSpace(*p) == "" {
 			*p = "{}\n"
 		}
