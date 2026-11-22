@@ -20,5 +20,11 @@
 
 ## 赛果分组
 
-- 优先 JSONL 字段 **`outcome_group_key`**（与线上完全一致）
-- 否则用本目录 `groupkey.go` 的启发式（Poly slug 尾码、队名等），可能与线上少量场次不一致
+- 优先 JSONL 字段 **`outcome_group_key`**
+- 否则 **`marketmap.OutcomeGroupKey`**（与 strategy_entry 一致）；失败才用 `groupkey.go` 启发式
+
+## 历史套利
+
+- **`yesno_replay`**：按 WS `id` 升序回放内存盘口，每次更新试算（对齐 `OnBookUpdate`）
+- **`yesno_snapshot`**：同 `snapshot_at_ms` 拼盘（较保守，可能漏跨毫秒组合）
+- **`yesno_hist_min`**：各腿全程最低价混搭，**不能**当真实机会

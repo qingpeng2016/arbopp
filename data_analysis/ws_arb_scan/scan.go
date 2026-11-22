@@ -19,6 +19,7 @@ type yesnoHit struct {
 	NoPlatform  string  `json:"no_platform"`
 	Per         float64 `json:"per"`
 	Qty         float64 `json:"qty"`
+	SnapshotMs  int64   `json:"snapshot_at_ms,omitempty"`
 }
 
 type tripleHit struct {
@@ -32,15 +33,57 @@ type tripleHit struct {
 }
 
 type fixtureReport struct {
-	MapKey         string      `json:"map_key"`
-	Platforms      []string    `json:"platforms"`
-	WSSnapshotRows int         `json:"ws_rows"`
-	OutcomeGroups  int         `json:"outcome_groups"`
+	MapKey            string         `json:"map_key"`
+	Platforms         []string       `json:"platforms"`
+	OutcomeCount      int            `json:"outcome_count"`
+	OutcomesByPlatform map[string]int `json:"outcomes_by_platform"`
+	WSByPlatform      map[string]int `json:"ws_by_platform"`
+	WSSnapshotRows    int            `json:"ws_rows"`
+	OutcomeGroups     int            `json:"outcome_groups"`
 	YesNoLatest    []yesnoHit  `json:"yesno_latest,omitempty"`
 	YesNoHistMin   []yesnoHit  `json:"yesno_hist_min,omitempty"`
+	YesNoSnapshot  []yesnoHit  `json:"yesno_snapshot,omitempty"`
+	YesNoReplay    []yesnoHit  `json:"yesno_replay,omitempty"`
 	TripleYes      []tripleHit `json:"triple_yes_latest,omitempty"`
 	TripleNo       []tripleHit `json:"triple_no_latest,omitempty"`
 	Note           string      `json:"note,omitempty"`
+	BestYesNoPer   float64     `json:"best_yesno_per_latest,omitempty"`
+	CrossPlatGroups int        `json:"cross_platform_groups,omitempty"`
+}
+
+// setFromRow 用本行 WS 覆盖对应腿（回放用，取 min 会错）。
+func (lq *legQuote) setFromRow(plat, tokenID string, mo outcomeRec, asks, bids string) {
+	plat = strings.ToUpper(strings.TrimSpace(plat))
+	yesTok := strings.TrimSpace(mo.YesTokenID)
+	noTok := strings.TrimSpace(mo.NoTokenID)
+	tok := strings.TrimSpace(tokenID)
+	switch plat {
+	case platPoly:
+		if yesTok != "" && tok == yesTok {
+			p, s := bestAsk(parseLevels(asks))
+			if p > 0 {
+				lq.YesPx, lq.YesSz = p, s
+			}
+		}
+		if noTok != "" && tok == noTok {
+			p, s := bestAsk(parseLevels(asks))
+			if p > 0 {
+				lq.NoPx, lq.NoSz = p, s
+			}
+		}
+	default:
+		ap, asz := bestAsk(parseLevels(asks))
+		bid, bsz := bestBid(parseLevels(bids))
+		if ap > 0 {
+			lq.YesPx, lq.YesSz = ap, asz
+		}
+		if bid > 0 {
+			np := 1 - bid
+			if validPrice(np) {
+				lq.NoPx, lq.NoSz = np, bsz
+			}
+		}
+	}
 }
 
 func (lq *legQuote) absorbRow(plat, tokenID string, mo outcomeRec, asks, bids string) {
@@ -99,9 +142,12 @@ func absorbLatestPoly(tr *platTrack, plat, tokenID string, mo outcomeRec, asks, 
 		}
 		return
 	}
-	if !tr.gotYes || !tr.gotNo {
-		tr.q.absorbRow(plat, tokenID, mo, asks, bids)
-		tr.gotYes, tr.gotNo = true, true
+	tr.q.absorbRow(plat, tokenID, mo, asks, bids)
+	if validPrice(tr.q.YesPx) && tr.q.YesSz > 0 {
+		tr.gotYes = true
+	}
+	if validPrice(tr.q.NoPx) && tr.q.NoSz > 0 {
+		tr.gotNo = true
 	}
 }
 
@@ -128,6 +174,9 @@ func scanFixture(mapKey string, outcomes []outcomeRec, latestWS, histWS []wsRow)
 		hk := strings.ToUpper(row.Platform) + "|" + strings.TrimSpace(row.PlatformMarketOutcomeID)
 		mo, ok := byHash[hk]
 		if !ok {
+			return
+		}
+		if !useWSRowForTopBook(row.Platform, row.TokenID, mo) {
 			return
 		}
 		gk := outcomeGroupKey(mo)
@@ -180,10 +229,15 @@ func scanFixture(mapKey string, outcomes []outcomeRec, latestWS, histWS []wsRow)
 	}
 	sort.Strings(rep.Platforms)
 
+	rep.BestYesNoPer, rep.CrossPlatGroups = bestCrossYesNoPer(latestPlain, fees)
 	rep.YesNoLatest = scanYesNo(latestPlain, fees, lim, "latest")
 	rep.YesNoHistMin = scanYesNo(histMin, fees, lim, "hist_min")
-	if len(rep.YesNoHistMin) > 0 {
-		rep.Note = "hist_min=各腿独立最低卖价，未时间对齐，仅参考"
+	rep.YesNoSnapshot = scanYesNoBySnapshot(histWS, byHash, fees, lim)
+	rep.YesNoReplay = scanYesNoReplay(histWS, byHash, fees, lim)
+	if len(rep.YesNoReplay) > 0 {
+		rep.Note = "yesno_replay=按 WS id 回放盘口（等同线上单腿更新触发）"
+	} else if len(rep.YesNoHistMin) > 0 {
+		rep.Note = "hist_min=各腿独立最低价（未同毫秒），勿当真"
 	}
 
 	draw, tA, tB, ok := moneylineTriples(latestPlain, gkMoneyline)
@@ -195,6 +249,46 @@ func scanFixture(mapKey string, outcomes []outcomeRec, latestWS, histWS []wsRow)
 		rep.Note = "无 WS 盘口行"
 	}
 	return rep
+}
+
+func bestCrossYesNoPer(groups map[string]map[string]*legQuote, fees map[string]platformFee) (best float64, crossGroups int) {
+	best = math.MaxFloat64
+	for _, plats := range groups {
+		if len(plats) < 2 {
+			continue
+		}
+		type side struct {
+			plat string
+			q    legQuote
+		}
+		list := make([]side, 0, len(plats))
+		for plat, q := range plats {
+			if q == nil || !q.ready() {
+				continue
+			}
+			list = append(list, side{plat, *q})
+		}
+		if len(list) < 2 {
+			continue
+		}
+		crossGroups++
+		for i := 0; i < len(list); i++ {
+			for j := i + 1; j < len(list); j++ {
+				a, b := list[i], list[j]
+				for _, pair := range []struct{ y, n side }{{a, b}, {b, a}} {
+					per, ok := crossYesNoPer(pair.y.q.YesPx, pair.y.q.YesSz, pair.n.q.NoPx, pair.n.q.NoSz,
+						fees[pair.y.plat].sportsCoef, fees[pair.n.plat].sportsCoef)
+					if ok && per < best {
+						best = per
+					}
+				}
+			}
+		}
+	}
+	if best == math.MaxFloat64 {
+		return 0, crossGroups
+	}
+	return best, crossGroups
 }
 
 func scanYesNo(groups map[string]map[string]*legQuote, fees map[string]platformFee, lim scanLimits, mode string) []yesnoHit {
@@ -237,6 +331,124 @@ func scanYesNo(groups map[string]map[string]*legQuote, fees map[string]platformF
 				try(b, a)
 			}
 		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Per < out[j].Per })
+	return out
+}
+
+func buildPlainFromWSRows(rows []wsRow, byHash map[string]outcomeRec) map[string]map[string]*legQuote {
+	latest := map[string]map[string]*platTrack{}
+	for _, row := range rows {
+		hk := strings.ToUpper(row.Platform) + "|" + strings.TrimSpace(row.PlatformMarketOutcomeID)
+		mo, ok := byHash[hk]
+		if !ok {
+			continue
+		}
+		if !useWSRowForTopBook(row.Platform, row.TokenID, mo) {
+			continue
+		}
+		gk := outcomeGroupKey(mo)
+		if gk == "" {
+			continue
+		}
+		plat := strings.ToUpper(strings.TrimSpace(row.Platform))
+		if latest[gk] == nil {
+			latest[gk] = map[string]*platTrack{}
+		}
+		if latest[gk][plat] == nil {
+			latest[gk][plat] = &platTrack{}
+		}
+		absorbLatestPoly(latest[gk][plat], plat, row.TokenID, mo, row.Asks, row.Bids)
+	}
+	plain := map[string]map[string]*legQuote{}
+	for gk, pl := range latest {
+		plain[gk] = map[string]*legQuote{}
+		for p, tr := range pl {
+			plain[gk][p] = &tr.q
+		}
+	}
+	return plain
+}
+
+// scanYesNoBySnapshot 同一 snapshot_at_ms 内多平台盘口对齐后试算（接近线上 WS 触发）。
+func scanYesNoBySnapshot(histWS []wsRow, byHash map[string]outcomeRec, fees map[string]platformFee, lim scanLimits) []yesnoHit {
+	byMs := map[int64][]wsRow{}
+	for _, r := range histWS {
+		if r.SnapshotAtMs <= 0 {
+			continue
+		}
+		byMs[r.SnapshotAtMs] = append(byMs[r.SnapshotAtMs], r)
+	}
+	type dedupeKey struct {
+		gk, yp, np string
+	}
+	best := map[dedupeKey]yesnoHit{}
+	for ms, rows := range byMs {
+		plain := buildPlainFromWSRows(rows, byHash)
+		for _, h := range scanYesNo(plain, fees, lim, "snapshot") {
+			h.SnapshotMs = ms
+			k := dedupeKey{h.GroupKey, h.YesPlatform, h.NoPlatform}
+			if prev, ok := best[k]; !ok || h.Per < prev.Per {
+				best[k] = h
+			}
+		}
+	}
+	out := make([]yesnoHit, 0, len(best))
+	for _, h := range best {
+		out = append(out, h)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Per < out[j].Per })
+	return out
+}
+
+// scanYesNoReplay 按 id 升序回放：每来一行 WS 更新内存盘口，对该 OutcomeGroup 试算（对齐 OnBookUpdate）。
+func scanYesNoReplay(histWS []wsRow, byHash map[string]outcomeRec, fees map[string]platformFee, lim scanLimits) []yesnoHit {
+	if len(histWS) == 0 {
+		return nil
+	}
+	rows := append([]wsRow(nil), histWS...)
+	sort.Slice(rows, func(i, j int) bool { return rows[i].ID < rows[j].ID })
+	state := map[string]map[string]*legQuote{}
+	type dedupeKey struct {
+		gk, yp, np string
+	}
+	best := map[dedupeKey]yesnoHit{}
+	for _, row := range rows {
+		hk := strings.ToUpper(row.Platform) + "|" + strings.TrimSpace(row.PlatformMarketOutcomeID)
+		mo, ok := byHash[hk]
+		if !ok {
+			continue
+		}
+		if !useWSRowForTopBook(row.Platform, row.TokenID, mo) {
+			continue
+		}
+		gk := outcomeGroupKey(mo)
+		if gk == "" {
+			continue
+		}
+		plat := strings.ToUpper(strings.TrimSpace(row.Platform))
+		if state[gk] == nil {
+			state[gk] = map[string]*legQuote{}
+		}
+		if state[gk][plat] == nil {
+			state[gk][plat] = &legQuote{}
+		}
+		state[gk][plat].setFromRow(plat, row.TokenID, mo, row.Asks, row.Bids)
+		plain := map[string]map[string]*legQuote{gk: {}}
+		for p, q := range state[gk] {
+			plain[gk][p] = q
+		}
+		for _, h := range scanYesNo(plain, fees, lim, "replay") {
+			h.SnapshotMs = row.SnapshotAtMs
+			k := dedupeKey{h.GroupKey, h.YesPlatform, h.NoPlatform}
+			if prev, ok := best[k]; !ok || h.Per < prev.Per {
+				best[k] = h
+			}
+		}
+	}
+	out := make([]yesnoHit, 0, len(best))
+	for _, h := range best {
+		out = append(out, h)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Per < out[j].Per })
 	return out
@@ -303,14 +515,29 @@ func scanTriples(draw, tA, tB map[string]*legQuote, fees map[string]platformFee,
 }
 
 func summarize(reports []fixtureReport) string {
-	var ynL, ynH, ty, tn int
+	var ynL, ynH, ynSnap, ynReplay, ty, tn int
 	var bestYN, bestTriple float64 = math.MaxFloat64, math.MaxFloat64
 	for _, r := range reports {
 		ynL += len(r.YesNoLatest)
 		ynH += len(r.YesNoHistMin)
+		ynSnap += len(r.YesNoSnapshot)
+		ynReplay += len(r.YesNoReplay)
 		ty += len(r.TripleYes)
 		tn += len(r.TripleNo)
+		if r.BestYesNoPer > 0 && r.BestYesNoPer < bestYN {
+			bestYN = r.BestYesNoPer
+		}
 		for _, h := range r.YesNoLatest {
+			if h.Per < bestYN {
+				bestYN = h.Per
+			}
+		}
+		for _, h := range r.YesNoSnapshot {
+			if h.Per < bestYN {
+				bestYN = h.Per
+			}
+		}
+		for _, h := range r.YesNoReplay {
 			if h.Per < bestYN {
 				bestYN = h.Per
 			}
@@ -327,6 +554,6 @@ func summarize(reports []fixtureReport) string {
 	if bestTriple == math.MaxFloat64 {
 		bestTriple = 0
 	}
-	return fmt.Sprintf("fixtures=%d yesno_latest_hits=%d yesno_hist_hits=%d triple_yes=%d triple_no=%d best_yesno_per=%.4f best_triple_yes=%.4f",
-		len(reports), ynL, ynH, ty, tn, bestYN, bestTriple)
+	return fmt.Sprintf("fixtures=%d yesno_latest_hits=%d yesno_replay_hits=%d yesno_snapshot_hits=%d yesno_hist_hits=%d triple_yes=%d triple_no=%d best_yesno_per=%.4f best_triple_yes=%.4f",
+		len(reports), ynL, ynReplay, ynSnap, ynH, ty, tn, bestYN, bestTriple)
 }

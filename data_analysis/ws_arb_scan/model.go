@@ -12,6 +12,7 @@ type outcomeRec struct {
 	YesTokenID              string `json:"yes_token_id"`
 	NoTokenID               string `json:"no_token_id"`
 	Slug                    string `json:"slug"`
+	Competition             string `json:"competition"`
 }
 
 const (

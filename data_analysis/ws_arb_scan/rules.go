@@ -72,6 +72,15 @@ func crossYesNoHit(yesPx, yesSz, noPx, noSz, feeYes, feeNo float64, lim scanLimi
 	return qty, per, true
 }
 
+// crossYesNoPer 只算成本（含费），不做深度与 maxCost 门槛；用于看「离套利还差多少」。
+func crossYesNoPer(yesPx, yesSz, noPx, noSz, feeYes, feeNo float64) (per float64, ok bool) {
+	if yesSz <= 0 || noSz <= 0 || !validPrice(yesPx) || !validPrice(noPx) {
+		return 0, false
+	}
+	per = yesPx + noPx + tradeFee(yesPx, feeYes) + tradeFee(noPx, feeNo)
+	return per, true
+}
+
 // tripleLegCost 单腿：买 YES 或 NO 的卖一价 + 手续费。
 func tripleLegCost(l legQuote, buyYes bool, feeCoef float64) (px, sz float64, ok bool) {
 	if buyYes {

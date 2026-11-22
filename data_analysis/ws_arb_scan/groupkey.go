@@ -3,6 +3,8 @@ package main
 import (
 	"regexp"
 	"strings"
+
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketmap"
 )
 
 var (
@@ -15,6 +17,9 @@ var (
 // 若 JSONL 已带 outcome_group_key 则直接用（推荐导出时写入）。
 func outcomeGroupKey(o outcomeRec) string {
 	if k := strings.TrimSpace(o.OutcomeGroupKey); k != "" {
+		return k
+	}
+	if k := marketmap.OutcomeGroupKey(outcomeToEntity(o)); k != "" {
 		return k
 	}
 	fixture := strings.TrimSpace(o.MapKey)

@@ -5,6 +5,7 @@ import (
 	"math"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 type level struct {
@@ -54,6 +55,25 @@ type legQuote struct {
 
 func (lq *legQuote) ready() bool {
 	return validPrice(lq.YesPx) && validPrice(lq.NoPx) && lq.YesSz > 0 && lq.NoSz > 0
+}
+
+// useWSRowForTopBook 与 yesno.TopFromStore 一致：Poly 按 token；Predict/SX/Kalshi 只吃 YES 簿那一行。
+func useWSRowForTopBook(plat, tok string, mo outcomeRec) bool {
+	plat = strings.ToUpper(strings.TrimSpace(plat))
+	tok = strings.TrimSpace(tok)
+	yesTok := strings.TrimSpace(mo.YesTokenID)
+	switch plat {
+	case platPoly:
+		return true
+	default:
+		if tok == "" {
+			return true
+		}
+		if yesTok != "" && tok != yesTok {
+			return false
+		}
+		return true
+	}
 }
 
 func round4(x float64) float64 {

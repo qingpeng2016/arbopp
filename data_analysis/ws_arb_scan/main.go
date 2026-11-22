@@ -6,8 +6,8 @@
 // 多场均文件，逐场查库：
 //	RUN_CONF=conf/local.conf.yaml go run ./data_analysis/ws_arb_scan -keys=./data_analysis/ws_arb_scan/map_keys.txt
 //
-// 读本地 JSONL（无 -map_key / -keys 且 data 目录有文件）：
-//	go run ./data_analysis/ws_arb_scan -data=./data
+// 读本地 JSONL：
+//	go run ./data_analysis/ws_arb_scan -data=./data_analysis/ws_arb_scan/data
 package main
 
 import (
@@ -19,9 +19,10 @@ import (
 func main() {
 	mapKey := flag.String("map_key", "", "单场 map_key，从库查询并分析")
 	keysFile := flag.String("keys", "", "多场：map_key 列表文件，逐场查库")
-	dataDir := flag.String("data", "", "读本地 data/*.jsonl，不连库")
-	wsLimit := flag.Int("ws_limit", 8000, "每场 WS 最多行数")
-	out := flag.String("out", "", "输出 JSONL；默认按单场/批量自动命名")
+	dataDir := flag.String("data", "", "读本地 JSONL 目录，默认 "+dataExportDir)
+	wsLimit := flag.Int("ws_limit", 0, "每场 WS 行数上限；0=该 map_key 全部")
+	out := flag.String("out", "", "附加 jsonl 路径；中文报告与 csv 写入 "+dataExportDir)
+	diag := flag.Bool("diag", false, "打印 moneyline 分组与最新盘口是否 ready")
 	flag.Parse()
 
 	outPath := *out
@@ -36,11 +37,11 @@ func main() {
 	var err error
 	switch {
 	case *mapKey != "" || *keysFile != "":
-		err = runFromDB(*mapKey, *keysFile, outPath, *wsLimit)
+		err = runFromDB(*mapKey, *keysFile, outPath, *wsLimit, *diag)
 	case *dataDir != "":
 		err = runScan(*dataDir, *keysFile, outPath)
 	default:
-		err = fmt.Errorf("请指定 -map_key=... 或 -keys=map_keys.txt 或 -data=./data")
+		err = fmt.Errorf("请指定 -map_key=... 或 -keys=... 或 -data=%s", dataExportDir)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

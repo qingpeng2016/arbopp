@@ -18,7 +18,8 @@ func loadOutcomesDB(mapKey string) ([]outcomeRec, error) {
 			IFNULL(mo.outcome_type,'') AS outcome_type,
 			IFNULL(mo.yes_token_id,'') AS yes_token_id,
 			IFNULL(mo.no_token_id,'') AS no_token_id,
-			IFNULL(mo.slug,'') AS slug
+			IFNULL(mo.slug,'') AS slug,
+			IFNULL(mo.competition,'') AS competition
 		FROM market_outcome mo
 		JOIN market m ON m.id = mo.market_row_id
 		WHERE m.map_key = ?
@@ -27,23 +28,24 @@ func loadOutcomesDB(mapKey string) ([]outcomeRec, error) {
 }
 
 func loadWSDB(mapKey string, wsLimit int) ([]wsRow, error) {
-	if wsLimit <= 0 {
-		wsLimit = 8000
-	}
 	db := boot.NewDBClient()
 	var rows []wsRow
-	err := db.Raw(`
+	q := `
 		SELECT map_key, platform, platform_market_outcome_id, token_id,
 			order_book_asks, order_book_bids, snapshot_at_ms, id
 		FROM market_order_book_ws
 		WHERE map_key = ?
-		ORDER BY id DESC
-		LIMIT ?
-	`, mapKey, wsLimit).Scan(&rows).Error
+		ORDER BY id DESC`
+	if wsLimit > 0 {
+		err := db.Raw(q+`
+		LIMIT ?`, mapKey, wsLimit).Scan(&rows).Error
+		return rows, err
+	}
+	err := db.Raw(q, mapKey).Scan(&rows).Error
 	return rows, err
 }
 
-func runScanDB(keys []string, outPath string, wsLimit int) error {
+func runScanDB(keys []string, outPath string, wsLimit int, diag bool) error {
 	if len(keys) == 0 {
 		return fmt.Errorf("无 map_key")
 	}
@@ -61,14 +63,33 @@ func runScanDB(keys []string, outPath string, wsLimit int) error {
 		if err != nil {
 			return fmt.Errorf("%s ws: %w", mk, err)
 		}
-		latest, hist := splitLatestHist(wsRows)
-		reports = append(reports, scanFixture(mk, outcomes, latest, hist))
-		fmt.Printf("[%d/%d] %s outcomes=%d ws=%d\n", i+1, len(keys), mk, len(outcomes), len(wsRows))
+		byHash := outcomeIndex(outcomes)
+		latest, hist := splitLatestHist(wsRows, byHash)
+		if diag {
+			printDiag(mk, outcomes, latest)
+		}
+		rep := scanFixture(mk, outcomes, latest, hist)
+		rep.OutcomeCount = len(outcomes)
+		rep.OutcomesByPlatform = countOutcomesByPlatform(outcomes)
+		rep.WSByPlatform = countByPlatformPlatforms(wsRows)
+
+		outcomeCSV, wsCSV, err := exportFixtureCSV(mk, outcomes, wsRows)
+		if err != nil {
+			return fmt.Errorf("%s 导出csv: %w", mk, err)
+		}
+		reportCN, err := writeChineseReport(mk, rep, outcomeCSV, wsCSV)
+		if err != nil {
+			return fmt.Errorf("%s 分析报告: %w", mk, err)
+		}
+
+		reports = append(reports, rep)
+		fmt.Printf("[%d/%d] 进度 %s\n", i+1, len(keys), mk)
+		printChineseSummary(mk, rep, outcomeCSV, wsCSV, reportCN)
 	}
 	return writeReports(outPath, reports)
 }
 
-func runFromDB(mapKey, keysFile, outPath string, wsLimit int) error {
+func runFromDB(mapKey, keysFile, outPath string, wsLimit int, diag bool) error {
 	_ = conf.NewCfg()
 	var keys []string
 	if mapKey != "" {
@@ -83,5 +104,5 @@ func runFromDB(mapKey, keysFile, outPath string, wsLimit int) error {
 			return err
 		}
 	}
-	return runScanDB(keys, outPath, wsLimit)
+	return runScanDB(keys, outPath, wsLimit, diag)
 }

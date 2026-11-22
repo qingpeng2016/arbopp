@@ -107,20 +107,33 @@ func loadWSFile(path string, want map[string]struct{}) (map[string][]wsRow, erro
 	return out, err
 }
 
-func splitLatestHist(rows []wsRow) (latest, hist []wsRow) {
+func splitLatestHist(rows []wsRow, byHash map[string]outcomeRec) (latest, hist []wsRow) {
 	type key struct{ plat, hash, tok string }
 	seen := map[key]bool{}
+	type bookKey struct{ plat, hash string }
+	seenBook := map[bookKey]bool{}
 	for _, r := range rows {
-		k := key{strings.ToUpper(r.Platform), r.PlatformMarketOutcomeID, r.TokenID}
-		if !seen[k] {
-			seen[k] = true
-			latest = append(latest, r)
+		hk := strings.ToUpper(r.Platform) + "|" + strings.TrimSpace(r.PlatformMarketOutcomeID)
+		mo, ok := byHash[hk]
+		if ok && !useWSRowForTopBook(r.Platform, r.TokenID, mo) {
+			continue
+		}
+		plat := strings.ToUpper(strings.TrimSpace(r.Platform))
+		if plat == platPoly {
+			k := key{plat, r.PlatformMarketOutcomeID, r.TokenID}
+			if !seen[k] {
+				seen[k] = true
+				latest = append(latest, r)
+			}
+		} else {
+			bk := bookKey{plat, r.PlatformMarketOutcomeID}
+			if !seenBook[bk] {
+				seenBook[bk] = true
+				latest = append(latest, r)
+			}
 		}
 	}
 	hist = rows
-	if len(hist) > 8000 {
-		hist = hist[:8000]
-	}
 	return latest, hist
 }
 
@@ -161,7 +174,7 @@ func runScan(dataDir, keysFile, outPath string) error {
 
 	var reports []fixtureReport
 	for _, mk := range keys {
-		latest, hist := splitLatestHist(wsByKey[mk])
+		latest, hist := splitLatestHist(wsByKey[mk], outcomeIndex(outcomesByKey[mk]))
 		reports = append(reports, scanFixture(mk, outcomesByKey[mk], latest, hist))
 	}
 
@@ -183,9 +196,12 @@ func writeReports(outPath string, reports []fixtureReport) error {
 			return err
 		}
 	}
-	sumPath := strings.TrimSuffix(outPath, ".jsonl") + "_summary.txt"
-	_ = os.WriteFile(sumPath, []byte(summarize(reports)+"\n"), 0644)
-	fmt.Println(summarize(reports))
-	fmt.Println("written:", outPath, sumPath)
+	sumPath := strings.TrimSuffix(outPath, ".jsonl") + "_汇总.txt"
+	_ = os.WriteFile(sumPath, []byte(summarizeCNReportOnly(reports)+"\n"), 0644)
+	if len(reports) == 1 {
+		fmt.Println("机器可读jsonl:", outPath)
+	} else {
+		fmt.Println("批量jsonl:", outPath, "中文汇总:", sumPath)
+	}
 	return nil
 }

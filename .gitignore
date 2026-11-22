@@ -37,7 +37,8 @@ conf/dev.conf-test.yaml
 .idea
 
 # 本地分析数据（自行导出，勿提交）
+/data_analysis/ws_arb_scan/data/*.jsonl
+/data_analysis/ws_arb_scan/data/*.csv
+/data_analysis/ws_arb_scan/data/*.txt
 /data/*.jsonl
 /data/*.csv
-/data/ws_book.jsonl
-/data/market_outcome.jsonl
