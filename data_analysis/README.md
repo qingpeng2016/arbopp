@@ -6,6 +6,9 @@
 - 附加 jsonl：`ws_arb_scan/out/`
 
 ```bash
+# 默认扫 market_order_book（orderbook_sync REST 快照）
 RUN_CONF=conf/local.conf.yaml go run ./data_analysis/ws_arb_scan -map_key='v1|NBA|...'
+# WS 落库表
+RUN_CONF=conf/local.conf.yaml go run ./data_analysis/ws_arb_scan -map_key='...' -book_table=ws
 go run ./data_analysis/ws_arb_scan -data=./data_analysis/ws_arb_scan/data
 ```

@@ -25,6 +25,6 @@
 
 ## 历史套利
 
-- **`yesno_replay`**：按 WS `id` 升序回放内存盘口，每次更新试算（对齐 `OnBookUpdate`）
+- **`yesno_replay`**：按落库 `id` 升序回放内存盘口（默认表 `market_order_book`；`-book_table=ws` 为 `market_order_book_ws`）
 - **`yesno_snapshot`**：同 `snapshot_at_ms` 拼盘（较保守，可能漏跨毫秒组合）
 - **`yesno_hist_min`**：各腿全程最低价混搭，**不能**当真实机会

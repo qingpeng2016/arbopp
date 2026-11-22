@@ -100,12 +100,12 @@ func (j *OrderBook) pollTick(ctx context.Context, cached *running.Snapshot) {
 		return
 	}
 
-	kalshiMarkets, polyMarkets, predictMarkets := splitOutcomesByPlatform(cached.Outcomes)
+	kalshiMarkets, polyMarkets, predictMarkets, sxbetMarkets := splitOutcomesByPlatform(cached.Outcomes)
 	// 与 orderbook_sync 相同：每请求多盘口（Poly /books、Kalshi orderbooks、Predict orderbooks），批间并发
 	fetchCfg := j.resolveFetchConfig(ctx)
-	stats := j.syncPlatformsConcurrent(ctx, cached.Fixtures, kalshiMarkets, polyMarkets, predictMarkets, fetchCfg)
+	stats := j.syncPlatformsConcurrent(ctx, cached.Fixtures, kalshiMarkets, polyMarkets, predictMarkets, sxbetMarkets, fetchCfg)
 
-	totalUpserted := stats.kalshi.upserted + stats.poly.upserted + stats.predict.upserted
+	totalUpserted := stats.kalshi.upserted + stats.poly.upserted + stats.predict.upserted + stats.sxbet.upserted
 	if totalUpserted > 0 {
 		logger.DebugZ(ctx, "orderbook-poll-tick",
 			zap.Int("upserted", totalUpserted),

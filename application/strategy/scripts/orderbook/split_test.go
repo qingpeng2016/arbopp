@@ -7,13 +7,14 @@ import (
 )
 
 func TestSplitOutcomesByPlatformIncludesPredict(t *testing.T) {
-	kalshi, poly, pred := splitOutcomesByPlatform([]persistententity.MarketOutcome{
+	kalshi, poly, pred, sx := splitOutcomesByPlatform([]persistententity.MarketOutcome{
 		{Platform: "PREDICT", PlatformMarketOutcomeID: "4211675"},
 		{Platform: "PREDICT", PlatformMarketOutcomeID: "4211677"},
 		{Platform: "POLYMARKET", PlatformMarketOutcomeID: "x", YesTokenID: "tok"},
 		{Platform: "KALSHI", PlatformMarketOutcomeID: "T"},
+		{Platform: "SXBET", PlatformMarketOutcomeID: "0xabc"},
 	})
-	if len(kalshi) != 1 || len(poly) != 1 || len(pred) != 2 {
-		t.Fatalf("k=%d p=%d d=%d", len(kalshi), len(poly), len(pred))
+	if len(kalshi) != 1 || len(poly) != 1 || len(pred) != 2 || len(sx) != 1 {
+		t.Fatalf("k=%d p=%d d=%d sx=%d", len(kalshi), len(poly), len(pred), len(sx))
 	}
 }

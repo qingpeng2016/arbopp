@@ -27,11 +27,11 @@ func checkMoneylineAtMs(mapKey string, ms int64) error {
 		ids = append(ids, id)
 		want[strings.ToUpper(o.Platform)+"|"+id] = o
 	}
-	rows, err := loadWSDBAtMs(mapKey, ms, ids)
+	rows, err := loadBookDBAtMs(mapKey, ms, ids)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("map_key=%s 毫秒=%d 独赢WS行数=%d\n", mapKey, ms, len(rows))
+	fmt.Printf("map_key=%s 表=%s 毫秒=%d 独赢行数=%d\n", mapKey, orderBookTable, ms, len(rows))
 	byPlat := map[string]map[string]*legQuote{}
 	for _, row := range rows {
 		hk := strings.ToUpper(row.Platform) + "|" + strings.TrimSpace(row.PlatformMarketOutcomeID)

@@ -27,7 +27,7 @@ func loadOutcomesDB(mapKey string) ([]outcomeRec, error) {
 	return rows, err
 }
 
-func loadWSDB(mapKey string, wsLimit int) ([]wsRow, error) {
+func loadBookDB(mapKey string, wsLimit int) ([]wsRow, error) {
 	db := boot.NewDBClient()
 	var rows []wsRow
 	q := `
@@ -35,7 +35,7 @@ func loadWSDB(mapKey string, wsLimit int) ([]wsRow, error) {
 			platform_market_outcome_id,
 			IFNULL(outcome_name,'') AS outcome_name, IFNULL(token_name,'') AS token_name,
 			token_id, order_book_asks, order_book_bids, snapshot_at_ms, id
-		FROM market_order_book_ws
+		FROM ` + orderBookTable + `
 		WHERE map_key = ?
 		ORDER BY id DESC`
 	if wsLimit > 0 {
@@ -47,7 +47,7 @@ func loadWSDB(mapKey string, wsLimit int) ([]wsRow, error) {
 	return rows, err
 }
 
-func loadWSDBAtMs(mapKey string, ms int64, outcomeIDs []string) ([]wsRow, error) {
+func loadBookDBAtMs(mapKey string, ms int64, outcomeIDs []string) ([]wsRow, error) {
 	if ms <= 0 || len(outcomeIDs) == 0 {
 		return nil, fmt.Errorf("参数无效")
 	}
@@ -58,7 +58,7 @@ func loadWSDBAtMs(mapKey string, ms int64, outcomeIDs []string) ([]wsRow, error)
 			platform_market_outcome_id,
 			IFNULL(outcome_name,'') AS outcome_name, IFNULL(token_name,'') AS token_name,
 			token_id, order_book_asks, order_book_bids, snapshot_at_ms, id
-		FROM market_order_book_ws
+		FROM ` + orderBookTable + `
 		WHERE map_key = ? AND snapshot_at_ms = ?
 		  AND platform_market_outcome_id IN ?
 		ORDER BY platform, id`, mapKey, ms, outcomeIDs).Scan(&rows).Error
@@ -79,7 +79,7 @@ func runScanDB(keys []string, outPath string, wsLimit int, diag bool) error {
 		if err != nil {
 			return fmt.Errorf("%s outcomes: %w", mk, err)
 		}
-		wsRows, err := loadWSDB(mk, wsLimit)
+		wsRows, err := loadBookDB(mk, wsLimit)
 		if err != nil {
 			return fmt.Errorf("%s ws: %w", mk, err)
 		}

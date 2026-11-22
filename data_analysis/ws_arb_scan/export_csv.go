@@ -16,7 +16,7 @@ func exportFixtureCSV(mapKey string, outcomes []outcomeRec, wsRows []wsRow) (out
 		return "", "", err
 	}
 	outcomePath = filepath.Join(dataExportDir, base+"_盘口outcome.csv")
-	wsPath = filepath.Join(dataExportDir, base+"_订单簿WS.csv")
+	wsPath = filepath.Join(dataExportDir, base+bookCSVFileSuffix())
 
 	if err := writeOutcomeCSV(outcomePath, mapKey, outcomes); err != nil {
 		return "", "", err

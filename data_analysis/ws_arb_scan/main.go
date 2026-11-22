@@ -1,6 +1,6 @@
 // 套利离线/半离线分析（规则见 RULES.md，不 import 策略包）
 //
-// 单场连库（推荐）：
+// 单场连库（默认 market_order_book；WS 表加 -book_table=ws）：
 //	RUN_CONF=conf/local.conf.yaml go run ./data_analysis/ws_arb_scan -map_key='v1|NBA|nba-mem-min-2026-11-21'
 //
 // 多场均文件，逐场查库：
@@ -22,11 +22,18 @@ func main() {
 	mapKey := flag.String("map_key", "", "单场 map_key，从库查询并分析")
 	keysFile := flag.String("keys", "", "多场：map_key 列表文件，逐场查库")
 	dataDir := flag.String("data", "", "读本地 JSONL 目录，默认 "+dataExportDir)
-	wsLimit := flag.Int("ws_limit", 0, "每场 WS 行数上限；0=该 map_key 全部")
+	bookTable := flag.String("book_table", "rest", "订单簿表：rest=market_order_book，ws=market_order_book_ws")
+	bookLimit := flag.Int("book_limit", 0, "每场订单簿行数上限；0=该 map_key 全部（兼容旧名 ws_limit）")
+	wsLimit := flag.Int("ws_limit", 0, "已废弃，请用 -book_limit")
 	out := flag.String("out", "", "附加 jsonl 路径；中文报告与 csv 写入 "+dataExportDir)
 	diag := flag.Bool("diag", false, "打印 moneyline 分组与最新盘口是否 ready")
 	verifyMs := flag.Int64("verify_ms", 0, "仅核对该毫秒独赢盘口，须配 -map_key")
 	flag.Parse()
+	setOrderBookTable(*bookTable)
+	limit := *bookLimit
+	if limit <= 0 && *wsLimit > 0 {
+		limit = *wsLimit
+	}
 
 	if *verifyMs > 0 {
 		if *mapKey == "" {
@@ -53,7 +60,7 @@ func main() {
 	var err error
 	switch {
 	case *mapKey != "" || *keysFile != "":
-		err = runFromDB(*mapKey, *keysFile, outPath, *wsLimit, *diag)
+		err = runFromDB(*mapKey, *keysFile, outPath, limit, *diag)
 	case *dataDir != "":
 		err = runScan(*dataDir, *keysFile, outPath)
 	default:

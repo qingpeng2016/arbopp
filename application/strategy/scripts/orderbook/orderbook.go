@@ -11,6 +11,7 @@ import (
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/orderbook/kalshi"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/orderbook/polymarket"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/orderbook/predict"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/orderbook/sxbet"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/dederi/logger"
 	cryptoPredictionEnum "github.com/gph-tech/fgmm-strategy-bitfinex/common/enum/crypto/prediction"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/notification"
@@ -31,6 +32,7 @@ type OrderBook struct {
 	kalshiSyncer       *kalshi.Syncer
 	polySyncer         *polymarket.Syncer
 	predictSyncer      *predict.Syncer
+	sxbetSyncer        *sxbet.Syncer
 
 	pollMu   sync.Mutex
 	pollRun  bool
@@ -42,6 +44,7 @@ func NewOrderBook(
 	kalshiRepo httprepo.KalshiRepo,
 	polyRepo httprepo.PolymarketRepo,
 	predictRepo httprepo.PredictRepo,
+	sxbetRepo httprepo.SxbetRepo,
 	marketRepo persistentrepo.MarketRepo,
 	outcomeRepo persistentrepo.MarketOutcomeRepo,
 	orderBookRepo persistentrepo.OrderBookRepo,
@@ -65,6 +68,10 @@ func NewOrderBook(
 		},
 		predictSyncer: &predict.Syncer{
 			API:   predictRepo,
+			Books: orderBookRepo,
+		},
+		sxbetSyncer: &sxbet.Syncer{
+			API:   sxbetRepo,
 			Books: orderBookRepo,
 		},
 	}
@@ -101,11 +108,11 @@ func (j *OrderBook) syncRunningStatOnce(ctx context.Context, logPrefix string) {
 		return
 	}
 	rows := snap.Outcomes
-	kalshiMarkets, polyMarkets, predictMarkets := splitOutcomesByPlatform(rows)
+	kalshiMarkets, polyMarkets, predictMarkets, sxbetMarkets := splitOutcomesByPlatform(rows)
 	fetchCfg := j.resolveFetchConfig(ctx)
-	stats := j.syncPlatformsConcurrent(ctx, snap.Fixtures, kalshiMarkets, polyMarkets, predictMarkets, fetchCfg)
+	stats := j.syncPlatformsConcurrent(ctx, snap.Fixtures, kalshiMarkets, polyMarkets, predictMarkets, sxbetMarkets, fetchCfg)
 
-	for _, st := range []platformSyncStat{stats.kalshi, stats.poly, stats.predict} {
+	for _, st := range []platformSyncStat{stats.kalshi, stats.poly, stats.predict, stats.sxbet} {
 		if st.platform == "" || st.err == nil {
 			continue
 		}
@@ -122,7 +129,9 @@ func (j *OrderBook) syncRunningStatOnce(ctx context.Context, logPrefix string) {
 		zap.Int("poly_targets", len(polyMarkets)),
 		zap.Int("poly_upserted", stats.poly.upserted),
 		zap.Int("predict_targets", len(predictMarkets)),
-		zap.Int("predict_upserted", stats.predict.upserted))
+		zap.Int("predict_upserted", stats.predict.upserted),
+		zap.Int("sxbet_targets", len(sxbetMarkets)),
+		zap.Int("sxbet_upserted", stats.sxbet.upserted))
 }
 
 type platformSyncStat struct {
@@ -132,10 +141,10 @@ type platformSyncStat struct {
 }
 
 type orderbookPlatformTotals struct {
-	kalshi, poly, predict platformSyncStat
+	kalshi, poly, predict, sxbet platformSyncStat
 }
 
-func (j *OrderBook) syncPlatformsConcurrent(ctx context.Context, fixtures map[uint]persistententity.Market, kalshiMarkets, polyMarkets, predictMarkets []persistententity.MarketOutcome, fetchCfg fetchopt.FetchConfig) orderbookPlatformTotals {
+func (j *OrderBook) syncPlatformsConcurrent(ctx context.Context, fixtures map[uint]persistententity.Market, kalshiMarkets, polyMarkets, predictMarkets, sxbetMarkets []persistententity.MarketOutcome, fetchCfg fetchopt.FetchConfig) orderbookPlatformTotals {
 	type job struct {
 		platform string
 		run      func(context.Context) (int, int, error)
@@ -163,6 +172,14 @@ func (j *OrderBook) syncPlatformsConcurrent(ctx context.Context, fixtures map[ui
 		jobs = append(jobs, job{
 			platform: string(cryptoPredictionEnum.PlatformPredict),
 			run:      func(c context.Context) (int, int, error) { return syncer.Sync(c, md, fixtures, fetchCfg.Predict) },
+		})
+	}
+	if len(sxbetMarkets) > 0 {
+		ms := sxbetMarkets
+		syncer := j.sxbetSyncer
+		jobs = append(jobs, job{
+			platform: string(cryptoPredictionEnum.PlatformSxbet),
+			run:      func(c context.Context) (int, int, error) { return syncer.Sync(c, ms, fixtures, fetchCfg.Sxbet) },
 		})
 	}
 
@@ -193,6 +210,8 @@ func (j *OrderBook) syncPlatformsConcurrent(ctx context.Context, fixtures map[ui
 			totals.poly = st
 		case string(cryptoPredictionEnum.PlatformPredict):
 			totals.predict = st
+		case string(cryptoPredictionEnum.PlatformSxbet):
+			totals.sxbet = st
 		}
 	}
 	return totals

@@ -240,7 +240,11 @@ func scanFixture(mapKey string, outcomes []outcomeRec, latestWS, histWS []wsRow)
 	rep.YesNoSnapshot = scanYesNoBySnapshot(histWS, byHash, fees, lim)
 	rep.YesNoReplay = scanYesNoReplay(histWS, byHash, fees, lim)
 	if len(rep.YesNoReplay) > 0 {
-		rep.Note = "yesno_replay=按 WS id 回放盘口（等同线上单腿更新触发）"
+		if orderBookFromWS() {
+			rep.Note = "yesno_replay=按 WS id 回放盘口（等同线上单腿更新触发）"
+		} else {
+			rep.Note = "yesno_replay=按 REST 落库 id 回放（orderbook_sync 每次插入触发试算）"
+		}
 	} else if len(rep.YesNoHistMin) > 0 {
 		rep.Note = "hist_min=各腿独立最低价（未同毫秒），勿当真"
 	}
@@ -251,7 +255,7 @@ func scanFixture(mapKey string, outcomes []outcomeRec, latestWS, histWS []wsRow)
 		rep.TripleNo = scanTriples(draw, tA, tB, fees, lim, false)
 	}
 	if len(latestWS) == 0 && len(histWS) == 0 {
-		rep.Note = "无 WS 盘口行"
+		rep.Note = "无订单簿行（表 " + orderBookTable + "）"
 	}
 	return rep
 }

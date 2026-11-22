@@ -17,12 +17,14 @@ type FetchConfig struct {
 	Polymarket PlatformFetch `json:"polymarket"`
 	Kalshi     PlatformFetch `json:"kalshi"`
 	Predict    PlatformFetch `json:"predict"`
+	Sxbet      PlatformFetch `json:"sxbet"`
 }
 
 const (
 	defaultPolyBatch        = 500
 	defaultKalshiBatch      = 100
 	defaultPredictBatch     = 100
+	defaultSxbetConcurrency = 5
 	defaultBatchConcurrency = 1
 	maxPolyBatch            = 500
 	maxPredictBatch         = 100
@@ -34,6 +36,7 @@ func DefaultFetchConfig() FetchConfig {
 		Polymarket: PlatformFetch{BatchSize: defaultPolyBatch, BatchConcurrency: defaultBatchConcurrency},
 		Kalshi:     PlatformFetch{BatchSize: defaultKalshiBatch, BatchConcurrency: defaultBatchConcurrency},
 		Predict:    PlatformFetch{BatchSize: defaultPredictBatch, BatchConcurrency: defaultBatchConcurrency},
+		Sxbet:      PlatformFetch{BatchConcurrency: defaultSxbetConcurrency},
 	}
 }
 
@@ -45,6 +48,8 @@ func (f PlatformFetch) Normalized(platform string) PlatformFetch {
 			out.BatchSize = defaultPolyBatch
 		case strings.EqualFold(platform, string(cryptoPredictionEnum.PlatformPredict)):
 			out.BatchSize = defaultPredictBatch
+		case strings.EqualFold(platform, string(cryptoPredictionEnum.PlatformSxbet)):
+			out.BatchSize = 1
 		default:
 			out.BatchSize = defaultKalshiBatch
 		}
@@ -56,7 +61,11 @@ func (f PlatformFetch) Normalized(platform string) PlatformFetch {
 		out.BatchSize = maxPredictBatch
 	}
 	if out.BatchConcurrency <= 0 {
-		out.BatchConcurrency = defaultBatchConcurrency
+		if strings.EqualFold(platform, string(cryptoPredictionEnum.PlatformSxbet)) {
+			out.BatchConcurrency = defaultSxbetConcurrency
+		} else {
+			out.BatchConcurrency = defaultBatchConcurrency
+		}
 	}
 	if out.BatchConcurrency > maxBatchConcurrency {
 		out.BatchConcurrency = maxBatchConcurrency
@@ -72,6 +81,8 @@ func (c FetchConfig) ForPlatform(platform string) PlatformFetch {
 		return c.Kalshi.Normalized(platform)
 	case string(cryptoPredictionEnum.PlatformPredict):
 		return c.Predict.Normalized(platform)
+	case string(cryptoPredictionEnum.PlatformSxbet):
+		return c.Sxbet.Normalized(platform)
 	default:
 		return PlatformFetch{BatchSize: defaultKalshiBatch, BatchConcurrency: defaultBatchConcurrency}
 	}

@@ -51,5 +51,8 @@ func (j *OrderBook) resolveFetchConfig(ctx context.Context) fetchopt.FetchConfig
 		zap.Int("kalshi_batch_size", kal.BatchSize),
 		zap.Int("kalshi_batch_concurrency", kal.BatchConcurrency))
 	pred := parsed.Predict.Normalized(appcommon.PlatformPredict)
-	return fetchopt.FetchConfig{Polymarket: poly, Kalshi: kal, Predict: pred}
+	sx := parsed.Sxbet.Normalized(appcommon.PlatformSxbet)
+	logger.InfoZ(ctx, "orderbook_sync-fetch-config-sxbet",
+		zap.Int("sxbet_batch_concurrency", sx.BatchConcurrency))
+	return fetchopt.FetchConfig{Polymarket: poly, Kalshi: kal, Predict: pred, Sxbet: sx}
 }

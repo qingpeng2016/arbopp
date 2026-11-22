@@ -56,7 +56,11 @@ func writeConclusionCN(b *strings.Builder, mapKey string, rep fixtureReport) {
 	if len(rep.YesNoLatest) > 0 {
 		h := rep.YesNoLatest[0]
 		fmt.Fprintf(b, "二元跨所套利: 有\n")
-		fmt.Fprintf(b, "依据: 各平台最新一条WS拼出的盘口（与线上试算一致）\n")
+		if orderBookFromWS() {
+			fmt.Fprintf(b, "依据: 各平台最新一条 WS 拼出的盘口（与线上试算一致）\n")
+		} else {
+			fmt.Fprintf(b, "依据: 各平台最新一条 REST 快照拼出的盘口（orderbook_sync）\n")
+		}
 		fmt.Fprintf(b, "赛果: %s\n", groupKeyOutcomeCN(h.GroupKey))
 		fmt.Fprintf(b, "下单: %s 买 YES + %s 买 NO\n", platformLabel(h.YesPlatform), platformLabel(h.NoPlatform))
 		fmt.Fprintf(b, "单份成本含费: %.4f（规则: 须 < 0.95）\n", h.Per)
@@ -90,8 +94,8 @@ func groupKeyOutcomeCN(gk string) string {
 func writeDataStatsCN(b *strings.Builder, mapKey string, rep fixtureReport, outcomeCSV, wsCSV string) {
 	fmt.Fprintf(b, "盘口outcome总数: %d\n", rep.OutcomeCount)
 	fmt.Fprintf(b, "各平台 outcome: %s\n", formatPlatformCountsInline(rep.OutcomesByPlatform))
-	fmt.Fprintf(b, "订单簿WS总行数: %d\n", rep.WSSnapshotRows)
-	fmt.Fprintf(b, "各平台 WS: %s\n", formatPlatformCountsInline(rep.WSByPlatform))
+	fmt.Fprintf(b, "订单簿%s总行数: %d（表 %s）\n", bookSourceLabelCN(), rep.WSSnapshotRows, orderBookTable)
+	fmt.Fprintf(b, "各平台行数: %s\n", formatPlatformCountsInline(rep.WSByPlatform))
 	fmt.Fprintf(b, "跨平台深度齐组数: %d\n", rep.CrossPlatGroups)
 	fmt.Fprintf(b, "盘口csv: %s\n", outcomeCSV)
 	fmt.Fprintf(b, "订单簿csv: %s\n", wsCSV)
@@ -103,7 +107,11 @@ func writeHitsCN(b *strings.Builder, mapKey string, title string, hits []yesnoHi
 	}
 	fmt.Fprintf(b, "[%s]\n", title)
 	if title == "历史回放" {
-		fmt.Fprintf(b, "  说明: 按 WS 行 id 回放；「时刻」= 触发那条 WS 的毫秒，对侧为内存里更早的簿。勿用「同毫秒 IN 两平台」SQL 核对。\n")
+		if orderBookFromWS() {
+			fmt.Fprintf(b, "  说明: 按 WS 行 id 回放；「时刻」= 触发那条 WS 的毫秒，对侧为内存里更早的簿。勿用「同毫秒 IN 两平台」SQL 核对。\n")
+		} else {
+			fmt.Fprintf(b, "  说明: 按 REST 落库 id 回放（orderbook_sync 插入节奏）；对侧可能非同一毫秒。勿用「同毫秒 IN 两平台」SQL 核对。\n")
+		}
 	}
 	for i, h := range hits {
 		fmt.Fprintf(b, "  %d. %s\n", i+1, hitOneLiner(h))
