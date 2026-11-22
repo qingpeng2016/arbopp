@@ -1,5 +1,12 @@
-// 离线扫 WS 盘口：只读 ./data 下 JSONL，不连数据库。
+// 套利离线/半离线分析（规则见 RULES.md，不 import 策略包）
 //
+// 单场连库（推荐）：
+//	RUN_CONF=conf/local.conf.yaml go run ./data_analysis/ws_arb_scan -map_key='v1|NBA|nba-mem-min-2026-11-21'
+//
+// 多场均文件，逐场查库：
+//	RUN_CONF=conf/local.conf.yaml go run ./data_analysis/ws_arb_scan -keys=./data_analysis/ws_arb_scan/map_keys.txt
+//
+// 读本地 JSONL（无 -map_key / -keys 且 data 目录有文件）：
 //	go run ./data_analysis/ws_arb_scan -data=./data
 package main
 
@@ -10,11 +17,32 @@ import (
 )
 
 func main() {
-	dataDir := flag.String("data", "data", "本地数据目录（map_keys.txt / market_outcome.jsonl / ws_book.jsonl）")
-	keys := flag.String("keys", "", "map_key 列表文件，默认 data/map_keys.txt")
-	out := flag.String("out", "data_analysis/ws_arb_scan/out/report.jsonl", "分析结果 JSONL")
+	mapKey := flag.String("map_key", "", "单场 map_key，从库查询并分析")
+	keysFile := flag.String("keys", "", "多场：map_key 列表文件，逐场查库")
+	dataDir := flag.String("data", "", "读本地 data/*.jsonl，不连库")
+	wsLimit := flag.Int("ws_limit", 8000, "每场 WS 最多行数")
+	out := flag.String("out", "", "输出 JSONL；默认按单场/批量自动命名")
 	flag.Parse()
-	if err := runScan(*dataDir, *keys, *out); err != nil {
+
+	outPath := *out
+	if outPath == "" {
+		if *mapKey != "" {
+			outPath = "data_analysis/ws_arb_scan/out/report_one.jsonl"
+		} else {
+			outPath = "data_analysis/ws_arb_scan/out/report.jsonl"
+		}
+	}
+
+	var err error
+	switch {
+	case *mapKey != "" || *keysFile != "":
+		err = runFromDB(*mapKey, *keysFile, outPath, *wsLimit)
+	case *dataDir != "":
+		err = runScan(*dataDir, *keysFile, outPath)
+	default:
+		err = fmt.Errorf("请指定 -map_key=... 或 -keys=map_keys.txt 或 -data=./data")
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

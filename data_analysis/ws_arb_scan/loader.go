@@ -165,6 +165,10 @@ func runScan(dataDir, keysFile, outPath string) error {
 		reports = append(reports, scanFixture(mk, outcomesByKey[mk], latest, hist))
 	}
 
+	return writeReports(outPath, reports)
+}
+
+func writeReports(outPath string, reports []fixtureReport) error {
 	if dir := filepathDir(outPath); dir != "" {
 		_ = os.MkdirAll(dir, 0755)
 	}
