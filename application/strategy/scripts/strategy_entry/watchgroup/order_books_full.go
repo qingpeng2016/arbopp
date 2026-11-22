@@ -76,23 +76,21 @@ func (w *Watch) collectOutcomeBooks(outcomeIndex, depth int) outcomeBooks {
 		appendBook(appcommon.PlatformPolymarket, oc.YesTokenID, "YES_TOKEN")
 		appendBook(appcommon.PlatformPolymarket, oc.NoTokenID, "NO_TOKEN")
 	case appcommon.PlatformKalshi:
-		appendBook(appcommon.PlatformKalshi, oc.PlatformMarketOutcomeID, "YES_BOOK")
+		mid := strings.TrimSpace(oc.PlatformMarketOutcomeID)
+		appendBook(appcommon.PlatformKalshi, mid, "YES_BOOK")
+		noKey := strings.TrimSpace(oc.NoTokenID)
+		if noKey == "" {
+			noKey = mid + ":no"
+		}
+		appendBook(appcommon.PlatformKalshi, noKey, "NO_TOKEN")
 	case appcommon.PlatformPredict, appcommon.PlatformSxbet:
 		mid := strings.TrimSpace(oc.PlatformMarketOutcomeID)
 		appendBook(oc.Platform, mid, "YES_BOOK")
-		if yes, ok := w.Books.Get(oc.Platform, mid); ok {
-			noBids, noAsks := book.NoBookFromYesBook(yes.Bids, yes.Asks)
-			noKey := strings.TrimSpace(oc.NoTokenID)
-			if noKey == "" {
-				noKey = mid + ":no"
-			}
-			ob.Books = append(ob.Books, bookSlice{
-				BookKey: noKey,
-				Role:    "NO_TOKEN",
-				Bids:    sliceLevels(noBids, limit),
-				Asks:    sliceLevels(noAsks, limit),
-			})
+		noKey := strings.TrimSpace(oc.NoTokenID)
+		if noKey == "" {
+			noKey = mid + ":no"
 		}
+		appendBook(oc.Platform, noKey, "NO_TOKEN")
 	}
 	return ob
 }

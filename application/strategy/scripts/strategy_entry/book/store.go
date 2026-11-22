@@ -161,31 +161,41 @@ func (s *Store) ApplyPolyLevel(id, side string, price, size float64, ts time.Tim
 	return reason == ""
 }
 
-// SyncPolyNoTokenFromYes 用 YES token 整本互补刷新 NO token 簿（实盘仅订 YES WS 时调用）。
-func (s *Store) SyncPolyNoTokenFromYes(yesTokenID, noTokenID string, ts time.Time) {
-	yesTokenID = strings.TrimSpace(yesTokenID)
-	noTokenID = strings.TrimSpace(noTokenID)
-	if yesTokenID == "" || noTokenID == "" || yesTokenID == noTokenID {
+// SyncComplementNoFromYes 用 YES 视角整本互补刷新独立 NO bookKey（Predict/SX/Kalshi 等）。
+func (s *Store) SyncComplementNoFromYes(platform, yesBookKey, noBookKey string, ts time.Time) {
+	platform = strings.ToUpper(strings.TrimSpace(platform))
+	yesBookKey = strings.TrimSpace(yesBookKey)
+	noBookKey = strings.TrimSpace(noBookKey)
+	if platform == "" || yesBookKey == "" || noBookKey == "" || yesBookKey == noBookKey {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	yesB := s.books[key(appcommon.PlatformPolymarket, yesTokenID)]
+	yesB := s.books[key(platform, yesBookKey)]
 	if yesB == nil || !yesB.Live {
 		return
 	}
 	noBids, noAsks := NoBookFromYesBook(yesB.Bids, yesB.Asks)
-	noB := s.ensure(appcommon.PlatformPolymarket, noTokenID)
-	noB.Tick = yesB.Tick
+	tick := yesB.Tick
+	if tick <= 0 {
+		tick = 0.01
+	}
+	noB := s.ensure(platform, noBookKey)
+	noB.Tick = tick
 	noB.MinSize = yesB.MinSize
-	noB.Bids = SortDesc(OnTick(noBids, noB.Tick))
-	noB.Asks = SortAsc(OnTick(noAsks, noB.Tick))
+	noB.Bids = SortDesc(OnTick(noBids, tick))
+	noB.Asks = SortAsc(OnTick(noAsks, tick))
 	if !ts.IsZero() {
 		noB.ExchangeTS = ts
 	} else if !yesB.ExchangeTS.IsZero() {
 		noB.ExchangeTS = yesB.ExchangeTS
 	}
 	noB.Live = yesB.Live
+}
+
+// SyncPolyNoTokenFromYes 用 YES token 整本互补刷新 NO token 簿（仅未订 NO WS 时调用）。
+func (s *Store) SyncPolyNoTokenFromYes(yesTokenID, noTokenID string, ts time.Time) {
+	s.SyncComplementNoFromYes(appcommon.PlatformPolymarket, yesTokenID, noTokenID, ts)
 }
 
 // ApplyPolyLevels 一次写入一条 price_change 的全部档。
@@ -229,7 +239,7 @@ func applyPolyLevel(b *Book, side string, price, size float64, ts time.Time) str
 	return ""
 }
 
-// ApplySxbetBook SXBet orderbook_v3 全量（YES 单簿，与 Predict 一致）。
+// ApplySxbetBook SXBet orderbook_v3 全量（YES 视角；NO 由 SyncComplementNoFromYes 维护）。
 func (s *Store) ApplySxbetBook(marketHash string, bids, asks []Level, ts time.Time) bool {
 	tick := 0.01
 	defer func() {
@@ -248,7 +258,7 @@ func (s *Store) ApplySxbetBook(marketHash string, bids, asks []Level, ts time.Ti
 	return true
 }
 
-// ApplyPredictBook Predict WS 全量：盘口为 YES 视角，NO 卖一由 YES 买一换算（见 yesno.TopFromStore）。
+// ApplyPredictBook Predict WS 全量（YES 视角；NO 由 SyncComplementNoFromYes 维护）。
 func (s *Store) ApplyPredictBook(marketID string, bids, asks []Level, ts time.Time) bool {
 	tick := 0.01
 	defer func() {

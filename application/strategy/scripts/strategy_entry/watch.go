@@ -464,14 +464,14 @@ func (w *watch) write(e event) {
 		if !w.Books.ApplyPolyBook(e.ID, e.Bids, e.Asks, e.Tick, e.MinSize, e.TS) {
 			return
 		}
-		if w.isPolyYesToken(e.ID) {
+		if w.shouldSyncPolyComplementFromYes(e.ID) {
 			w.syncPolyComplementNo(e.ID, e.TS)
 		}
 	case "poly_price_change":
 		// 一条 price_change 里的多档一起写入。
 		w.Books.ApplyPolyLevels(e.Changes, e.TS)
 		for tok := range w.polyTokensTouched(e.Changes) {
-			if w.isPolyYesToken(tok) {
+			if w.shouldSyncPolyComplementFromYes(tok) {
 				w.syncPolyComplementNo(tok, e.TS)
 			}
 		}
@@ -480,14 +480,17 @@ func (w *watch) write(e event) {
 		if !w.Books.ApplyKalshiSnapshot(e.ID, e.Bids, e.NoBids, e.Seq, e.TS) {
 			return
 		}
+		w.syncComplementNoBook(appcommon.PlatformKalshi, e.ID, e.TS)
 	case "predict_all_book":
 		if !w.Books.ApplyPredictBook(e.ID, e.Bids, e.Asks, e.TS) {
 			return
 		}
+		w.syncComplementNoBook(appcommon.PlatformPredict, e.ID, e.TS)
 	case "sxbet_all_book":
 		if !w.Books.ApplySxbetBook(e.ID, e.Bids, e.Asks, e.TS) {
 			return
 		}
+		w.syncComplementNoBook(appcommon.PlatformSxbet, e.ID, e.TS)
 	case "kalshi_price_change":
 		// 订阅WS成功后，kalshi开始推送增量变化的订单簿信息
 		ok, gap := w.Books.ApplyKalshiDelta(e.ID, e.Side, e.Price, e.Delta, e.Seq, e.TS)
@@ -502,6 +505,7 @@ func (w *watch) write(e event) {
 		if !ok {
 			return
 		}
+		w.syncComplementNoBook(appcommon.PlatformKalshi, e.ID, e.TS)
 	default:
 		return
 	}
@@ -600,12 +604,61 @@ func (w *watch) isPolyYesToken(token string) bool {
 		strings.TrimSpace(oc.YesTokenID) == token
 }
 
+func (w *watch) shouldSyncPolyComplementFromYes(yesToken string) bool {
+	yesToken = strings.TrimSpace(yesToken)
+	if !w.isPolyYesToken(yesToken) {
+		return false
+	}
+	noTok := w.polyNoTokenForYes(yesToken)
+	// 已订独立 NO token WS 时不再用 YES 互补覆盖。
+	return noTok == "" || noTok == yesToken
+}
+
 func (w *watch) syncPolyComplementNo(yesToken string, ts time.Time) {
 	noTok := w.polyNoTokenForYes(yesToken)
 	if noTok == "" {
 		return
 	}
 	w.Books.SyncPolyNoTokenFromYes(yesToken, noTok, ts)
+}
+
+func complementNoBookKey(oc *persistententity.MarketOutcome) string {
+	if k := strings.TrimSpace(oc.NoTokenID); k != "" {
+		return k
+	}
+	mid := strings.TrimSpace(oc.PlatformMarketOutcomeID)
+	if mid == "" {
+		return ""
+	}
+	return mid + ":no"
+}
+
+func (w *watch) syncComplementNoBook(platform, yesBookKey string, ts time.Time) {
+	platform = strings.ToUpper(strings.TrimSpace(platform))
+	yesBookKey = strings.TrimSpace(yesBookKey)
+	if yesBookKey == "" {
+		return
+	}
+	var idx int
+	var ok bool
+	switch platform {
+	case appcommon.PlatformKalshi:
+		idx, ok = w.ByTicker[yesBookKey]
+	case appcommon.PlatformPredict:
+		idx, ok = w.ByPredict[yesBookKey]
+	case appcommon.PlatformSxbet:
+		idx, ok = w.BySxbet[yesBookKey]
+	default:
+		return
+	}
+	if !ok || idx < 0 || idx >= len(w.Outcomes) {
+		return
+	}
+	noKey := complementNoBookKey(&w.Outcomes[idx])
+	if noKey == "" || noKey == yesBookKey {
+		return
+	}
+	w.Books.SyncComplementNoFromYes(platform, yesBookKey, noKey, ts)
 }
 
 func (w *watch) polyYesTokensTouched(changes []book.PolyChange) map[string]struct{} {

@@ -53,23 +53,31 @@ func stream(ctx context.Context, mapKey string, gen int, assets []string, apply 
 	})
 }
 
-// Assets 收集这组市场里 Polymarket 的 YES token（NO 盘口由策略内存互补维护）。
+// Assets 收集 Polymarket YES/NO token（二元各订一条 WS）。
 func Assets(outcomes []persistententity.MarketOutcome) []string {
 	seen := map[string]struct{}{}
 	var out []string
+	add := func(id string) {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return
+		}
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
 	for _, oc := range outcomes {
 		if !strings.EqualFold(oc.Platform, appcommon.PlatformPolymarket) {
 			continue
 		}
-		id := strings.TrimSpace(oc.YesTokenID)
-		if id == "" {
-			continue
+		add(oc.YesTokenID)
+		no := strings.TrimSpace(oc.NoTokenID)
+		yes := strings.TrimSpace(oc.YesTokenID)
+		if no != "" && no != yes {
+			add(no)
 		}
-		if _, ok := seen[id]; ok {
-			continue
-		}
-		seen[id] = struct{}{}
-		out = append(out, id)
 	}
 	return out
 }

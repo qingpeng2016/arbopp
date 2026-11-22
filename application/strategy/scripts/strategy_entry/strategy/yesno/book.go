@@ -41,10 +41,21 @@ func TopFromStore(store *book.Store, oc BookOutcome, index int, fee float64) (Si
 		return st, true
 	case appcommon.PlatformKalshi, appcommon.PlatformPredict, appcommon.PlatformSxbet:
 		bookID := strings.TrimSpace(oc.MarketID)
-		var ok1, ok2 bool
+		var ok1 bool
 		st.YesPx, st.YesSz, ok1 = store.Ask(oc.Platform, bookID)
+		if !ok1 || !book.ValidPrice(st.YesPx) {
+			return Side{}, false
+		}
+		noKey := strings.TrimSpace(oc.NoToken)
+		if noKey == "" {
+			noKey = bookID + ":no"
+		}
+		if noPx, noSz, ok := store.Ask(oc.Platform, noKey); ok && book.ValidPrice(noPx) {
+			st.NoPx, st.NoSz = noPx, noSz
+			return st, true
+		}
 		bid, bidSz, ok2 := store.Bid(oc.Platform, bookID)
-		if !ok1 || !ok2 || !book.ValidPrice(st.YesPx) {
+		if !ok2 || !book.ValidPrice(bid) {
 			return Side{}, false
 		}
 		st.NoPx, st.NoSz = 1-bid, bidSz

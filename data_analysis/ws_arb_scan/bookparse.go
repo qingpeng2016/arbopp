@@ -57,7 +57,7 @@ func (lq *legQuote) ready() bool {
 	return validPrice(lq.YesPx) && validPrice(lq.NoPx) && lq.YesSz > 0 && lq.NoSz > 0
 }
 
-// useWSRowForTopBook 与 yesno.TopFromStore 一致：Poly 按 token；Predict/SX/Kalshi 只吃 YES 簿那一行。
+// useWSRowForTopBook 与 yesno.TopFromStore 一致：Poly 按 YES/NO token；其余所优先独立 NO 簿。
 func useWSRowForTopBook(plat, tok string, mo outcomeRec) bool {
 	plat = strings.ToUpper(strings.TrimSpace(plat))
 	tok = strings.TrimSpace(tok)
