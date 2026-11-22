@@ -65,16 +65,27 @@ func loadBookDBAtMs(mapKey string, ms int64, outcomeIDs []string) ([]wsRow, erro
 	return rows, err
 }
 
+func filterMapKeys(keys []string) []string {
+	var out []string
+	for _, k := range keys {
+		k = strings.TrimSpace(k)
+		if k == "" || strings.HasPrefix(k, "#") {
+			continue
+		}
+		out = append(out, k)
+	}
+	return out
+}
+
 func runScanDB(keys []string, outPath string, wsLimit int, diag bool) error {
+	keys = filterMapKeys(keys)
 	if len(keys) == 0 {
 		return fmt.Errorf("无 map_key")
 	}
+	fmt.Printf("批量扫描开始：共 %d 场，表 %s\n", len(keys), orderBookTable)
 	var reports []fixtureReport
 	for i, mk := range keys {
-		mk = strings.TrimSpace(mk)
-		if mk == "" {
-			continue
-		}
+		fmt.Printf("[%d/%d] 开始 map_key=%s\n", i+1, len(keys), mk)
 		outcomes, err := loadOutcomesDB(mk)
 		if err != nil {
 			return fmt.Errorf("%s outcomes: %w", mk, err)
@@ -103,10 +114,20 @@ func runScanDB(keys []string, outPath string, wsLimit int, diag bool) error {
 		}
 
 		reports = append(reports, rep)
-		fmt.Printf("[%d/%d] 进度 %s\n", i+1, len(keys), mk)
+		fmt.Printf("[%d/%d] 完成 map_key=%s | 订单簿%d行 | 二元结论=%s | 报告=%s\n",
+			i+1, len(keys), mk, rep.WSSnapshotRows, arbConclusionOneLine(rep), reportCN)
 		printChineseSummary(mk, rep, outcomeCSV, wsCSV, reportCN)
 	}
+	fmt.Printf("批量扫描结束：已完成 %d 场，jsonl=%s\n", len(reports), outPath)
 	return writeReports(outPath, reports)
+}
+
+func arbConclusionOneLine(rep fixtureReport) string {
+	if len(rep.YesNoLatest) > 0 {
+		h := rep.YesNoLatest[0]
+		return fmt.Sprintf("有 YES@%s+NO@%s 成本%.4f", platformLabel(h.YesPlatform), platformLabel(h.NoPlatform), h.Per)
+	}
+	return "无"
 }
 
 func runFromDB(mapKey, keysFile, outPath string, wsLimit int, diag bool) error {
@@ -117,7 +138,7 @@ func runFromDB(mapKey, keysFile, outPath string, wsLimit int, diag bool) error {
 	} else {
 		var err error
 		if keysFile == "" {
-			keysFile = "data_analysis/ws_arb_scan/map_keys.txt"
+			keysFile = defaultMapKeysFile
 		}
 		keys, err = loadMapKeys(keysFile)
 		if err != nil {
