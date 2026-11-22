@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/watchgroup"
 )
 
 // Sender 双边发单与单腿平仓。
@@ -34,6 +36,7 @@ func Fire(snd Sender, a, b Side, aBuyYes, bBuyYes bool, qty float64) (fillA, fil
 // GrabHit 一次抢单结果。
 type GrabHit struct {
 	Pick            FilledPick
+	Leg1, Leg2      watchgroup.LegPersistSnap // 落库盘口与 best_ask 同源快照
 	MaxCost         float64
 	YesFill, NoFill float64
 	YesErr, NoErr   error
@@ -106,15 +109,16 @@ func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
 	ctx := r.grabContext()
 	mapKey := r.w.MapKey
 	persist := r.grabPersist()
-	go func(ctx context.Context, mapKey string, all []FilledPick, best GrabHit, persist PersistGrab) {
-		for _, fp := range all {
-			SaveGrabHit(ctx, persist, mapKey, GrabHit{
-				Pick: fp, MaxCost: best.MaxCost,
-				YesFill: best.YesFill, NoFill: best.NoFill, DryRun: best.DryRun,
-			})
-		}
+	for _, fp := range all {
+		leg1, leg2 := r.snapPickLegs(fp)
+		SaveGrabHit(ctx, persist, mapKey, GrabHit{
+			Pick: fp, Leg1: leg1, Leg2: leg2, MaxCost: lim.MaxCost,
+			YesFill: yesFill, NoFill: noFill, DryRun: dryRun,
+		})
+	}
+	go func(ctx context.Context, mapKey string, best GrabHit) {
 		NotifyGrab(ctx, mapKey, best)
-	}(ctx, mapKey, all, bestHit, persist)
+	}(ctx, mapKey, bestHit)
 }
 
 // grabOneBacktest 历史回放：不发真实单，同步写入 backtest_arb_*（由 Ops.BacktestTaskID 决定落库表）。
@@ -133,8 +137,9 @@ func (r *Runner) grabOneBacktest(outcomeID uint) {
 	}
 	defer r.orderMu.Unlock()
 	for _, fp := range all {
+		leg1, leg2 := r.snapPickLegs(fp)
 		SaveGrabHit(ctx, persist, mapKey, GrabHit{
-			Pick: fp, MaxCost: lim.MaxCost,
+			Pick: fp, Leg1: leg1, Leg2: leg2, MaxCost: lim.MaxCost,
 			YesFill: qty, NoFill: qty,
 		})
 	}

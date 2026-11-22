@@ -7,7 +7,13 @@ import (
 )
 
 // ArbBinaryOpportunity 跨平台套利命中（二元或 1X2 三路；腿槽位见 opp_kind）。
-// leg_1/2/3：BINARY_YES_NO → YES / NO / {}；ONE_X2_* → 平局 / 主 / 客。
+//
+// 落库自洽：leg_*_order_books 与 leg_*_best_ask 为同一 LegSnapshot；total_cost = 各腿卖一 + 手续费之和。
+//
+//	opp_kind              leg_1      leg_2      leg_3
+//	BINARY_YES_NO         YES 腿     NO 腿      {}
+//	ONE_X2_YES_TRIPLE     平 YES     主 YES     客 YES
+//	ONE_X2_NO_TRIPLE      平 NO      主 NO      客 NO
 type ArbBinaryOpportunity struct {
 	ID             uint             `gorm:"primaryKey;column:id;type:bigint unsigned;not null;autoIncrement"`
 	OppKind        string           `gorm:"column:opp_kind;type:varchar(32);not null"`

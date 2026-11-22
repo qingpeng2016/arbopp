@@ -27,21 +27,48 @@ type fullOutcomeBooks struct {
 	Books                   []bookSlice `json:"books"`
 }
 
-// FullOrderBooksJSON 单腿全量盘口（不截断档位）；buyYes 表示本条套利腿买的是 YES 还是 NO。
-func (w *Watch) FullOrderBooksJSON(outcomeIndex int, buyYes bool) string {
+// LegPersistSnap 落库用：全量盘口 JSON 与顶卖一同源。
+type LegPersistSnap struct {
+	OrderBooks string
+	TopAsk     float64
+	TopSz      float64
+	OK         bool
+}
+
+// LegSnapshot 单腿盘口快照（JSON + 卖一价同一次读取）。
+func (w *Watch) LegSnapshot(outcomeIndex int, buyYes bool) LegPersistSnap {
 	if w == nil {
-		return "{}\n"
+		return LegPersistSnap{OrderBooks: "{}\n"}
 	}
 	ob := w.collectOutcomeBooks(outcomeIndex, 0, buyYes)
-	if ob.Platform == "" && len(ob.Books) == 0 {
-		return prettyJSON(fullOutcomeBooks{})
-	}
-	out := fullOutcomeBooks{
+	topPx, topSz, ok := topAskFromOutcomeBooks(ob)
+	json := prettyJSON(fullOutcomeBooks{
 		Platform:                ob.Platform,
 		PlatformMarketOutcomeID: ob.PlatformMarketOutcomeID,
 		Books:                   ob.Books,
+	})
+	if ob.Platform == "" && len(ob.Books) == 0 {
+		json = prettyJSON(fullOutcomeBooks{})
 	}
-	return prettyJSON(out)
+	return LegPersistSnap{OrderBooks: json, TopAsk: topPx, TopSz: topSz, OK: ok}
+}
+
+// FullOrderBooksJSON 单腿全量盘口（不截断档位）；buyYes 表示本条套利腿买的是 YES 还是 NO。
+func (w *Watch) FullOrderBooksJSON(outcomeIndex int, buyYes bool) string {
+	return w.LegSnapshot(outcomeIndex, buyYes).OrderBooks
+}
+
+func topAskFromOutcomeBooks(ob outcomeBooks) (price, size float64, ok bool) {
+	for _, bk := range ob.Books {
+		if len(bk.Asks) == 0 {
+			continue
+		}
+		p, s := bk.Asks[0].Price, bk.Asks[0].Size
+		if book.ValidPrice(p) && s > 0 {
+			return p, s, true
+		}
+	}
+	return 0, 0, false
 }
 
 func (w *Watch) collectOutcomeBooks(outcomeIndex, depth int, buyYes bool) outcomeBooks {

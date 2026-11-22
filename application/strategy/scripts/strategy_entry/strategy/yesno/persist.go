@@ -80,14 +80,12 @@ func SaveGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit GrabHit)
 	aYes, bYes := hit.Pick.YesBuyYes, hit.Pick.NoBuyYes
 	qty, per, maxCost := hit.Pick.Qty, hit.Pick.Per, hit.MaxCost
 	aPx, bPx := SidePx(a.Side, aYes), SidePx(b.Side, bYes)
-	yesPx, noPx := aPx, bPx
-	if !aYes {
-		yesPx, noPx = bPx, aPx
-	}
+	yesPx, noPx := legAskPrices(hit, a, b, aYes, bYes, aPx, bPx)
 	now, snapMs := snapshotTimes(d)
 	yesMoID, noMoID := comboLegMarketOutcomeIDs(a, b, aYes)
 	scope := fixtureScopeForGrab(d, yesMoID, noMoID)
-	yesInfo, noInfo, yesBooks, noBooks := legPersistFields(d, a, b, aYes, bYes)
+	yesInfo, noInfo, yesBooks, noBooks := legPersistFields(d, a, b, aYes, bYes, hit.Leg1, hit.Leg2)
+	perShare := binaryPerShareFromSnap(hit, a, b, per)
 	yes := decimal.NewFromFloat(yesPx).Round(8)
 	no := decimal.NewFromFloat(noPx).Round(8)
 	row := &persistententity.ArbBinaryOpportunity{
@@ -97,7 +95,7 @@ func SaveGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit GrabHit)
 		Leg1Info: yesInfo, Leg1OrderBooks: yesBooks, Leg1BestAsk: &yes,
 		Leg2Info: noInfo, Leg2OrderBooks: noBooks, Leg2BestAsk: &no,
 		Leg3Info: emptyLegJSON, Leg3OrderBooks: emptyLegJSON,
-		TotalCost: decimal.NewFromFloat(per).Round(8), ProfitSpace: decimal.NewFromFloat(1 - per).Round(8),
+		TotalCost: decimal.NewFromFloat(perShare).Round(8), ProfitSpace: decimal.NewFromFloat(1 - perShare).Round(8),
 		ThresholdKey: thresholdKeyMaxCost, ThresholdValue: decimal.NewFromFloat(maxCost).Round(8),
 		BookUpdatedAt: &now, SnapshotAt: now, SnapshotAtMs: snapMs,
 	}
@@ -239,7 +237,28 @@ func comboLegSides(a, b ExecSide, aBuysYes, bBuysYes bool) (yesLeg, noLeg ExecSi
 	return b, a, true, aBuysYes
 }
 
-func legPersistFields(d PersistGrab, a, b ExecSide, aBuysYes, bBuysYes bool) (yesInfo, noInfo, yesBooks, noBooks string) {
+func legAskPrices(hit GrabHit, a, b ExecSide, aYes, bYes bool, aPx, bPx float64) (yesPx, noPx float64) {
+	yesPx, noPx = aPx, bPx
+	if !aYes {
+		yesPx, noPx = bPx, aPx
+	}
+	if hit.Leg1.OK {
+		yesPx = hit.Leg1.TopAsk
+	}
+	if hit.Leg2.OK {
+		noPx = hit.Leg2.TopAsk
+	}
+	return yesPx, noPx
+}
+
+func binaryPerShareFromSnap(hit GrabHit, yesLeg, noLeg ExecSide, pickPer float64) float64 {
+	if !hit.Leg1.OK || !hit.Leg2.OK {
+		return pickPer
+	}
+	return hit.Leg1.TopAsk + hit.Leg2.TopAsk + Fee(hit.Leg1.TopAsk, yesLeg.Side.Fee) + Fee(hit.Leg2.TopAsk, noLeg.Side.Fee)
+}
+
+func legPersistFields(d PersistGrab, a, b ExecSide, aBuysYes, bBuysYes bool, snap1, snap2 watchgroup.LegPersistSnap) (yesInfo, noInfo, yesBooks, noBooks string) {
 	yesLeg, noLeg, yesBuy, noBuy := comboLegSides(a, b, aBuysYes, bBuysYes)
 	yesInfo, noInfo, yesBooks, noBooks = emptyLegJSON, emptyLegJSON, emptyLegJSON, emptyLegJSON
 	if d.YesLegInfo != nil {
@@ -248,8 +267,14 @@ func legPersistFields(d PersistGrab, a, b ExecSide, aBuysYes, bBuysYes bool) (ye
 	if d.NoLegInfo != nil {
 		noInfo = d.NoLegInfo(noLeg.Index, noBuy)
 	}
-	if d.LegOrderBooks != nil {
+	if strings.TrimSpace(snap1.OrderBooks) != "" {
+		yesBooks = snap1.OrderBooks
+	} else if d.LegOrderBooks != nil {
 		yesBooks = d.LegOrderBooks(yesLeg.Index, yesBuy)
+	}
+	if strings.TrimSpace(snap2.OrderBooks) != "" {
+		noBooks = snap2.OrderBooks
+	} else if d.LegOrderBooks != nil {
 		noBooks = d.LegOrderBooks(noLeg.Index, noBuy)
 	}
 	if strings.TrimSpace(yesInfo) == "" {
@@ -272,14 +297,12 @@ func saveBacktestGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit 
 	aYes, bYes := hit.Pick.YesBuyYes, hit.Pick.NoBuyYes
 	qty, per, maxCost := hit.Pick.Qty, hit.Pick.Per, hit.MaxCost
 	aPx, bPx := SidePx(a.Side, aYes), SidePx(b.Side, bYes)
-	yesPx, noPx := aPx, bPx
-	if !aYes {
-		yesPx, noPx = bPx, aPx
-	}
+	yesPx, noPx := legAskPrices(hit, a, b, aYes, bYes, aPx, bPx)
 	now, snapMs := snapshotTimes(d)
 	yesMoID, noMoID := comboLegMarketOutcomeIDs(a, b, aYes)
 	scope := fixtureScopeForGrab(d, yesMoID, noMoID)
-	yesInfo, noInfo, yesBooks, noBooks := legPersistFields(d, a, b, aYes, bYes)
+	yesInfo, noInfo, yesBooks, noBooks := legPersistFields(d, a, b, aYes, bYes, hit.Leg1, hit.Leg2)
+	perShare := binaryPerShareFromSnap(hit, a, b, per)
 	yes := decimal.NewFromFloat(yesPx).Round(8)
 	no := decimal.NewFromFloat(noPx).Round(8)
 	row := &persistententity.BacktestArbBinaryOpportunity{
@@ -290,7 +313,7 @@ func saveBacktestGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit 
 		Leg1Info: yesInfo, Leg1OrderBooks: yesBooks, Leg1BestAsk: &yes,
 		Leg2Info: noInfo, Leg2OrderBooks: noBooks, Leg2BestAsk: &no,
 		Leg3Info: emptyLegJSON, Leg3OrderBooks: emptyLegJSON,
-		TotalCost: decimal.NewFromFloat(per).Round(8), ProfitSpace: decimal.NewFromFloat(1-per).Round(8),
+		TotalCost: decimal.NewFromFloat(perShare).Round(8), ProfitSpace: decimal.NewFromFloat(1-perShare).Round(8),
 		ThresholdKey: thresholdKeyMaxCost, ThresholdValue: decimal.NewFromFloat(maxCost).Round(8),
 		BookUpdatedAt: &now, SnapshotAt: now, SnapshotAtMs: snapMs,
 	}

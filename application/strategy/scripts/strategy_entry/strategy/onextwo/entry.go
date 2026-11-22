@@ -77,6 +77,18 @@ func (r *Runner) limits() Limits {
 	return lim
 }
 
+func (r *Runner) snapTripleLegs(pick TriplePick) [3]watchgroup.LegPersistSnap {
+	var snaps [3]watchgroup.LegPersistSnap
+	if r.w == nil {
+		return snaps
+	}
+	buy := pick.BuyYes
+	for i := range pick.Legs {
+		snaps[i] = r.w.LegSnapshot(pick.Legs[i].Index, buy)
+	}
+	return snaps
+}
+
 func (r *Runner) execSide(outcomeIndex int) (yesno.ExecSide, bool) {
 	oc := r.w.OutcomeAt(outcomeIndex)
 	store := r.w.Store()

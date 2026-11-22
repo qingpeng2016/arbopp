@@ -22,6 +22,8 @@ func TestBooksJSONForOutcomePair(t *testing.T) {
 		[]book.Level{{Price: 0.62, Size: 400}}, []book.Level{{Price: 0.64, Size: 300}}, 0.01, 0, ts)
 	store.ApplyPredictBook(mid,
 		[]book.Level{{Price: 0.55, Size: 1400}}, []book.Level{{Price: 0.56, Size: 1200}}, ts)
+	store.ApplyPredictBook(mid+":no",
+		[]book.Level{{Price: 0.44, Size: 500}}, []book.Level{{Price: 0.46, Size: 400}}, ts)
 
 	wg := &Watch{
 		Outcomes: []persistententity.MarketOutcome{
@@ -31,7 +33,7 @@ func TestBooksJSONForOutcomePair(t *testing.T) {
 		Books: store,
 	}
 	raw := wg.BooksJSONForOutcomePair(0, 1)
-	if !strings.Contains(raw, `"YES_TOKEN"`) || !strings.Contains(raw, `"YES_BOOK"`) {
+	if !strings.Contains(raw, `"YES_TOKEN"`) || !strings.Contains(raw, `"NO_TOKEN"`) {
 		t.Fatalf("missing roles: %s", raw)
 	}
 	var parsed struct {
@@ -47,8 +49,8 @@ func TestBooksJSONForOutcomePair(t *testing.T) {
 	if len(parsed.Outcomes) != 2 {
 		t.Fatalf("outcomes %d", len(parsed.Outcomes))
 	}
-	if len(parsed.Outcomes[0].Books) < 2 {
-		t.Fatal("poly books")
+	if len(parsed.Outcomes[0].Books) != 1 {
+		t.Fatalf("poly books want 1 YES leg, got %d", len(parsed.Outcomes[0].Books))
 	}
 	if parsed.Outcomes[0].Books[0].Asks[0].Price != 0.38 {
 		t.Fatalf("poly yes ask %v", parsed.Outcomes[0].Books[0].Asks[0].Price)

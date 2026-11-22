@@ -156,6 +156,13 @@ func (s outcomeSender) Flatten(side Side, boughtYes bool, mine, other float64) {
 	s.r.w.Ops.FlattenOnOutcome(side.Index, boughtYes, mine, other)
 }
 
+func (r *Runner) snapPickLegs(fp FilledPick) (watchgroup.LegPersistSnap, watchgroup.LegPersistSnap) {
+	if r.w == nil {
+		return watchgroup.LegPersistSnap{OrderBooks: "{}\n"}, watchgroup.LegPersistSnap{OrderBooks: "{}\n"}
+	}
+	return r.w.LegSnapshot(fp.Yes.Index, fp.YesBuyYes), r.w.LegSnapshot(fp.No.Index, fp.NoBuyYes)
+}
+
 func (r *Runner) grabPersist() PersistGrab {
 	ops := &r.w.Ops
 	pg := PersistGrab{

@@ -3,11 +3,14 @@ package onextwo
 import (
 	"context"
 	"time"
+
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/watchgroup"
 )
 
 // GrabHit 1X2 命中。
 type GrabHit struct {
 	Pick   TriplePick
+	Legs   [3]watchgroup.LegPersistSnap // 落库盘口与 leg_*_best_ask 同源快照
 	Limits Limits
 	DryRun bool
 }
@@ -45,12 +48,12 @@ func (r *Runner) grabOneAttempt(_ uint, retried bool) {
 	ctx := r.w.Context()
 	mapKey := r.w.MapKey
 	deps := r.persistDeps()
-	go func(ctx context.Context, mapKey string, picks []TriplePick, best GrabHit, d persistDeps) {
-		for _, p := range picks {
-			SaveGrabHit(ctx, d, mapKey, GrabHit{Pick: p, Limits: best.Limits, DryRun: best.DryRun})
-		}
+	for _, p := range all {
+		SaveGrabHit(ctx, deps, mapKey, GrabHit{Pick: p, Legs: r.snapTripleLegs(p), Limits: lim, DryRun: dryRun})
+	}
+	go func(ctx context.Context, mapKey string, best GrabHit) {
 		NotifyGrab(ctx, mapKey, best)
-	}(ctx, mapKey, all, bestHit, deps)
+	}(ctx, mapKey, bestHit)
 }
 
 // OnBookUpdateAfterReplay 回测：本 snapshot 全部盘口写入后试一次 1X2（避免同一毫秒重复落库）。
@@ -81,7 +84,7 @@ func (r *Runner) grabOneBacktest() {
 	deps := r.persistDeps()
 	mapKey := r.w.MapKey
 	for _, p := range all {
-		SaveGrabHit(ctx, deps, mapKey, GrabHit{Pick: p, Limits: lim})
+		SaveGrabHit(ctx, deps, mapKey, GrabHit{Pick: p, Legs: r.snapTripleLegs(p), Limits: lim})
 	}
 }
 

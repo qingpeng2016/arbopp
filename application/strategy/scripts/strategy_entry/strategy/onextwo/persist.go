@@ -76,6 +76,9 @@ func NotifyGrab(ctx context.Context, mapKey string, hit GrabHit) {
 	}
 	for i, leg := range pick.Legs {
 		px := pick.Prices[i]
+		if hit.Legs[i].OK {
+			px = hit.Legs[i].TopAsk
+		}
 		fields = append(fields,
 			notification.FieldPair{Key: "leg" + strconv.Itoa(i+1), Value: leg.Platform + " " + tripleSide},
 			notification.FieldPair{Key: "leg" + strconv.Itoa(i+1) + "_ask", Value: strconv.FormatFloat(px, 'f', -1, 64)},
@@ -126,10 +129,12 @@ func buildOppBacktest(d persistDeps, mapKey string, hit GrabHit) *persistententi
 		thKey = ThresholdKeyNoTriple
 		thVal = hit.Limits.NoTripleMax
 	}
-	leg1Info, leg1Books, leg2Info, leg2Books, leg3Info, leg3Books := tripleLegFields(d, pick)
-	leg1Ask := decimal.NewFromFloat(pick.Prices[0]).Round(8)
-	leg2Ask := decimal.NewFromFloat(pick.Prices[1]).Round(8)
-	leg3Ask := decimal.NewFromFloat(pick.Prices[2]).Round(8)
+	leg1Info, leg1Books, leg2Info, leg2Books, leg3Info, leg3Books := tripleLegFields(d, pick, hit.Legs)
+	asks := tripleLegAskPrices(hit, pick)
+	leg1Ask := decimal.NewFromFloat(asks[0]).Round(8)
+	leg2Ask := decimal.NewFromFloat(asks[1]).Round(8)
+	leg3Ask := decimal.NewFromFloat(asks[2]).Round(8)
+	perShare := triplePerShareFromSnap(hit, pick)
 	mapKeyPtr := mapKey
 	return &persistententity.BacktestArbBinaryOpportunity{
 		BacktestTaskID: d.task,
@@ -139,8 +144,8 @@ func buildOppBacktest(d persistDeps, mapKey string, hit GrabHit) *persistententi
 		Leg1Info: leg1Info, Leg1OrderBooks: leg1Books, Leg1BestAsk: &leg1Ask,
 		Leg2Info: leg2Info, Leg2OrderBooks: leg2Books, Leg2BestAsk: &leg2Ask,
 		Leg3Info: leg3Info, Leg3OrderBooks: leg3Books, Leg3BestAsk: &leg3Ask,
-		TotalCost: decimal.NewFromFloat(pick.Per).Round(8),
-		ProfitSpace: decimal.NewFromFloat(profitBase - pick.Per).Round(8),
+		TotalCost: decimal.NewFromFloat(perShare).Round(8),
+		ProfitSpace: decimal.NewFromFloat(profitBase - perShare).Round(8),
 		ThresholdKey: thKey, ThresholdValue: decimal.NewFromFloat(thVal).Round(8),
 		BookUpdatedAt: &now, SnapshotAt: now, SnapshotAtMs: snapMs,
 	}
@@ -202,6 +207,9 @@ func ordersForHit(taskID uint, strategyType, mapKey string, oppID uint, hit Grab
 	out := make([]*persistententity.BacktestOrder, 0, 3)
 	for i, leg := range pick.Legs {
 		px := pick.Prices[i]
+		if hit.Legs[i].OK {
+			px = hit.Legs[i].TopAsk
+		}
 		fill := pick.Qty
 		if hit.DryRun {
 			fill = 0
@@ -211,7 +219,35 @@ func ordersForHit(taskID uint, strategyType, mapKey string, oppID uint, hit Grab
 	return out
 }
 
-func tripleLegFields(d persistDeps, pick TriplePick) (leg1Info, leg1Books, leg2Info, leg2Books, leg3Info, leg3Books string) {
+func tripleLegAskPrices(hit GrabHit, pick TriplePick) [3]float64 {
+	var out [3]float64
+	for i := range pick.Prices {
+		out[i] = pick.Prices[i]
+		if hit.Legs[i].OK {
+			out[i] = hit.Legs[i].TopAsk
+		}
+	}
+	return out
+}
+
+func triplePerShareFromSnap(hit GrabHit, pick TriplePick) float64 {
+	var sum float64
+	allOK := true
+	for i := range hit.Legs {
+		if !hit.Legs[i].OK {
+			allOK = false
+			break
+		}
+		px := hit.Legs[i].TopAsk
+		sum += px + yesno.Fee(px, pick.Legs[i].Side.Fee)
+	}
+	if !allOK {
+		return pick.Per
+	}
+	return sum
+}
+
+func tripleLegFields(d persistDeps, pick TriplePick, snaps [3]watchgroup.LegPersistSnap) (leg1Info, leg1Books, leg2Info, leg2Books, leg3Info, leg3Books string) {
 	leg1Info, leg1Books, leg2Info, leg2Books, leg3Info, leg3Books = "{}\n", "{}\n", "{}\n", "{}\n", "{}\n", "{}\n"
 	buy := pick.BuyYes
 	if d.drawLegInfo != nil {
@@ -223,10 +259,29 @@ func tripleLegFields(d persistDeps, pick TriplePick) (leg1Info, leg1Books, leg2I
 	if d.noLegInfo != nil {
 		leg3Info = d.noLegInfo(pick.Legs[2].Index, buy)
 	}
+	for i := range snaps {
+		if strings.TrimSpace(snaps[i].OrderBooks) == "" {
+			continue
+		}
+		switch i {
+		case 0:
+			leg1Books = snaps[i].OrderBooks
+		case 1:
+			leg2Books = snaps[i].OrderBooks
+		case 2:
+			leg3Books = snaps[i].OrderBooks
+		}
+	}
 	if d.legBooks != nil {
-		leg1Books = d.legBooks(pick.Legs[0].Index, buy)
-		leg2Books = d.legBooks(pick.Legs[1].Index, buy)
-		leg3Books = d.legBooks(pick.Legs[2].Index, buy)
+		if strings.TrimSpace(leg1Books) == "" || leg1Books == "{}\n" {
+			leg1Books = d.legBooks(pick.Legs[0].Index, buy)
+		}
+		if strings.TrimSpace(leg2Books) == "" || leg2Books == "{}\n" {
+			leg2Books = d.legBooks(pick.Legs[1].Index, buy)
+		}
+		if strings.TrimSpace(leg3Books) == "" || leg3Books == "{}\n" {
+			leg3Books = d.legBooks(pick.Legs[2].Index, buy)
+		}
 	}
 	for _, p := range []*string{&leg1Info, &leg1Books, &leg2Info, &leg2Books, &leg3Info, &leg3Books} {
 		if strings.TrimSpace(*p) == "" {
@@ -241,6 +296,9 @@ func liveOrdersForHit(strategyType, mapKey string, oppID uint, hit GrabHit, sent
 	out := make([]*persistententity.ArbBinaryOrder, 0, 3)
 	for i, leg := range pick.Legs {
 		px := pick.Prices[i]
+		if hit.Legs[i].OK {
+			px = hit.Legs[i].TopAsk
+		}
 		fill := pick.Qty
 		if hit.DryRun {
 			fill = 0
