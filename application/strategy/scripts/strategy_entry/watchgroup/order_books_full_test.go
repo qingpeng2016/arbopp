@@ -38,3 +38,15 @@ func TestLegSnapshotTopAskMatchesJSON(t *testing.T) {
 		t.Fatalf("JSON first ask does not match leg_best_ask source: snap=%v json=%v", snap.TopAsk, body.Books[0].Asks[0].Price)
 	}
 }
+
+func TestMinLegTopAskQty(t *testing.T) {
+	if got := MinLegTopAskQty(
+		LegPersistSnap{OK: true, TopSz: 100},
+		LegPersistSnap{OK: true, TopSz: 40},
+	); got != 40 {
+		t.Fatalf("min=%v want 40", got)
+	}
+	if got := MinLegTopAskQty(LegPersistSnap{OK: false, TopSz: 99}); got != 0 {
+		t.Fatalf("empty=%v", got)
+	}
+}

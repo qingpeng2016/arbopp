@@ -86,6 +86,8 @@ func SaveGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit GrabHit)
 	scope := fixtureScopeForGrab(d, yesMoID, noMoID)
 	yesInfo, noInfo, yesBooks, noBooks := legPersistFields(d, a, b, aYes, bYes, hit.Leg1, hit.Leg2)
 	perShare := binaryPerShareFromSnap(hit, a, b, per)
+	profitSpace := 1 - perShare
+	arbQty, arbProfit := ArbQtyProfitFromSnaps(profitSpace, hit.Leg1, hit.Leg2)
 	yes := decimal.NewFromFloat(yesPx).Round(8)
 	no := decimal.NewFromFloat(noPx).Round(8)
 	row := &persistententity.ArbBinaryOpportunity{
@@ -95,7 +97,8 @@ func SaveGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit GrabHit)
 		Leg1Info: yesInfo, Leg1OrderBooks: yesBooks, Leg1BestAsk: &yes,
 		Leg2Info: noInfo, Leg2OrderBooks: noBooks, Leg2BestAsk: &no,
 		Leg3Info: emptyLegJSON, Leg3OrderBooks: emptyLegJSON,
-		TotalCost: decimal.NewFromFloat(perShare).Round(8), ProfitSpace: decimal.NewFromFloat(1 - perShare).Round(8),
+		TotalCost: decimal.NewFromFloat(perShare).Round(8), ProfitSpace: decimal.NewFromFloat(profitSpace).Round(8),
+		ArbQty: arbQty, ArbProfit: arbProfit,
 		ThresholdKey: thresholdKeyMaxCost, ThresholdValue: decimal.NewFromFloat(maxCost).Round(8),
 		BookUpdatedAt: &now, SnapshotAt: now, SnapshotAtMs: snapMs,
 	}
@@ -303,6 +306,8 @@ func saveBacktestGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit 
 	scope := fixtureScopeForGrab(d, yesMoID, noMoID)
 	yesInfo, noInfo, yesBooks, noBooks := legPersistFields(d, a, b, aYes, bYes, hit.Leg1, hit.Leg2)
 	perShare := binaryPerShareFromSnap(hit, a, b, per)
+	profitSpace := 1 - perShare
+	arbQty, arbProfit := ArbQtyProfitFromSnaps(profitSpace, hit.Leg1, hit.Leg2)
 	yes := decimal.NewFromFloat(yesPx).Round(8)
 	no := decimal.NewFromFloat(noPx).Round(8)
 	row := &persistententity.BacktestArbBinaryOpportunity{
@@ -313,7 +318,8 @@ func saveBacktestGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit 
 		Leg1Info: yesInfo, Leg1OrderBooks: yesBooks, Leg1BestAsk: &yes,
 		Leg2Info: noInfo, Leg2OrderBooks: noBooks, Leg2BestAsk: &no,
 		Leg3Info: emptyLegJSON, Leg3OrderBooks: emptyLegJSON,
-		TotalCost: decimal.NewFromFloat(perShare).Round(8), ProfitSpace: decimal.NewFromFloat(1-perShare).Round(8),
+		TotalCost: decimal.NewFromFloat(perShare).Round(8), ProfitSpace: decimal.NewFromFloat(profitSpace).Round(8),
+		ArbQty: arbQty, ArbProfit: arbProfit,
 		ThresholdKey: thresholdKeyMaxCost, ThresholdValue: decimal.NewFromFloat(maxCost).Round(8),
 		BookUpdatedAt: &now, SnapshotAt: now, SnapshotAtMs: snapMs,
 	}
@@ -339,4 +345,10 @@ func saveBacktestGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit 
 			notification.SendErrorLog(runCtx, "backtest-OrderCreateFailed", zap.Error(err))
 		}
 	}
+}
+
+// ArbQtyProfitFromSnaps 各腿卖一深度最小值及 arb_qty * profit_space（与 leg_*_best_ask 同源快照）。
+func ArbQtyProfitFromSnaps(profitSpace float64, legs ...watchgroup.LegPersistSnap) (decimal.Decimal, decimal.Decimal) {
+	qty := watchgroup.MinLegTopAskQty(legs...)
+	return decimal.NewFromFloat(qty).Round(8), decimal.NewFromFloat(qty * profitSpace).Round(8)
 }

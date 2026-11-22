@@ -24,6 +24,7 @@ func main() {
 		{"backtest_opp_uk", ensureBacktestOppUniqueKey},
 		{"arb_opp_leg_info", ensureArbOppLegInfo},
 		{"arb_opp_leg_slots", ensureArbOppLegSlots},
+		{"arb_opp_qty_profit", ensureArbOppQtyProfit},
 		{"bot stat_collect", ensureBotStatCollect},
 		{"data_task.ingest_source", ensureDataTaskIngestSource},
 	}
@@ -221,6 +222,25 @@ func ensureArbOppLegInfo(db *gorm.DB) error {
 		}
 		if hasColumn(db, table, "leg3_market_outcome_id") {
 			_ = db.Exec(`ALTER TABLE ` + "`" + table + "`" + ` DROP COLUMN leg3_market_outcome_id`).Error
+		}
+	}
+	return nil
+}
+
+func ensureArbOppQtyProfit(db *gorm.DB) error {
+	tables := []string{"arb_binary_opportunity", "backtest_arb_binary_opportunity"}
+	for _, table := range tables {
+		if !hasTable(db, table) {
+			continue
+		}
+		if hasColumn(db, table, "arb_qty") {
+			continue
+		}
+		q := `ALTER TABLE ` + "`" + table + "`" + `
+  ADD COLUMN arb_qty decimal(20,8) NOT NULL DEFAULT 0 COMMENT '各腿卖一挂单量最小值（可套利份数上限）' AFTER profit_space,
+  ADD COLUMN arb_profit decimal(20,8) NOT NULL DEFAULT 0 COMMENT '套利金额 arb_qty * profit_space' AFTER arb_qty`
+		if err := db.Exec(q).Error; err != nil {
+			return err
 		}
 	}
 	return nil

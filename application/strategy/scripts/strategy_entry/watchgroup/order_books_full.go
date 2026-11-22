@@ -35,6 +35,25 @@ type LegPersistSnap struct {
 	OK         bool
 }
 
+// MinLegTopAskQty 各腿卖一挂单量的最小值（套利可成交份数上限；无有效深度则 0）。
+func MinLegTopAskQty(legs ...LegPersistSnap) float64 {
+	var min float64
+	var have bool
+	for _, leg := range legs {
+		if !leg.OK || leg.TopSz <= 0 {
+			continue
+		}
+		if !have || leg.TopSz < min {
+			min = leg.TopSz
+			have = true
+		}
+	}
+	if !have {
+		return 0
+	}
+	return min
+}
+
 // LegSnapshot 单腿盘口快照（JSON + 卖一价同一次读取）。
 func (w *Watch) LegSnapshot(outcomeIndex int, buyYes bool) LegPersistSnap {
 	if w == nil {

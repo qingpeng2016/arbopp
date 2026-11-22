@@ -135,6 +135,8 @@ func buildOppBacktest(d persistDeps, mapKey string, hit GrabHit) *persistententi
 	leg2Ask := decimal.NewFromFloat(asks[1]).Round(8)
 	leg3Ask := decimal.NewFromFloat(asks[2]).Round(8)
 	perShare := triplePerShareFromSnap(hit, pick)
+	profitSpace := profitBase - perShare
+	arbQty, arbProfit := yesno.ArbQtyProfitFromSnaps(profitSpace, hit.Legs[0], hit.Legs[1], hit.Legs[2])
 	mapKeyPtr := mapKey
 	return &persistententity.BacktestArbBinaryOpportunity{
 		BacktestTaskID: d.task,
@@ -145,7 +147,8 @@ func buildOppBacktest(d persistDeps, mapKey string, hit GrabHit) *persistententi
 		Leg2Info: leg2Info, Leg2OrderBooks: leg2Books, Leg2BestAsk: &leg2Ask,
 		Leg3Info: leg3Info, Leg3OrderBooks: leg3Books, Leg3BestAsk: &leg3Ask,
 		TotalCost: decimal.NewFromFloat(perShare).Round(8),
-		ProfitSpace: decimal.NewFromFloat(profitBase - perShare).Round(8),
+		ProfitSpace: decimal.NewFromFloat(profitSpace).Round(8),
+		ArbQty: arbQty, ArbProfit: arbProfit,
 		ThresholdKey: thKey, ThresholdValue: decimal.NewFromFloat(thVal).Round(8),
 		BookUpdatedAt: &now, SnapshotAt: now, SnapshotAtMs: snapMs,
 	}
@@ -183,6 +186,7 @@ func saveLive(ctx context.Context, d persistDeps, mapKey string, hit GrabHit) {
 		Leg2Info: bt.Leg2Info, Leg2OrderBooks: bt.Leg2OrderBooks, Leg2BestAsk: bt.Leg2BestAsk,
 		Leg3Info: bt.Leg3Info, Leg3OrderBooks: bt.Leg3OrderBooks, Leg3BestAsk: bt.Leg3BestAsk,
 		TotalCost: bt.TotalCost, ProfitSpace: bt.ProfitSpace,
+		ArbQty: bt.ArbQty, ArbProfit: bt.ArbProfit,
 		ThresholdKey: bt.ThresholdKey, ThresholdValue: bt.ThresholdValue,
 		BookUpdatedAt: bt.BookUpdatedAt, SnapshotAt: bt.SnapshotAt, SnapshotAtMs: bt.SnapshotAtMs,
 	}

@@ -8,7 +8,8 @@ import (
 
 // ArbBinaryOpportunity 跨平台套利命中（二元或 1X2 三路；腿槽位见 opp_kind）。
 //
-// 落库自洽：leg_*_order_books 与 leg_*_best_ask 为同一 LegSnapshot；total_cost = 各腿卖一 + 手续费之和。
+// 落库自洽：leg_*_order_books 与 leg_*_best_ask 为同一 LegSnapshot；total_cost = 各腿卖一 + 手续费之和；
+// arb_qty = 各腿卖一挂单量最小值；arb_profit = arb_qty * profit_space。
 //
 //	opp_kind              leg_1      leg_2      leg_3
 //	BINARY_YES_NO         YES 腿     NO 腿      {}
@@ -33,6 +34,8 @@ type ArbBinaryOpportunity struct {
 	Leg3BestAsk         *decimal.Decimal `gorm:"column:leg_3_best_ask;type:decimal(20,8)"`
 	TotalCost      decimal.Decimal  `gorm:"column:total_cost;type:decimal(20,8);not null"`
 	ProfitSpace    decimal.Decimal  `gorm:"column:profit_space;type:decimal(20,8);not null"`
+	ArbQty         decimal.Decimal  `gorm:"column:arb_qty;type:decimal(20,8);not null;default:0"`
+	ArbProfit      decimal.Decimal  `gorm:"column:arb_profit;type:decimal(20,8);not null;default:0"`
 	ThresholdKey   string           `gorm:"column:threshold_key;type:varchar(64);not null"`
 	ThresholdValue decimal.Decimal  `gorm:"column:threshold_value;type:decimal(20,8);not null"`
 	BookUpdatedAt  *time.Time       `gorm:"column:book_updated_at;type:datetime"`
