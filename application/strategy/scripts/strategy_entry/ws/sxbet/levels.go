@@ -12,22 +12,25 @@ import (
 
 const oddsDenom = 1e20
 
-// LevelsToYesBook 将 SX orderbook_v3（maker frame）合成 YES 视角簿。
-// percentageOdds 为 maker 隐含概率；taker 买 outcomeOne（YES）价 = 1 - maker；outcomeTwo 一侧对应 YES 买盘价 = maker。
-// 见 https://docs.sx.bet/api-reference/channel-orderbook-v3
+// LevelsToYesBook 将 SX orderbook_v3（maker frame）合成 YES= outcomeOne 视角的档位簿。
+//
+// 挂单挂在「自己押的结果」一侧；taker 买 outcomeOne 吃 outcomeTwo，卖 YES/买 outcomeTwo 吃 outcomeOne。
+// taker 价 = 1 − makerImplied；size 为 taker 可成交 stake（非 maker resting size）。
+// https://docs.sx.bet/developers/order-book
 func LevelsToYesBook(one, two []httpentity.SxbetBookLevel) (bids, asks []book.Level) {
 	tick := 0.01
-	bids = book.SortDesc(book.OnTick(levelsToYesBids(two), tick))
-	asks = book.SortAsc(book.OnTick(levelsToYesAsks(one), tick))
+	bids = book.SortDesc(book.OnTick(levelsToYesBids(one), tick))
+	asks = book.SortAsc(book.OnTick(levelsToYesAsks(two), tick))
 	return bids, asks
 }
 
-func levelsToYesAsks(one []httpentity.SxbetBookLevel) []book.Level {
-	out := make([]book.Level, 0, len(one))
-	for _, lv := range one {
+// levelsToYesAsks 买 YES：消费 outcomeTwo 挂单。
+func levelsToYesAsks(two []httpentity.SxbetBookLevel) []book.Level {
+	out := make([]book.Level, 0, len(two))
+	for _, lv := range two {
 		m := makerImplied(lv.PercentageOdds)
 		p := 1 - m
-		sz := levelSize(lv.Size)
+		sz := takerStake(lv.Size, lv.PercentageOdds)
 		if !book.ValidPrice(p) || sz <= 0 {
 			continue
 		}
@@ -36,17 +39,31 @@ func levelsToYesAsks(one []httpentity.SxbetBookLevel) []book.Level {
 	return out
 }
 
-func levelsToYesBids(two []httpentity.SxbetBookLevel) []book.Level {
-	out := make([]book.Level, 0, len(two))
-	for _, lv := range two {
+// levelsToYesBids 卖 YES：消费 outcomeOne 挂单；YES 买价 = maker 隐含概率。
+func levelsToYesBids(one []httpentity.SxbetBookLevel) []book.Level {
+	out := make([]book.Level, 0, len(one))
+	for _, lv := range one {
 		p := makerImplied(lv.PercentageOdds)
-		sz := levelSize(lv.Size)
+		sz := takerStake(lv.Size, lv.PercentageOdds)
 		if !book.ValidPrice(p) || sz <= 0 {
 			continue
 		}
 		out = append(out, book.Level{Price: p, Size: sz})
 	}
 	return out
+}
+
+// takerStake size × (10^20 − percentageOdds) / percentageOdds。
+func takerStake(size, percentageOdds string) float64 {
+	ms := levelSize(size)
+	if ms <= 0 {
+		return 0
+	}
+	m := makerImplied(percentageOdds)
+	if math.IsNaN(m) || m <= 0 {
+		return 0
+	}
+	return ms * (1 - m) / m
 }
 
 func makerImplied(percentageOdds string) float64 {

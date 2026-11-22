@@ -202,17 +202,17 @@ func sxbetSnapshot(hc *http.Client, hash string) (asks, bids []lvl, err error) {
 		return nil, nil, err
 	}
 	const denom = 1e20
-	for _, lv := range ob.Data.OutcomeOne {
+	for _, lv := range ob.Data.OutcomeTwo {
 		m := parseSXOdds(lv["percentageOdds"], denom)
 		p := 1 - m
-		s := parseSXSize(lv["size"])
+		s := sxTakerStake(parseSXSize(lv["size"]), m)
 		if validPrice(p) && s > 0 {
 			asks = append(asks, lvl{p, s})
 		}
 	}
-	for _, lv := range ob.Data.OutcomeTwo {
+	for _, lv := range ob.Data.OutcomeOne {
 		p := parseSXOdds(lv["percentageOdds"], denom)
-		s := parseSXSize(lv["size"])
+		s := sxTakerStake(parseSXSize(lv["size"]), p)
 		if validPrice(p) && s > 0 {
 			bids = append(bids, lvl{p, s})
 		}
@@ -256,6 +256,13 @@ func parseSXOdds(s string, denom float64) float64 {
 func parseSXSize(s string) float64 {
 	f, _ := strconv.ParseFloat(strings.TrimSpace(s), 64)
 	return f / 1e6
+}
+
+func sxTakerStake(makerSize, makerProb float64) float64 {
+	if makerSize <= 0 || makerProb <= 0 || math.IsNaN(makerProb) {
+		return 0
+	}
+	return makerSize * (1 - makerProb) / makerProb
 }
 
 func validPrice(p float64) bool { return p > 0 && p < 1 && !math.IsNaN(p) }
