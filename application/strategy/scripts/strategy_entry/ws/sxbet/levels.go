@@ -12,7 +12,9 @@ import (
 
 const oddsDenom = 1e20
 
-// LevelsToYesBook outcomeOne → YES 卖盘，outcomeTwo → YES 买盘（与 Predict 单簿模型一致）。
+// LevelsToYesBook 将 SX orderbook_v3（maker frame）合成 YES 视角簿。
+// percentageOdds 为 maker 隐含概率；taker 买 outcomeOne（YES）价 = 1 - maker；outcomeTwo 一侧对应 YES 买盘价 = maker。
+// 见 https://docs.sx.bet/api-reference/channel-orderbook-v3
 func LevelsToYesBook(one, two []httpentity.SxbetBookLevel) (bids, asks []book.Level) {
 	tick := 0.01
 	bids = book.SortDesc(book.OnTick(levelsToYesBids(two), tick))
@@ -23,7 +25,8 @@ func LevelsToYesBook(one, two []httpentity.SxbetBookLevel) (bids, asks []book.Le
 func levelsToYesAsks(one []httpentity.SxbetBookLevel) []book.Level {
 	out := make([]book.Level, 0, len(one))
 	for _, lv := range one {
-		p := makerImplied(lv.PercentageOdds)
+		m := makerImplied(lv.PercentageOdds)
+		p := 1 - m
 		sz := levelSize(lv.Size)
 		if !book.ValidPrice(p) || sz <= 0 {
 			continue
@@ -36,7 +39,7 @@ func levelsToYesAsks(one []httpentity.SxbetBookLevel) []book.Level {
 func levelsToYesBids(two []httpentity.SxbetBookLevel) []book.Level {
 	out := make([]book.Level, 0, len(two))
 	for _, lv := range two {
-		p := 1 - makerImplied(lv.PercentageOdds)
+		p := makerImplied(lv.PercentageOdds)
 		sz := levelSize(lv.Size)
 		if !book.ValidPrice(p) || sz <= 0 {
 			continue

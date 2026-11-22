@@ -203,15 +203,15 @@ func sxbetSnapshot(hc *http.Client, hash string) (asks, bids []lvl, err error) {
 	}
 	const denom = 1e20
 	for _, lv := range ob.Data.OutcomeOne {
-		p := parseSXOdds(lv["percentageOdds"], denom)
+		m := parseSXOdds(lv["percentageOdds"], denom)
+		p := 1 - m
 		s := parseSXSize(lv["size"])
 		if validPrice(p) && s > 0 {
 			asks = append(asks, lvl{p, s})
 		}
 	}
 	for _, lv := range ob.Data.OutcomeTwo {
-		implied := parseSXOdds(lv["percentageOdds"], denom)
-		p := 1 - implied
+		p := parseSXOdds(lv["percentageOdds"], denom)
 		s := parseSXSize(lv["size"])
 		if validPrice(p) && s > 0 {
 			bids = append(bids, lvl{p, s})
