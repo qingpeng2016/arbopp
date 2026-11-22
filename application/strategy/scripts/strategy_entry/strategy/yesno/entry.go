@@ -2,6 +2,7 @@ package yesno
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/watchgroup"
@@ -10,6 +11,7 @@ import (
 )
 
 // Runner 跨所二元 YES+NO 策略（由 watch 在盘口更新时调用）。
+// 仅 moneyline：同一命题 YES+NO；让分/大小球等不入组（与 onextwo 一致）。
 // 每个 Watch 对应一个 map_key，orderMu 即按场次互斥，防止双所 WS 同时触发重复下单。
 type Runner struct {
 	w             *watchgroup.Watch
@@ -30,7 +32,7 @@ func buildOutcomeGroups(w *watchgroup.Watch) map[string]OutcomeGroup {
 	n := w.OutcomeCount()
 	for i := 0; i < n; i++ {
 		oc := w.OutcomeAt(i)
-		if oc == nil {
+		if oc == nil || !outcomeIsMoneyline(oc) {
 			continue
 		}
 		key := w.OutcomeGroupKeyAt(i)
@@ -63,11 +65,25 @@ func buildOutcomeGroups(w *watchgroup.Watch) map[string]OutcomeGroup {
 }
 
 func (r *Runner) OnBookUpdate(outcomeID uint) {
+	idx, ok := r.outcomeIndex(outcomeID)
+	if !ok {
+		return
+	}
+	if oc := r.w.OutcomeAt(idx); oc == nil || !outcomeIsMoneyline(oc) {
+		return
+	}
 	if r.w != nil && r.w.Ops.BacktestMode {
 		r.grabOneBacktest(outcomeID)
 		return
 	}
 	r.grabOne(outcomeID)
+}
+
+func outcomeIsMoneyline(oc *persistententity.MarketOutcome) bool {
+	if oc == nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(oc.OutcomeType), "moneyline")
 }
 
 func (r *Runner) outcomeIndex(outcomeID uint) (int, bool) {
