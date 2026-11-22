@@ -10,14 +10,17 @@ import (
 )
 
 type wsRow struct {
-	MapKey                  string `json:"map_key"`
-	Platform                string `json:"platform"`
-	PlatformMarketOutcomeID string `json:"platform_market_outcome_id"`
-	TokenID                 string `json:"token_id"`
-	Asks                    string `json:"order_book_asks"`
-	Bids                    string `json:"order_book_bids"`
-	SnapshotAtMs            int64  `json:"snapshot_at_ms"`
-	ID                      int64  `json:"id"`
+	MapKey                  string `json:"map_key" gorm:"column:map_key"`
+	Platform                string `json:"platform" gorm:"column:platform"`
+	PlatformMarketID        string `json:"platform_market_id" gorm:"column:platform_market_id"`
+	PlatformMarketOutcomeID string `json:"platform_market_outcome_id" gorm:"column:platform_market_outcome_id"`
+	OutcomeName             string `json:"outcome_name" gorm:"column:outcome_name"`
+	TokenName               string `json:"token_name" gorm:"column:token_name"`
+	TokenID                 string `json:"token_id" gorm:"column:token_id"`
+	Asks                    string `json:"order_book_asks" gorm:"column:order_book_asks"`
+	Bids                    string `json:"order_book_bids" gorm:"column:order_book_bids"`
+	SnapshotAtMs            int64  `json:"snapshot_at_ms" gorm:"column:snapshot_at_ms"`
+	ID                      int64  `json:"id" gorm:"column:id"`
 }
 
 func loadMapKeys(path string) ([]string, error) {

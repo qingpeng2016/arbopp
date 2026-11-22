@@ -47,12 +47,13 @@ func writeOutcomeCSV(path, mapKey string, rows []outcomeRec) error {
 	w := csv.NewWriter(f)
 	defer w.Flush()
 	_ = w.Write([]string{
-		"场次对齐键", "平台", "数据库id", "平台盘口id", "赛果名称", "赛果类型",
+		"场次对齐键", "平台代码", "平台", "数据库id", "平台盘口id", "赛果名称", "赛果类型",
 		"yes_token", "no_token", "slug", "联赛",
 	})
 	for _, o := range rows {
 		_ = w.Write([]string{
-			mapKey, o.Platform, fmt.Sprint(o.ID), o.PlatformMarketOutcomeID,
+			mapKey, strings.ToUpper(strings.TrimSpace(o.Platform)), platformLabel(o.Platform),
+			fmt.Sprint(o.ID), o.PlatformMarketOutcomeID,
 			o.OutcomeName, o.OutcomeType, o.YesTokenID, o.NoTokenID, o.Slug, o.Competition,
 		})
 	}
@@ -68,12 +69,23 @@ func writeWSCSV(path, mapKey string, rows []wsRow) error {
 	w := csv.NewWriter(f)
 	defer w.Flush()
 	_ = w.Write([]string{
-		"场次对齐键", "平台", "平台盘口id", "token_id", "快照时间毫秒", "行id", "卖盘json", "买盘json",
+		"场次对齐键", "平台代码", "平台", "平台场次id", "平台盘口id", "盘口名称", "token名称",
+		"token_id", "快照时间毫秒", "行id", "卖盘json", "买盘json",
 	})
 	for _, r := range rows {
 		_ = w.Write([]string{
-			mapKey, r.Platform, r.PlatformMarketOutcomeID, r.TokenID,
-			fmt.Sprint(r.SnapshotAtMs), fmt.Sprint(r.ID), r.Asks, r.Bids,
+			mapKey,
+			strings.ToUpper(strings.TrimSpace(r.Platform)),
+			platformLabel(r.Platform),
+			r.PlatformMarketID,
+			r.PlatformMarketOutcomeID,
+			r.OutcomeName,
+			r.TokenName,
+			r.TokenID,
+			fmt.Sprint(r.SnapshotAtMs),
+			fmt.Sprint(r.ID),
+			r.Asks,
+			r.Bids,
 		})
 	}
 	return w.Error()
@@ -114,6 +126,19 @@ func platformLabel(platform string) string {
 		}
 		return platform
 	}
+}
+
+func formatPlatformCountsInline(m map[string]int) string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s %d", k, m[k]))
+	}
+	return strings.Join(parts, "；")
 }
 
 func formatPlatformCounts(m map[string]int) []string {

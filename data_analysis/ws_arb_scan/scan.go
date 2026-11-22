@@ -20,6 +20,8 @@ type yesnoHit struct {
 	Per         float64 `json:"per"`
 	Qty         float64 `json:"qty"`
 	SnapshotMs  int64   `json:"snapshot_at_ms,omitempty"`
+	// TriggerWSID 仅 replay：本条命中由该 WS 行 id 触发，SnapshotMs 为该行毫秒（对侧多为更早缓存）。
+	TriggerWSID int64 `json:"trigger_ws_id,omitempty"`
 }
 
 type tripleHit struct {
@@ -174,6 +176,9 @@ func scanFixture(mapKey string, outcomes []outcomeRec, latestWS, histWS []wsRow)
 		hk := strings.ToUpper(row.Platform) + "|" + strings.TrimSpace(row.PlatformMarketOutcomeID)
 		mo, ok := byHash[hk]
 		if !ok {
+			return
+		}
+		if !strings.EqualFold(strings.TrimSpace(mo.OutcomeType), "moneyline") {
 			return
 		}
 		if !useWSRowForTopBook(row.Platform, row.TokenID, mo) {
@@ -344,6 +349,9 @@ func buildPlainFromWSRows(rows []wsRow, byHash map[string]outcomeRec) map[string
 		if !ok {
 			continue
 		}
+		if !strings.EqualFold(strings.TrimSpace(mo.OutcomeType), "moneyline") {
+			continue
+		}
 		if !useWSRowForTopBook(row.Platform, row.TokenID, mo) {
 			continue
 		}
@@ -419,6 +427,9 @@ func scanYesNoReplay(histWS []wsRow, byHash map[string]outcomeRec, fees map[stri
 		if !ok {
 			continue
 		}
+		if !strings.EqualFold(strings.TrimSpace(mo.OutcomeType), "moneyline") {
+			continue
+		}
 		if !useWSRowForTopBook(row.Platform, row.TokenID, mo) {
 			continue
 		}
@@ -440,6 +451,7 @@ func scanYesNoReplay(histWS []wsRow, byHash map[string]outcomeRec, fees map[stri
 		}
 		for _, h := range scanYesNo(plain, fees, lim, "replay") {
 			h.SnapshotMs = row.SnapshotAtMs
+			h.TriggerWSID = row.ID
 			k := dedupeKey{h.GroupKey, h.YesPlatform, h.NoPlatform}
 			if prev, ok := best[k]; !ok || h.Per < prev.Per {
 				best[k] = h

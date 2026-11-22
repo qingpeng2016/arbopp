@@ -14,6 +14,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+
+	"github.com/gph-tech/fgmm-strategy-bitfinex/conf"
 )
 
 func main() {
@@ -23,7 +25,21 @@ func main() {
 	wsLimit := flag.Int("ws_limit", 0, "每场 WS 行数上限；0=该 map_key 全部")
 	out := flag.String("out", "", "附加 jsonl 路径；中文报告与 csv 写入 "+dataExportDir)
 	diag := flag.Bool("diag", false, "打印 moneyline 分组与最新盘口是否 ready")
+	verifyMs := flag.Int64("verify_ms", 0, "仅核对该毫秒独赢盘口，须配 -map_key")
 	flag.Parse()
+
+	if *verifyMs > 0 {
+		if *mapKey == "" {
+			fmt.Fprintln(os.Stderr, "verify_ms 需要 -map_key")
+			os.Exit(1)
+		}
+		_ = conf.NewCfg() //nolint - side effect load cfg
+		if err := checkMoneylineAtMs(*mapKey, *verifyMs); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	outPath := *out
 	if outPath == "" {
