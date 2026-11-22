@@ -2,6 +2,7 @@ package onextwo
 
 import (
 	"context"
+	"time"
 )
 
 // GrabHit 1X2 命中。
@@ -12,23 +13,35 @@ type GrabHit struct {
 }
 
 func (r *Runner) grabOne(outcomeID uint) {
-	_ = outcomeID
+	r.grabOneAttempt(outcomeID, false)
+}
+
+func (r *Runner) grabOneAttempt(_ uint, retried bool) {
 	all := r.allTriplePicks()
 	pick, ok := bestTripleFrom(all)
 	if !ok {
 		return
 	}
-	for i := range pick.Legs {
-		if !r.canTrade(pick.Legs[i].Platform) {
-			return
+	const dryRun = true
+	if !dryRun {
+		for i := range pick.Legs {
+			if !r.canTrade(pick.Legs[i].Platform) {
+				return
+			}
 		}
 	}
 	if !r.orderMu.TryLock() {
+		if !retried {
+			go func() {
+				time.Sleep(25 * time.Millisecond)
+				r.grabOneAttempt(0, true)
+			}()
+		}
 		return
 	}
 	defer r.orderMu.Unlock()
 	lim := r.limits()
-	bestHit := GrabHit{Pick: pick, Limits: lim, DryRun: true}
+	bestHit := GrabHit{Pick: pick, Limits: lim, DryRun: dryRun}
 	ctx := r.w.Context()
 	mapKey := r.w.MapKey
 	deps := r.persistDeps()

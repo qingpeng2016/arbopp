@@ -178,10 +178,13 @@ func newWatch(ctx context.Context, e *Entry, g group) *watch {
 	return w
 }
 
+// groupRescanInterval 兜底：无 WS 触发时仍按 OutcomeGroup 周期试算（补漏 SX/Poly NO 等边）。
+const groupRescanInterval = 5 * time.Second
+
 // run 同时盯多平台行情，这组被换掉或进程停时一起退出。
 func (w *watch) run() {
 	var wg sync.WaitGroup
-	wg.Add(4)
+	wg.Add(5)
 	go func() {
 		defer wg.Done()
 		w.servePoly()
@@ -198,8 +201,44 @@ func (w *watch) run() {
 		defer wg.Done()
 		w.serveSxbet()
 	}()
+	go func() {
+		defer wg.Done()
+		w.serveGroupRescan()
+	}()
 	<-w.Ctx.Done()
 	wg.Wait()
+}
+
+func (w *watch) serveGroupRescan() {
+	ticker := time.NewTicker(groupRescanInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-w.Ctx.Done():
+			return
+		case <-ticker.C:
+			w.rescanAllOutcomeGroups()
+		}
+	}
+}
+
+func (w *watch) rescanAllOutcomeGroups() {
+	if w.yesno == nil && w.onextwo == nil {
+		return
+	}
+	seenKey := map[string]struct{}{}
+	start := time.Now()
+	for i := range w.Outcomes {
+		key := w.OutcomeGroupKeyAt(i)
+		if key == "" {
+			continue
+		}
+		if _, dup := seenKey[key]; dup {
+			continue
+		}
+		seenKey[key] = struct{}{}
+		w.dispatchBookUpdate(w.Outcomes[i].ID, start)
+	}
 }
 
 // servePoly 有 Polymarket token 时维持这条连接。
@@ -414,7 +453,6 @@ func (w *watch) write(e event) {
 	if e.Gen != w.currentGen(e.Platform) {
 		return
 	}
-	var skipGrab bool
 	switch e.Kind {
 	case "pause":
 		// 连接换代或断开，这家盘口先标成不可交易。
@@ -426,12 +464,16 @@ func (w *watch) write(e event) {
 		if !w.Books.ApplyPolyBook(e.ID, e.Bids, e.Asks, e.Tick, e.MinSize, e.TS) {
 			return
 		}
-		w.syncPolyComplementNo(e.ID, e.TS)
+		if w.isPolyYesToken(e.ID) {
+			w.syncPolyComplementNo(e.ID, e.TS)
+		}
 	case "poly_price_change":
 		// 一条 price_change 里的多档一起写入。
 		w.Books.ApplyPolyLevels(e.Changes, e.TS)
-		for yesTok := range w.polyYesTokensTouched(e.Changes) {
-			w.syncPolyComplementNo(yesTok, e.TS)
+		for tok := range w.polyTokensTouched(e.Changes) {
+			if w.isPolyYesToken(tok) {
+				w.syncPolyComplementNo(tok, e.TS)
+			}
 		}
 	case "kalshi_all_book":
 		// 订阅成功后的全量。seq 作为后续增量的起点。
@@ -460,9 +502,6 @@ func (w *watch) write(e event) {
 		if !ok {
 			return
 		}
-		if strings.EqualFold(strings.TrimSpace(e.Side), "no") {
-			skipGrab = true
-		}
 	default:
 		return
 	}
@@ -470,36 +509,49 @@ func (w *watch) write(e event) {
 
 	w.enqueueBookPersistWS(e)
 
-	var outcomeID uint
-	var ok bool
-	if skipGrab {
-		return
-	}
-	if e.Kind == "poly_price_change" {
-		for _, ch := range e.Changes {
-			if !w.isPolyYesToken(ch.ID) {
-				continue
-			}
-			outcomeID, ok = w.outcomeIDOf(e.Platform, ch.ID)
-			if ok {
-				break
-			}
-		}
-	} else {
-		outcomeID, ok = w.outcomeIDOf(e.Platform, e.ID)
-		if e.Kind == "poly_all_book" && ok && !w.isPolyYesToken(e.ID) {
-			ok = false
-		}
-	}
-	if !ok {
+	outcomeIDs := w.outcomeIDsForGrab(e)
+	if len(outcomeIDs) == 0 {
 		return
 	}
 
-	// 调用策略
+	start := recvAtOrNow(e.RecvAt)
+	for _, outcomeID := range outcomeIDs {
+		oid := outcomeID
+		go w.dispatchBookUpdate(oid, start)
+	}
+}
+
+// outcomeIDsForGrab 从本条 WS 事件解析需试算的 outcome（YES/NO token、SX hash 等均触发）。
+func (w *watch) outcomeIDsForGrab(e event) []uint {
+	var ids []uint
+	seen := map[uint]struct{}{}
+	add := func(id uint, ok bool) {
+		if !ok || id == 0 {
+			return
+		}
+		if _, dup := seen[id]; dup {
+			return
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	switch e.Kind {
+	case "poly_price_change":
+		for _, ch := range e.Changes {
+			id, ok := w.outcomeIDOf(e.Platform, ch.ID)
+			add(id, ok)
+		}
+	default:
+		id, ok := w.outcomeIDOf(e.Platform, e.ID)
+		add(id, ok)
+	}
+	return ids
+}
+
+func (w *watch) dispatchBookUpdate(outcomeID uint, start time.Time) {
 	if w.yesno == nil && w.onextwo == nil {
 		return
 	}
-	start := recvAtOrNow(e.RecvAt)
 	if w.yesno != nil {
 		w.yesno.OnBookUpdate(outcomeID)
 		if w.entry != nil {
@@ -563,6 +615,21 @@ func (w *watch) polyYesTokensTouched(changes []book.PolyChange) map[string]struc
 			continue
 		}
 		out[strings.TrimSpace(ch.ID)] = struct{}{}
+	}
+	return out
+}
+
+func (w *watch) polyTokensTouched(changes []book.PolyChange) map[string]struct{} {
+	out := make(map[string]struct{}, len(changes))
+	for _, ch := range changes {
+		tok := strings.TrimSpace(ch.ID)
+		if tok == "" {
+			continue
+		}
+		if _, ok := w.ByToken[tok]; !ok {
+			continue
+		}
+		out[tok] = struct{}{}
 	}
 	return out
 }
@@ -1114,6 +1181,8 @@ func (w *watch) outcomeIDOf(platform, id string) (uint, bool) {
 		outcomeIndex, ok = w.ByTicker[id]
 	case appcommon.PlatformPredict:
 		outcomeIndex, ok = w.ByPredict[id]
+	case appcommon.PlatformSxbet:
+		outcomeIndex, ok = w.BySxbet[id]
 	default:
 		return 0, false
 	}

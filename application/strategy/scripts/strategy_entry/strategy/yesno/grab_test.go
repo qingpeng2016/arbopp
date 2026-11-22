@@ -11,7 +11,7 @@ import (
 	persistententity "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/entity"
 )
 
-func TestGrabOneSkipsWhenCannotTrade(t *testing.T) {
+func TestGrabOneDryRunIgnoresCanTrade(t *testing.T) {
 	yesTok, noTok := "y", "n"
 	kTicker := "k-tick"
 	store := book.NewStore()

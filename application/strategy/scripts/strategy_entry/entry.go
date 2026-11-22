@@ -137,7 +137,7 @@ func (e *Entry) sxbetAPIKey() string {
 	return strings.TrimSpace(e.sxbet.APIKey())
 }
 
-// canTrade 这家交易所有可用账号才允许发单。
+// canTrade 这家交易所有可用账号才允许发单（发现/DryRun 不调用；仅实盘 Fire 前校验）。
 func (e *Entry) canTrade(platform string) bool {
 	c := e.credsNow()
 	if strings.EqualFold(platform, appcommon.PlatformKalshi) {
@@ -145,6 +145,9 @@ func (e *Entry) canTrade(platform string) bool {
 	}
 	if strings.EqualFold(platform, appcommon.PlatformPredict) {
 		return c.predictOK && e.predict != nil
+	}
+	if strings.EqualFold(platform, appcommon.PlatformSxbet) {
+		return e.sxbet != nil && e.sxbetAPIKey() != ""
 	}
 	return c.polyOK && e.poly != nil
 }

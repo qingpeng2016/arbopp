@@ -47,6 +47,7 @@ const (
 	defaultPolySports            = 0.05
 	defaultKalshiSports          = 0.07
 	defaultPredictSports         = 0.02
+	defaultSxbetSports           = 0.02
 	configKeyPreEventScanMinutes = "pre_event_scan_minutes"
 	defaultPreEventScanMinutes   = 30
 	configKeyEndEventScanMinutes = "end_event_scan_minutes"
@@ -75,6 +76,7 @@ func defaultParams() Params {
 			feeKey(appcommon.PlatformPolymarket, "Sports", ""): defaultPolySports,
 			feeKey(appcommon.PlatformKalshi, "Sports", ""):     defaultKalshiSports,
 			feeKey(appcommon.PlatformPredict, "Sports", ""):    defaultPredictSports,
+			feeKey(appcommon.PlatformSxbet, "Sports", ""):      defaultSxbetSports,
 		},
 	}
 }
@@ -94,6 +96,9 @@ func (p Params) Fee(platform, category, sub string) float64 {
 	}
 	if strings.EqualFold(platform, appcommon.PlatformKalshi) {
 		return defaultKalshiSports
+	}
+	if strings.EqualFold(platform, appcommon.PlatformSxbet) {
+		return defaultSxbetSports
 	}
 	if strings.EqualFold(category, "Sports") || strings.TrimSpace(category) == "" {
 		return defaultPolySports
@@ -475,6 +480,10 @@ func loadWatchGroups(ctx context.Context, d WatchGroupDeps, alertBadKeys bool) (
 		k := strings.TrimSpace(*fx.MapKey)
 		if _, ok := runnableKeys[k]; !ok {
 			continue
+		}
+		if oc.MapKey == nil || strings.TrimSpace(*oc.MapKey) == "" {
+			mk := k
+			oc.MapKey = &mk
 		}
 		g := byKey[k]
 		if g == nil {

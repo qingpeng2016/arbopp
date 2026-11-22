@@ -50,6 +50,25 @@ func truncateRunes(s string, max int) string {
 	return s[:max]
 }
 
+// BuildOutcomeGroupKeyFromMapKey 已核验 map_key + 归一化赛果（与 strategy_entry 跨所分组一致）。
+func BuildOutcomeGroupKeyFromMapKey(mapKey, outcomeNorm string) string {
+	mapKey = strings.TrimSpace(mapKey)
+	outcomeNorm = strings.TrimSpace(outcomeNorm)
+	if mapKey == "" || outcomeNorm == "" {
+		return ""
+	}
+	key := mapKey + "|" + outcomeNorm
+	if len(key) <= 192 {
+		return key
+	}
+	prefix := mapKey + "|"
+	maxOut := 192 - len(prefix)
+	if maxOut < 8 {
+		return truncateRunes(key, 192)
+	}
+	return prefix + truncateRunes(outcomeNorm, maxOut)
+}
+
 type fixtureGroupKey struct {
 	competition   string
 	competitionEn string

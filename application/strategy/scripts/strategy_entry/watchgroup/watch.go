@@ -64,7 +64,7 @@ func (w *Watch) OutcomeGroupKeyAt(outcomeIndex int) string {
 	if outcomeIndex < 0 || outcomeIndex >= len(w.Outcomes) {
 		return ""
 	}
-	return marketmap.OutcomeGroupKey(&w.Outcomes[outcomeIndex])
+	return marketmap.OutcomeGroupKeyForWatch(&w.Outcomes[outcomeIndex], w.MapKey)
 }
 
 func (w *Watch) OutcomeIndex(outcomeID uint) (int, bool) {

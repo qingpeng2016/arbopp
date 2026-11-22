@@ -183,11 +183,35 @@ func FilterOutcomesUnderVerifiedFixtures(
 	return out
 }
 
-// OutcomeGroupKey 跨平台同一赛果分组键（四段：联赛+场次+归一化赛果）。
+// OutcomeGroupKey 跨平台同一赛果分组键（联赛+场次+归一化赛果，或 map_key|norm）。
+// 有 map_key 时用核验场次键，避免 SX 等平台的 canonicalFixture 与 Poly 不一致而无法跨所组队。
 func OutcomeGroupKey(m *persistententity.MarketOutcome) string {
+	if m == nil {
+		return ""
+	}
 	p := parseMarketRow(m, nil)
 	if !p.ParseOK {
 		return ""
 	}
+	if m.MapKey != nil {
+		if k := BuildOutcomeGroupKeyFromMapKey(*m.MapKey, p.OutcomeNorm); k != "" {
+			return k
+		}
+	}
 	return buildMapKey(p.Competition, p.CanonicalFixture, p.OutcomeNorm)
+}
+
+// OutcomeGroupKeyForWatch 与 OutcomeGroupKey 相同；outcome 未写 map_key 时用 watch 场次键兜底。
+func OutcomeGroupKeyForWatch(m *persistententity.MarketOutcome, watchMapKey string) string {
+	if k := OutcomeGroupKey(m); k != "" {
+		return k
+	}
+	if m == nil {
+		return ""
+	}
+	p := parseMarketRow(m, nil)
+	if !p.ParseOK {
+		return ""
+	}
+	return BuildOutcomeGroupKeyFromMapKey(watchMapKey, p.OutcomeNorm)
 }

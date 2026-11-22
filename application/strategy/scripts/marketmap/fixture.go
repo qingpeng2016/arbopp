@@ -421,6 +421,9 @@ func canonicalFixtureID(platformKey string) string {
 	if payload := platformKeyPayload(platformKey, "k:"); payload != "" {
 		return payload
 	}
+	if payload := platformKeyPayload(platformKey, "x:"); payload != "" {
+		return payload
+	}
 	return platformKey
 }
 

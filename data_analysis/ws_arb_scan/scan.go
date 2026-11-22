@@ -153,111 +153,70 @@ func absorbLatestPoly(tr *platTrack, plat, tokenID string, mo outcomeRec, asks, 
 	}
 }
 
-func scanFixture(mapKey string, outcomes []outcomeRec, latestWS, histWS []wsRow) fixtureReport {
-	lim := defaultScanLimits()
-	fees := defaultFees()
-	rep := fixtureReport{MapKey: mapKey, WSSnapshotRows: len(histWS)}
-
-	byHash := map[string]outcomeRec{}
-	gkMoneyline := map[string]bool{}
-	for _, o := range outcomes {
-		hk := strings.ToUpper(o.Platform) + "|" + strings.TrimSpace(o.PlatformMarketOutcomeID)
-		byHash[hk] = o
-		if gk := outcomeGroupKey(o); gk != "" &&
-			strings.EqualFold(strings.TrimSpace(o.OutcomeType), "moneyline") {
-			gkMoneyline[gk] = true
-		}
-	}
-
+func buildLatestPlainFromWS(rows []wsRow, byHash map[string]outcomeRec) map[string]map[string]*legQuote {
 	latest := map[string]map[string]*platTrack{}
-	histMin := map[string]map[string]*legQuote{}
-
-	processWS := func(row wsRow, isLatest bool) {
+	for _, row := range rows {
 		hk := strings.ToUpper(row.Platform) + "|" + strings.TrimSpace(row.PlatformMarketOutcomeID)
 		mo, ok := byHash[hk]
-		if !ok {
-			return
-		}
-		if !strings.EqualFold(strings.TrimSpace(mo.OutcomeType), "moneyline") {
-			return
+		if !ok || !strings.EqualFold(strings.TrimSpace(mo.OutcomeType), "moneyline") {
+			continue
 		}
 		if !useWSRowForTopBook(row.Platform, row.TokenID, mo) {
-			return
+			continue
 		}
 		gk := outcomeGroupKey(mo)
 		if gk == "" {
-			return
+			continue
 		}
 		plat := strings.ToUpper(strings.TrimSpace(row.Platform))
 		if latest[gk] == nil {
 			latest[gk] = map[string]*platTrack{}
 		}
-		if histMin[gk] == nil {
-			histMin[gk] = map[string]*legQuote{}
-		}
 		if latest[gk][plat] == nil {
 			latest[gk][plat] = &platTrack{}
+		}
+		absorbLatestPoly(latest[gk][plat], plat, row.TokenID, mo, row.Asks, row.Bids)
+	}
+	plain := map[string]map[string]*legQuote{}
+	for gk, pl := range latest {
+		plain[gk] = map[string]*legQuote{}
+		for p, tr := range pl {
+			plain[gk][p] = &tr.q
+		}
+	}
+	return plain
+}
+
+func scanYesNoHistMinLegacy(_ []outcomeRec, hist []wsRow, byHash map[string]outcomeRec) []yesnoHit {
+	histMin := buildHistMinQuotes(hist, byHash)
+	return scanYesNo(histMin, defaultFees(), defaultScanLimits(), "hist_min")
+}
+
+func buildHistMinQuotes(hist []wsRow, byHash map[string]outcomeRec) map[string]map[string]*legQuote {
+	histMin := map[string]map[string]*legQuote{}
+	for _, row := range hist {
+		hk := strings.ToUpper(row.Platform) + "|" + strings.TrimSpace(row.PlatformMarketOutcomeID)
+		mo, ok := byHash[hk]
+		if !ok || !strings.EqualFold(strings.TrimSpace(mo.OutcomeType), "moneyline") {
+			continue
+		}
+		if !useWSRowForTopBook(row.Platform, row.TokenID, mo) {
+			continue
+		}
+		gk := outcomeGroupKey(mo)
+		if gk == "" {
+			continue
+		}
+		plat := strings.ToUpper(strings.TrimSpace(row.Platform))
+		if histMin[gk] == nil {
+			histMin[gk] = map[string]*legQuote{}
 		}
 		if histMin[gk][plat] == nil {
 			histMin[gk][plat] = &legQuote{}
 		}
-		if isLatest {
-			absorbLatestPoly(latest[gk][plat], plat, row.TokenID, mo, row.Asks, row.Bids)
-		}
 		histMin[gk][plat].absorbRow(plat, row.TokenID, mo, row.Asks, row.Bids)
 	}
-
-	for _, row := range latestWS {
-		processWS(row, true)
-	}
-	for _, row := range histWS {
-		processWS(row, false)
-	}
-
-	latestPlain := map[string]map[string]*legQuote{}
-	for gk, pl := range latest {
-		latestPlain[gk] = map[string]*legQuote{}
-		for p, tr := range pl {
-			latestPlain[gk][p] = &tr.q
-		}
-	}
-
-	platSet := map[string]struct{}{}
-	for gk := range latestPlain {
-		rep.OutcomeGroups++
-		for plat := range latestPlain[gk] {
-			platSet[plat] = struct{}{}
-		}
-	}
-	for p := range platSet {
-		rep.Platforms = append(rep.Platforms, p)
-	}
-	sort.Strings(rep.Platforms)
-
-	rep.BestYesNoPer, rep.CrossPlatGroups = bestCrossYesNoPer(latestPlain, fees)
-	rep.YesNoLatest = scanYesNo(latestPlain, fees, lim, "latest")
-	rep.YesNoHistMin = scanYesNo(histMin, fees, lim, "hist_min")
-	rep.YesNoSnapshot = scanYesNoBySnapshot(histWS, byHash, fees, lim)
-	rep.YesNoReplay = scanYesNoReplay(histWS, byHash, fees, lim)
-	if len(rep.YesNoReplay) > 0 {
-		if orderBookFromWS() {
-			rep.Note = "yesno_replay=按 WS id 回放盘口（等同线上单腿更新触发）"
-		} else {
-			rep.Note = "yesno_replay=按 REST 落库 id 回放（orderbook_sync 每次插入触发试算）"
-		}
-	} else if len(rep.YesNoHistMin) > 0 {
-		rep.Note = "hist_min=各腿独立最低价（未同毫秒），勿当真"
-	}
-
-	draw, tA, tB, ok := moneylineTriples(latestPlain, gkMoneyline)
-	if ok {
-		rep.TripleYes = scanTriples(draw, tA, tB, fees, lim, true)
-		rep.TripleNo = scanTriples(draw, tA, tB, fees, lim, false)
-	}
-	if len(latestWS) == 0 && len(histWS) == 0 {
-		rep.Note = "无订单簿行（表 " + orderBookTable + "）"
-	}
-	return rep
+	return histMin
 }
 
 func bestCrossYesNoPer(groups map[string]map[string]*legQuote, fees map[string]platformFee) (best float64, crossGroups int) {

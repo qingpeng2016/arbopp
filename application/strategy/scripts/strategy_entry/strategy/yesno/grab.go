@@ -3,6 +3,7 @@ package yesno
 import (
 	"context"
 	"sync"
+	"time"
 )
 
 // Sender 双边发单与单腿平仓。
@@ -68,26 +69,39 @@ func (r *Runner) tryAllPicksForGrab(outcomeID uint) (all []FilledPick, best Fill
 
 // grabOne 实盘/联调：命中后异步落库（当前 DryRun，不发单）。
 func (r *Runner) grabOne(outcomeID uint) {
+	r.grabOneAttempt(outcomeID, false)
+}
+
+func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
 	all, pick, ok := r.tryAllPicksForGrab(outcomeID)
 	if !ok {
 		return
 	}
 	lim := r.limits()
-	if !r.canTrade(pick.Yes.Platform) || !r.canTrade(pick.No.Platform) {
+	const dryRun = true
+	if !dryRun && (!r.canTrade(pick.Yes.Platform) || !r.canTrade(pick.No.Platform)) {
 		return
 	}
 	if !r.orderMu.TryLock() {
+		if !retried {
+			go func(id uint) {
+				time.Sleep(25 * time.Millisecond)
+				r.grabOneAttempt(id, true)
+			}(outcomeID)
+		}
 		return
 	}
 	defer r.orderMu.Unlock()
-	// 联调机会表：暂不发单。要恢复实盘时删掉 DryRun 块并取消 Fire 注释。
+	// 联调机会表：暂不发单。要恢复实盘时设 dryRun=false 并取消 Fire 注释。
 	var yesFill, noFill float64
 	var yesErr, noErr error
-	// yesFill, noFill, yesErr, noErr = Fire(outcomeSender{r}, pick.Yes.Side, pick.No.Side, pick.YesBuyYes, pick.NoBuyYes, pick.Qty)
+	if !dryRun {
+		yesFill, noFill, yesErr, noErr = Fire(outcomeSender{r}, pick.Yes.Side, pick.No.Side, pick.YesBuyYes, pick.NoBuyYes, pick.Qty)
+	}
 	bestHit := GrabHit{
 		Pick: pick, MaxCost: lim.MaxCost,
 		YesFill: yesFill, NoFill: noFill, YesErr: yesErr, NoErr: noErr,
-		DryRun: true,
+		DryRun: dryRun,
 	}
 	ctx := r.grabContext()
 	mapKey := r.w.MapKey
