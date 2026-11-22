@@ -20,6 +20,16 @@ func (r *Runner) grabOne(outcomeID uint) {
 }
 
 func (r *Runner) grabOneAttempt(_ uint, retried bool) {
+	if !r.orderMu.TryLock() {
+		if !retried {
+			go func() {
+				time.Sleep(25 * time.Millisecond)
+				r.grabOneAttempt(0, true)
+			}()
+		}
+		return
+	}
+	defer r.orderMu.Unlock()
 	all := r.allTriplePicks()
 	pick, ok := bestTripleFrom(all)
 	if !ok {
@@ -33,16 +43,6 @@ func (r *Runner) grabOneAttempt(_ uint, retried bool) {
 			}
 		}
 	}
-	if !r.orderMu.TryLock() {
-		if !retried {
-			go func() {
-				time.Sleep(25 * time.Millisecond)
-				r.grabOneAttempt(0, true)
-			}()
-		}
-		return
-	}
-	defer r.orderMu.Unlock()
 	lim := r.limits()
 	bestHit := GrabHit{Pick: pick, Limits: lim, DryRun: dryRun}
 	ctx := r.w.Context()
@@ -70,15 +70,15 @@ func (r *Runner) TryTriplePick() (TriplePick, bool) {
 }
 
 func (r *Runner) grabOneBacktest() {
+	if !r.orderMu.TryLock() {
+		return
+	}
+	defer r.orderMu.Unlock()
 	all := r.allTriplePicks()
 	_, ok := bestTripleFrom(all)
 	if !ok {
 		return
 	}
-	if !r.orderMu.TryLock() {
-		return
-	}
-	defer r.orderMu.Unlock()
 	lim := r.limits()
 	ctx := r.w.Context()
 	deps := r.persistDeps()

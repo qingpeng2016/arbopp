@@ -176,7 +176,18 @@ func (r *Runner) snapPickLegs(fp FilledPick) (watchgroup.LegPersistSnap, watchgr
 	if r.w == nil {
 		return watchgroup.LegPersistSnap{OrderBooks: "{}\n"}, watchgroup.LegPersistSnap{OrderBooks: "{}\n"}
 	}
-	return r.w.LegSnapshot(fp.Yes.Index, fp.YesBuyYes), r.w.LegSnapshot(fp.No.Index, fp.NoBuyYes)
+	leg1 := r.w.LegSnapshot(fp.Yes.Index, fp.YesBuyYes)
+	leg2 := r.w.LegSnapshot(fp.No.Index, fp.NoBuyYes)
+	alignLegSnapToPick(&leg1, fp.Yes.Side, fp.YesBuyYes)
+	alignLegSnapToPick(&leg2, fp.No.Side, fp.NoBuyYes)
+	return leg1, leg2
+}
+
+func alignLegSnapToPick(snap *watchgroup.LegPersistSnap, side Side, buyYes bool) {
+	px, sz := SideTopAskSz(side, buyYes)
+	if px > 0 && px < 1 && sz > 0 {
+		snap.TopAsk, snap.TopSz, snap.OK = px, sz, true
+	}
 }
 
 func (r *Runner) grabPersist() PersistGrab {

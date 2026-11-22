@@ -136,7 +136,7 @@ func (r *Runner) filledPickFrom(p Pick) (FilledPick, bool) {
 	if !okA || !okB {
 		return FilledPick{}, false
 	}
-	// leg_*_best_ask / total_cost 必须与 TopHit 同源：用判定时的卖一，禁止二次读盘漂移。
+	// leg_*_best_ask / total_cost / arb_qty 与 TopHit 同源（Side 内 YesPx/NoPx）；盘口 JSON 为同锁内 LegSnapshot。
 	copyPickSidePrices(&yes.Side, p.YesSide, p.YesBuyYes)
 	copyPickSidePrices(&no.Side, p.NoSide, p.NoBuyYes)
 	return FilledPick{

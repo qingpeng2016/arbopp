@@ -12,6 +12,7 @@ type TriplePick struct {
 	BuyYes   bool
 	Legs     [3]yesno.ExecSide
 	Prices   [3]float64
+	LegSizes [3]float64 // 各腿 TopHit 卖一量
 	Qty, Per float64
 }
 

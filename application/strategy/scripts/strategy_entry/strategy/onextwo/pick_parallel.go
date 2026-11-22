@@ -76,7 +76,7 @@ func (r *Runner) tripleForPlatforms(groups [3]yesno.OutcomeGroup, plats [3]strin
 		return TriplePick{}, false
 	}
 	var legs [3]yesno.ExecSide
-	var prices [3]float64
+	var prices, sizes [3]float64
 	var sumPx, minSz float64 = 0, math.MaxFloat64
 	for i := range groups {
 		side, perShare, sz, ok := r.legAt(groups[i], plats[i], buyYes)
@@ -85,6 +85,7 @@ func (r *Runner) tripleForPlatforms(groups [3]yesno.OutcomeGroup, plats [3]strin
 		}
 		legs[i] = side
 		prices[i] = perShare
+		sizes[i] = sz
 		sumPx += perShare
 		if sz < minSz {
 			minSz = sz
@@ -114,7 +115,7 @@ func (r *Runner) tripleForPlatforms(groups [3]yesno.OutcomeGroup, plats [3]strin
 		kind = OppKindNoTriple
 	}
 	return TriplePick{
-		Kind: kind, BuyYes: buyYes, Legs: legs, Prices: prices, Qty: qty, Per: per,
+		Kind: kind, BuyYes: buyYes, Legs: legs, Prices: prices, LegSizes: sizes, Qty: qty, Per: per,
 	}, true
 }
 

@@ -76,9 +76,6 @@ func NotifyGrab(ctx context.Context, mapKey string, hit GrabHit) {
 	}
 	for i, leg := range pick.Legs {
 		px := pick.Prices[i]
-		if hit.Legs[i].OK {
-			px = hit.Legs[i].TopAsk
-		}
 		fields = append(fields,
 			notification.FieldPair{Key: "leg" + strconv.Itoa(i+1), Value: leg.Platform + " " + tripleSide},
 			notification.FieldPair{Key: "leg" + strconv.Itoa(i+1) + "_ask", Value: strconv.FormatFloat(px, 'f', -1, 64)},
@@ -130,13 +127,16 @@ func buildOppBacktest(d persistDeps, mapKey string, hit GrabHit) *persistententi
 		thVal = hit.Limits.NoTripleMax
 	}
 	leg1Info, leg1Books, leg2Info, leg2Books, leg3Info, leg3Books := tripleLegFields(d, pick, hit.Legs)
-	asks := tripleLegAskPrices(hit, pick)
+	asks := pick.Prices
 	leg1Ask := decimal.NewFromFloat(asks[0]).Round(8)
 	leg2Ask := decimal.NewFromFloat(asks[1]).Round(8)
 	leg3Ask := decimal.NewFromFloat(asks[2]).Round(8)
-	perShare := triplePerShareFromSnap(hit, pick)
+	perShare := pick.Per
 	profitSpace := profitBase - perShare
-	arbQty, arbProfit := yesno.ArbQtyProfitFromSnaps(profitSpace, hit.Legs[0], hit.Legs[1], hit.Legs[2])
+	if profitSpace <= 0 || (thVal > 0 && perShare >= thVal) {
+		return nil
+	}
+	arbQty, arbProfit := tripleArbQtyProfit(profitSpace, pick)
 	mapKeyPtr := mapKey
 	return &persistententity.BacktestArbBinaryOpportunity{
 		BacktestTaskID: d.task,
@@ -156,6 +156,9 @@ func buildOppBacktest(d persistDeps, mapKey string, hit GrabHit) *persistententi
 
 func saveBacktest(ctx context.Context, d persistDeps, mapKey string, hit GrabHit) {
 	row := buildOppBacktest(d, mapKey, hit)
+	if row == nil {
+		return
+	}
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if err := d.btOpp.BatchCreate(runCtx, nil, []*persistententity.BacktestArbBinaryOpportunity{row}); err != nil {
@@ -176,6 +179,9 @@ func saveBacktest(ctx context.Context, d persistDeps, mapKey string, hit GrabHit
 
 func saveLive(ctx context.Context, d persistDeps, mapKey string, hit GrabHit) {
 	bt := buildOppBacktest(d, mapKey, hit)
+	if bt == nil {
+		return
+	}
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	live := &persistententity.ArbBinaryOpportunity{
@@ -211,9 +217,6 @@ func ordersForHit(taskID uint, strategyType, mapKey string, oppID uint, hit Grab
 	out := make([]*persistententity.BacktestOrder, 0, 3)
 	for i, leg := range pick.Legs {
 		px := pick.Prices[i]
-		if hit.Legs[i].OK {
-			px = hit.Legs[i].TopAsk
-		}
 		fill := pick.Qty
 		if hit.DryRun {
 			fill = 0
@@ -223,32 +226,17 @@ func ordersForHit(taskID uint, strategyType, mapKey string, oppID uint, hit Grab
 	return out
 }
 
-func tripleLegAskPrices(hit GrabHit, pick TriplePick) [3]float64 {
-	var out [3]float64
-	for i := range pick.Prices {
-		out[i] = pick.Prices[i]
-		if hit.Legs[i].OK {
-			out[i] = hit.Legs[i].TopAsk
+func tripleArbQtyProfit(profitSpace float64, pick TriplePick) (decimal.Decimal, decimal.Decimal) {
+	minQ := pick.LegSizes[0]
+	for i := 1; i < 3; i++ {
+		if pick.LegSizes[i] > 0 && (minQ <= 0 || pick.LegSizes[i] < minQ) {
+			minQ = pick.LegSizes[i]
 		}
 	}
-	return out
-}
-
-func triplePerShareFromSnap(hit GrabHit, pick TriplePick) float64 {
-	var sum float64
-	allOK := true
-	for i := range hit.Legs {
-		if !hit.Legs[i].OK {
-			allOK = false
-			break
-		}
-		px := hit.Legs[i].TopAsk
-		sum += px + yesno.Fee(px, pick.Legs[i].Side.Fee)
+	if minQ <= 0 {
+		return decimal.Zero, decimal.Zero
 	}
-	if !allOK {
-		return pick.Per
-	}
-	return sum
+	return decimal.NewFromFloat(minQ).Round(8), decimal.NewFromFloat(minQ*profitSpace).Round(8)
 }
 
 func tripleLegFields(d persistDeps, pick TriplePick, snaps [3]watchgroup.LegPersistSnap) (leg1Info, leg1Books, leg2Info, leg2Books, leg3Info, leg3Books string) {
@@ -300,9 +288,6 @@ func liveOrdersForHit(strategyType, mapKey string, oppID uint, hit GrabHit, sent
 	out := make([]*persistententity.ArbBinaryOrder, 0, 3)
 	for i, leg := range pick.Legs {
 		px := pick.Prices[i]
-		if hit.Legs[i].OK {
-			px = hit.Legs[i].TopAsk
-		}
 		fill := pick.Qty
 		if hit.DryRun {
 			fill = 0

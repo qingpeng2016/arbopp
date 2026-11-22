@@ -8,8 +8,7 @@ import (
 
 // ArbBinaryOpportunity 跨平台套利命中（二元或 1X2 三路；腿槽位见 opp_kind）。
 //
-// 落库自洽：leg_*_order_books 与 leg_*_best_ask 为同一 LegSnapshot；total_cost = 各腿卖一 + 手续费之和；
-// arb_qty = 各腿卖一挂单量最小值；arb_profit = arb_qty * profit_space。
+// 落库自洽：total_cost / leg_*_best_ask / arb_qty 与 TopHit 判定同源（pick 时刻卖一）；leg_*_order_books 为同锁内快照 JSON。
 //
 //	opp_kind              leg_1      leg_2      leg_3
 //	BINARY_YES_NO         YES 腿     NO 腿      {}

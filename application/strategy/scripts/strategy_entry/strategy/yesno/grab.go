@@ -36,7 +36,7 @@ func Fire(snd Sender, a, b Side, aBuyYes, bBuyYes bool, qty float64) (fillA, fil
 // GrabHit 一次抢单结果。
 type GrabHit struct {
 	Pick            FilledPick
-	Leg1, Leg2      watchgroup.LegPersistSnap // 落库盘口与 best_ask 同源快照
+	Leg1, Leg2      watchgroup.LegPersistSnap // 同锁盘口 JSON；TopAsk/TopSz 与 pick 对齐
 	MaxCost         float64
 	YesFill, NoFill float64
 	YesErr, NoErr   error
@@ -76,15 +76,6 @@ func (r *Runner) grabOne(outcomeID uint) {
 }
 
 func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
-	all, pick, ok := r.tryAllPicksForGrab(outcomeID)
-	if !ok {
-		return
-	}
-	lim := r.limits()
-	const dryRun = true
-	if !dryRun && (!r.canTrade(pick.Yes.Platform) || !r.canTrade(pick.No.Platform)) {
-		return
-	}
 	if !r.orderMu.TryLock() {
 		if !retried {
 			go func(id uint) {
@@ -95,6 +86,15 @@ func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
 		return
 	}
 	defer r.orderMu.Unlock()
+	all, pick, ok := r.tryAllPicksForGrab(outcomeID)
+	if !ok {
+		return
+	}
+	lim := r.limits()
+	const dryRun = true
+	if !dryRun && (!r.canTrade(pick.Yes.Platform) || !r.canTrade(pick.No.Platform)) {
+		return
+	}
 	// 联调机会表：暂不发单。要恢复实盘时设 dryRun=false 并取消 Fire 注释。
 	var yesFill, noFill float64
 	var yesErr, noErr error
@@ -123,6 +123,10 @@ func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
 
 // grabOneBacktest 历史回放：不发真实单，同步写入 backtest_arb_*（由 Ops.BacktestTaskID 决定落库表）。
 func (r *Runner) grabOneBacktest(outcomeID uint) {
+	if !r.orderMu.TryLock() {
+		return
+	}
+	defer r.orderMu.Unlock()
 	all, pick, ok := r.tryAllPicksForGrab(outcomeID)
 	if !ok {
 		return
@@ -132,10 +136,6 @@ func (r *Runner) grabOneBacktest(outcomeID uint) {
 	mapKey := r.w.MapKey
 	persist := r.grabPersist()
 	qty := pick.Qty
-	if !r.orderMu.TryLock() {
-		return
-	}
-	defer r.orderMu.Unlock()
 	for _, fp := range all {
 		leg1, leg2 := r.snapPickLegs(fp)
 		SaveGrabHit(ctx, persist, mapKey, GrabHit{

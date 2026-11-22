@@ -13,6 +13,7 @@ import (
 type YesLegInfo struct {
 	YesMarketID    string `json:"yes_market_id"`
 	YesMarketName  string `json:"yes_market_name"`
+	MarketURL      string `json:"market_url"`
 	YesOutcomeID   uint   `json:"yes_outcome_id"`
 	YesOutcomeName string `json:"yes_outcome_name"`
 	YesTokenID     string `json:"yes_token_id"`
@@ -23,6 +24,7 @@ type YesLegInfo struct {
 type DrawLegInfo struct {
 	DrawMarketID    string `json:"draw_market_id"`
 	DrawMarketName  string `json:"draw_market_name"`
+	MarketURL       string `json:"market_url"`
 	DrawOutcomeID   uint   `json:"draw_outcome_id"`
 	DrawOutcomeName string `json:"draw_outcome_name"`
 	DrawTokenID     string `json:"draw_token_id"`
@@ -33,6 +35,7 @@ type DrawLegInfo struct {
 type NoLegInfo struct {
 	NoMarketID    string `json:"no_market_id"`
 	NoMarketName  string `json:"no_market_name"`
+	MarketURL     string `json:"market_url"`
 	NoOutcomeID   uint   `json:"no_outcome_id"`
 	NoOutcomeName string `json:"no_outcome_name"`
 	NoTokenID     string `json:"no_token_id"`
@@ -48,6 +51,7 @@ func (w *Watch) YesLegInfoJSON(outcomeIndex int, buyYes bool) string {
 	info := YesLegInfo{
 		YesMarketID:    strings.TrimSpace(oc.PlatformMarketID),
 		YesMarketName:  marketNameForOutcome(w, oc),
+		MarketURL:      marketURLForOutcome(w, oc),
 		YesOutcomeID:   oc.ID,
 		YesOutcomeName: derefStr(oc.OutcomeName),
 		YesTokenID:     legTokenID(oc, buyYes),
@@ -65,6 +69,7 @@ func (w *Watch) DrawLegInfoJSON(outcomeIndex int, buyYes bool) string {
 	info := DrawLegInfo{
 		DrawMarketID:    strings.TrimSpace(oc.PlatformMarketID),
 		DrawMarketName:  marketNameForOutcome(w, oc),
+		MarketURL:       marketURLForOutcome(w, oc),
 		DrawOutcomeID:   oc.ID,
 		DrawOutcomeName: derefStr(oc.OutcomeName),
 		DrawTokenID:     legTokenID(oc, buyYes),
@@ -82,6 +87,7 @@ func (w *Watch) NoLegInfoJSON(outcomeIndex int, buyYes bool) string {
 	info := NoLegInfo{
 		NoMarketID:    strings.TrimSpace(oc.PlatformMarketID),
 		NoMarketName:  marketNameForOutcome(w, oc),
+		MarketURL:     marketURLForOutcome(w, oc),
 		NoOutcomeID:   oc.ID,
 		NoOutcomeName: derefStr(oc.OutcomeName),
 		NoTokenID:     legTokenID(oc, buyYes),
@@ -100,6 +106,21 @@ func marketNameForOutcome(w *Watch, oc *persistententity.MarketOutcome) string {
 	if w != nil && w.MarketsByRowID != nil {
 		if fx, ok := w.MarketsByRowID[oc.MarketRowID]; ok && fx.Name != nil {
 			return strings.TrimSpace(*fx.Name)
+		}
+	}
+	return ""
+}
+
+func marketURLForOutcome(w *Watch, oc *persistententity.MarketOutcome) string {
+	if oc == nil {
+		return ""
+	}
+	if u := strings.TrimSpace(oc.MarketURL); u != "" {
+		return u
+	}
+	if w != nil && w.MarketsByRowID != nil {
+		if fx, ok := w.MarketsByRowID[oc.MarketRowID]; ok {
+			return strings.TrimSpace(fx.MarketURL)
 		}
 	}
 	return ""

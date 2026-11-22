@@ -85,6 +85,11 @@ func (r *Runner) snapTripleLegs(pick TriplePick) [3]watchgroup.LegPersistSnap {
 	buy := pick.BuyYes
 	for i := range pick.Legs {
 		snaps[i] = r.w.LegSnapshot(pick.Legs[i].Index, buy)
+		if pick.Prices[i] > 0 && pick.Prices[i] < 1 && pick.LegSizes[i] > 0 {
+			snaps[i].TopAsk = pick.Prices[i]
+			snaps[i].TopSz = pick.LegSizes[i]
+			snaps[i].OK = true
+		}
 	}
 	return snaps
 }
