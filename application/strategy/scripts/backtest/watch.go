@@ -45,10 +45,22 @@ func newStrategyEntrySession(
 		ByToken:        map[string]int{},
 		ByTicker:       map[string]int{},
 		ByPredict:      map[string]int{},
+		BySxbet:        map[string]int{},
 		Books:          book.NewStore(),
 	}
 	for i := range wg.Outcomes {
 		oc := &wg.Outcomes[i]
+		if oc.MapKey == nil || strings.TrimSpace(*oc.MapKey) == "" {
+			if fx, ok := marketsByRow[oc.MarketRowID]; ok && fx.MapKey != nil {
+				mk := strings.TrimSpace(*fx.MapKey)
+				if mk != "" {
+					oc.MapKey = &mk
+				}
+			} else if strings.TrimSpace(mapKey) != "" {
+				mk := strings.TrimSpace(mapKey)
+				oc.MapKey = &mk
+			}
+		}
 		if strings.EqualFold(oc.Platform, appcommon.PlatformPolymarket) {
 			if id := strings.TrimSpace(oc.YesTokenID); id != "" {
 				wg.ByToken[id] = i
@@ -65,6 +77,11 @@ func newStrategyEntrySession(
 		if strings.EqualFold(oc.Platform, appcommon.PlatformPredict) {
 			if id := strings.TrimSpace(oc.PlatformMarketOutcomeID); id != "" {
 				wg.ByPredict[id] = i
+			}
+		}
+		if strings.EqualFold(oc.Platform, appcommon.PlatformSxbet) {
+			if id := strings.TrimSpace(oc.PlatformMarketOutcomeID); id != "" {
+				wg.BySxbet[id] = i
 			}
 		}
 	}

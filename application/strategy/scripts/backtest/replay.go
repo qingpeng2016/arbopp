@@ -82,6 +82,12 @@ func applySnapshot(w *watchgroup.Watch, row *persistententity.HistoryDataOrderBo
 			return fmt.Errorf("kalshi missing ticker outcome=%d", oc.ID)
 		}
 		w.Books.ApplyKalshiYesBook(id, bids, asks, ts)
+	case appcommon.PlatformSxbet:
+		id := strings.TrimSpace(oc.PlatformMarketOutcomeID)
+		if id == "" {
+			return fmt.Errorf("sxbet missing market hash outcome=%d", oc.ID)
+		}
+		w.Books.ApplySxbetBook(id, bids, asks, ts)
 	default:
 		return fmt.Errorf("unsupported platform %q", plat)
 	}
