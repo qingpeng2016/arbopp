@@ -10,17 +10,17 @@ func (w *Watch) BooksJSONForOutcomePair(outcomeIndexA, outcomeIndexB int) string
 		return `{"outcomes":[]}`
 	}
 	var outcomes []outcomeBooks
-	appendOutcome := func(sideNo, outcomeIndex int) {
-		ob := w.collectOutcomeBooks(outcomeIndex, 8)
+	appendOutcome := func(sideNo, outcomeIndex int, buyYes bool) {
+		ob := w.collectOutcomeBooks(outcomeIndex, 8, buyYes)
 		if outcomeIndex < 0 || outcomeIndex >= len(w.Outcomes) {
 			return
 		}
 		ob.SideNo = sideNo
 		outcomes = append(outcomes, ob)
 	}
-	appendOutcome(1, outcomeIndexA)
+	appendOutcome(1, outcomeIndexA, true)
 	if outcomeIndexB >= 0 && outcomeIndexB != outcomeIndexA {
-		appendOutcome(2, outcomeIndexB)
+		appendOutcome(2, outcomeIndexB, false)
 	}
 	raw, err := json.Marshal(map[string]any{"outcomes": outcomes})
 	if err != nil || len(raw) == 0 {

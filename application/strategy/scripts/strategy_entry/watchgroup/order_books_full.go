@@ -27,12 +27,12 @@ type fullOutcomeBooks struct {
 	Books                   []bookSlice `json:"books"`
 }
 
-// FullOrderBooksJSON 单腿全量盘口（不截断档位），缩进 JSON。
-func (w *Watch) FullOrderBooksJSON(outcomeIndex int) string {
+// FullOrderBooksJSON 单腿全量盘口（不截断档位）；buyYes 表示本条套利腿买的是 YES 还是 NO。
+func (w *Watch) FullOrderBooksJSON(outcomeIndex int, buyYes bool) string {
 	if w == nil {
 		return "{}\n"
 	}
-	ob := w.collectOutcomeBooks(outcomeIndex, 0)
+	ob := w.collectOutcomeBooks(outcomeIndex, 0, buyYes)
 	if ob.Platform == "" && len(ob.Books) == 0 {
 		return prettyJSON(fullOutcomeBooks{})
 	}
@@ -44,7 +44,7 @@ func (w *Watch) FullOrderBooksJSON(outcomeIndex int) string {
 	return prettyJSON(out)
 }
 
-func (w *Watch) collectOutcomeBooks(outcomeIndex, depth int) outcomeBooks {
+func (w *Watch) collectOutcomeBooks(outcomeIndex, depth int, buyYes bool) outcomeBooks {
 	var ob outcomeBooks
 	if outcomeIndex < 0 || outcomeIndex >= len(w.Outcomes) {
 		return ob
@@ -73,27 +73,40 @@ func (w *Watch) collectOutcomeBooks(outcomeIndex, depth int) outcomeBooks {
 	}
 	switch strings.ToUpper(strings.TrimSpace(oc.Platform)) {
 	case appcommon.PlatformPolymarket:
-		appendBook(appcommon.PlatformPolymarket, oc.YesTokenID, "YES_TOKEN")
-		appendBook(appcommon.PlatformPolymarket, oc.NoTokenID, "NO_TOKEN")
+		if buyYes {
+			appendBook(appcommon.PlatformPolymarket, oc.YesTokenID, "YES_TOKEN")
+		} else {
+			appendBook(appcommon.PlatformPolymarket, oc.NoTokenID, "NO_TOKEN")
+		}
 	case appcommon.PlatformKalshi:
 		mid := strings.TrimSpace(oc.PlatformMarketOutcomeID)
-		appendBook(appcommon.PlatformKalshi, mid, "YES_BOOK")
 		noKey := strings.TrimSpace(oc.NoTokenID)
 		if noKey == "" {
 			noKey = mid + ":no"
 		}
-		appendBook(appcommon.PlatformKalshi, noKey, "NO_TOKEN")
+		if buyYes {
+			appendBook(appcommon.PlatformKalshi, mid, "YES_BOOK")
+		} else {
+			appendBook(appcommon.PlatformKalshi, noKey, "NO_TOKEN")
+		}
 	case appcommon.PlatformSxbet:
 		mid := strings.TrimSpace(oc.PlatformMarketOutcomeID)
-		appendBook(oc.Platform, mid, "YES_BOOK")
+		if buyYes {
+			appendBook(oc.Platform, mid, "YES_BOOK")
+		} else {
+			appendBook(oc.Platform, mid+":not", "NO_BOOK")
+		}
 	case appcommon.PlatformPredict:
 		mid := strings.TrimSpace(oc.PlatformMarketOutcomeID)
-		appendBook(oc.Platform, mid, "YES_BOOK")
 		noKey := strings.TrimSpace(oc.NoTokenID)
 		if noKey == "" {
 			noKey = mid + ":no"
 		}
-		appendBook(oc.Platform, noKey, "NO_TOKEN")
+		if buyYes {
+			appendBook(oc.Platform, mid, "YES_BOOK")
+		} else {
+			appendBook(oc.Platform, noKey, "NO_TOKEN")
+		}
 	}
 	return ob
 }

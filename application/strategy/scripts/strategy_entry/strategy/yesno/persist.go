@@ -29,7 +29,7 @@ type PersistGrab struct {
 	BookRepo  persistentrepo.OrderBookRepo
 	YesLegInfo    func(outcomeIndex int, buyYes bool) string
 	NoLegInfo     func(outcomeIndex int, buyYes bool) string
-	LegOrderBooks func(outcomeIndex int) string
+	LegOrderBooks func(outcomeIndex int, buyYes bool) string
 	BookRows      func(a, b ExecSide) []*persistententity.OrderBook
 
 	BacktestTaskID    uint
@@ -94,9 +94,9 @@ func SaveGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit GrabHit)
 		OppKind: "BINARY_YES_NO", MapKey: strPtr(mapKey),
 		Category: scope.Category, SubCategory: scope.SubCategory,
 		Competition: scope.Competition, CompetitionEn: scope.CompetitionEn,
-		Leg1Info: emptyLegJSON, Leg1OrderBooks: emptyLegJSON,
-		Leg2Info: yesInfo, Leg2OrderBooks: yesBooks, Leg2BestAsk: &yes,
-		Leg3Info: noInfo, Leg3OrderBooks: noBooks, Leg3BestAsk: &no,
+		Leg1Info: yesInfo, Leg1OrderBooks: yesBooks, Leg1BestAsk: &yes,
+		Leg2Info: noInfo, Leg2OrderBooks: noBooks, Leg2BestAsk: &no,
+		Leg3Info: emptyLegJSON, Leg3OrderBooks: emptyLegJSON,
 		TotalCost: decimal.NewFromFloat(per).Round(8), ProfitSpace: decimal.NewFromFloat(1 - per).Round(8),
 		ThresholdKey: thresholdKeyMaxCost, ThresholdValue: decimal.NewFromFloat(maxCost).Round(8),
 		BookUpdatedAt: &now, SnapshotAt: now, SnapshotAtMs: snapMs,
@@ -249,8 +249,8 @@ func legPersistFields(d PersistGrab, a, b ExecSide, aBuysYes, bBuysYes bool) (ye
 		noInfo = d.NoLegInfo(noLeg.Index, noBuy)
 	}
 	if d.LegOrderBooks != nil {
-		yesBooks = d.LegOrderBooks(yesLeg.Index)
-		noBooks = d.LegOrderBooks(noLeg.Index)
+		yesBooks = d.LegOrderBooks(yesLeg.Index, yesBuy)
+		noBooks = d.LegOrderBooks(noLeg.Index, noBuy)
 	}
 	if strings.TrimSpace(yesInfo) == "" {
 		yesInfo = emptyLegJSON
@@ -287,9 +287,9 @@ func saveBacktestGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit 
 		OppKind:        "BINARY_YES_NO", MapKey: strPtr(mapKey),
 		Category: scope.Category, SubCategory: scope.SubCategory,
 		Competition: scope.Competition, CompetitionEn: scope.CompetitionEn,
-		Leg1Info: emptyLegJSON, Leg1OrderBooks: emptyLegJSON,
-		Leg2Info: yesInfo, Leg2OrderBooks: yesBooks, Leg2BestAsk: &yes,
-		Leg3Info: noInfo, Leg3OrderBooks: noBooks, Leg3BestAsk: &no,
+		Leg1Info: yesInfo, Leg1OrderBooks: yesBooks, Leg1BestAsk: &yes,
+		Leg2Info: noInfo, Leg2OrderBooks: noBooks, Leg2BestAsk: &no,
+		Leg3Info: emptyLegJSON, Leg3OrderBooks: emptyLegJSON,
 		TotalCost: decimal.NewFromFloat(per).Round(8), ProfitSpace: decimal.NewFromFloat(1-per).Round(8),
 		ThresholdKey: thresholdKeyMaxCost, ThresholdValue: decimal.NewFromFloat(maxCost).Round(8),
 		BookUpdatedAt: &now, SnapshotAt: now, SnapshotAtMs: snapMs,

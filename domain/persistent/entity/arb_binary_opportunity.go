@@ -7,7 +7,7 @@ import (
 )
 
 // ArbBinaryOpportunity 跨平台套利命中（二元或 1X2 三路；腿槽位见 opp_kind）。
-// leg_1/2/3：BINARY_YES_NO → 空 / YES / NO；ONE_X2_* → 平局 / 主 / 客。
+// leg_1/2/3：BINARY_YES_NO → YES / NO / {}；ONE_X2_* → 平局 / 主 / 客。
 type ArbBinaryOpportunity struct {
 	ID             uint             `gorm:"primaryKey;column:id;type:bigint unsigned;not null;autoIncrement"`
 	OppKind        string           `gorm:"column:opp_kind;type:varchar(32);not null"`

@@ -20,7 +20,7 @@ type persistDeps struct {
 	drawLegInfo func(outcomeIndex int, buyYes bool) string
 	yesLegInfo  func(outcomeIndex int, buyYes bool) string
 	noLegInfo   func(outcomeIndex int, buyYes bool) string
-	legBooks    func(outcomeIndex int) string
+	legBooks    func(outcomeIndex int, buyYes bool) string
 	opp         persistentrepo.ArbBinaryOpportunityRepo
 	order       persistentrepo.ArbBinaryOrderRepo
 	btOpp       persistentrepo.BacktestArbBinaryOpportunityRepo
@@ -37,7 +37,7 @@ func (r *Runner) persistDeps() persistDeps {
 		drawLegInfo: func(i int, buy bool) string { return r.w.DrawLegInfoJSON(i, buy) },
 		yesLegInfo:  func(i int, buy bool) string { return r.w.YesLegInfoJSON(i, buy) },
 		noLegInfo:   func(i int, buy bool) string { return r.w.NoLegInfoJSON(i, buy) },
-		legBooks:    func(i int) string { return r.w.FullOrderBooksJSON(i) },
+		legBooks:    func(i int, buy bool) string { return r.w.FullOrderBooksJSON(i, buy) },
 	}
 	if ops.BacktestOppRepo != nil {
 		d.btOpp = ops.BacktestOppRepo()
@@ -224,9 +224,9 @@ func tripleLegFields(d persistDeps, pick TriplePick) (leg1Info, leg1Books, leg2I
 		leg3Info = d.noLegInfo(pick.Legs[2].Index, buy)
 	}
 	if d.legBooks != nil {
-		leg1Books = d.legBooks(pick.Legs[0].Index)
-		leg2Books = d.legBooks(pick.Legs[1].Index)
-		leg3Books = d.legBooks(pick.Legs[2].Index)
+		leg1Books = d.legBooks(pick.Legs[0].Index, buy)
+		leg2Books = d.legBooks(pick.Legs[1].Index, buy)
+		leg3Books = d.legBooks(pick.Legs[2].Index, buy)
 	}
 	for _, p := range []*string{&leg1Info, &leg1Books, &leg2Info, &leg2Books, &leg3Info, &leg3Books} {
 		if strings.TrimSpace(*p) == "" {

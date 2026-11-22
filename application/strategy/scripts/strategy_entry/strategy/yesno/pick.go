@@ -136,9 +136,21 @@ func (r *Runner) filledPickFrom(p Pick) (FilledPick, bool) {
 	if !okA || !okB {
 		return FilledPick{}, false
 	}
+	// leg_*_best_ask / total_cost 必须与 TopHit 同源：用判定时的卖一，禁止二次读盘漂移。
+	copyPickSidePrices(&yes.Side, p.YesSide, p.YesBuyYes)
+	copyPickSidePrices(&no.Side, p.NoSide, p.NoBuyYes)
 	return FilledPick{
 		Yes: yes, No: no,
 		YesBuyYes: p.YesBuyYes, NoBuyYes: p.NoBuyYes,
 		Qty: p.Qty, Per: p.Per,
 	}, true
+}
+
+// copyPickSidePrices 把 TopHit 用的卖一写回 ExecSide，落库与 JSON 对账一致。
+func copyPickSidePrices(dst *Side, src Side, buyYes bool) {
+	if buyYes {
+		dst.YesPx, dst.YesSz = src.YesPx, src.YesSz
+		return
+	}
+	dst.NoPx, dst.NoSz = src.NoPx, src.NoSz
 }
