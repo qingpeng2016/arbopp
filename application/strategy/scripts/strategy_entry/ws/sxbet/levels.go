@@ -24,6 +24,12 @@ func LevelsToYesBook(one, two []httpentity.SxbetBookLevel) (bids, asks []book.Le
 	return bids, asks
 }
 
+// LevelsToNotAsks 买 NO（押 outcomeTwo / Not）：吃 outcomeOne 挂单，与站内「Not @ 十进制」同源。
+func LevelsToNotAsks(one []httpentity.SxbetBookLevel) []book.Level {
+	tick := 0.01
+	return book.SortAsc(book.OnTick(levelsToNotAsks(one), tick))
+}
+
 // levelsToYesAsks 买 YES：消费 outcomeTwo 挂单。
 func levelsToYesAsks(two []httpentity.SxbetBookLevel) []book.Level {
 	out := make([]book.Level, 0, len(two))
@@ -37,6 +43,11 @@ func levelsToYesAsks(two []httpentity.SxbetBookLevel) []book.Level {
 		out = append(out, book.Level{Price: p, Size: sz})
 	}
 	return out
+}
+
+// levelsToNotAsks 与 levelsToYesAsks(one) 相同：outcomeOne 上 taker 价 = 1 − maker。
+func levelsToNotAsks(one []httpentity.SxbetBookLevel) []book.Level {
+	return levelsToYesAsks(one)
 }
 
 // levelsToYesBids 卖 YES：消费 outcomeOne 挂单；YES 买价 = maker 隐含概率。

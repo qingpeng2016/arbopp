@@ -83,7 +83,10 @@ func (w *Watch) collectOutcomeBooks(outcomeIndex, depth int) outcomeBooks {
 			noKey = mid + ":no"
 		}
 		appendBook(appcommon.PlatformKalshi, noKey, "NO_TOKEN")
-	case appcommon.PlatformPredict, appcommon.PlatformSxbet:
+	case appcommon.PlatformSxbet:
+		mid := strings.TrimSpace(oc.PlatformMarketOutcomeID)
+		appendBook(oc.Platform, mid, "YES_BOOK")
+	case appcommon.PlatformPredict:
 		mid := strings.TrimSpace(oc.PlatformMarketOutcomeID)
 		appendBook(oc.Platform, mid, "YES_BOOK")
 		noKey := strings.TrimSpace(oc.NoTokenID)

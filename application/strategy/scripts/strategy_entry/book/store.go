@@ -239,7 +239,35 @@ func applyPolyLevel(b *Book, side string, price, size float64, ts time.Time) str
 	return ""
 }
 
-// ApplySxbetBook SXBet orderbook_v3 全量（YES 视角；NO 由 SyncComplementNoFromYes 维护）。
+// ApplySxbetNotAsksBook 买 NO 卖一（hash:no），来自 outcomeOne 吃单价，与 WS YES 行分离维护。
+func (s *Store) ApplySxbetNotAsksBook(yesHash string, notAsks []Level, ts time.Time) bool {
+	yesHash = strings.TrimSpace(yesHash)
+	if yesHash == "" {
+		return false
+	}
+	noKey := yesHash + ":not"
+	tick := 0.01
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	b := s.ensure(appcommon.PlatformSxbet, noKey)
+	b.Tick = tick
+	b.Bids = nil
+	b.Asks = SortAsc(OnTick(notAsks, tick))
+	yesB := s.books[key(appcommon.PlatformSxbet, yesHash)]
+	if yesB != nil && !ts.IsZero() {
+		b.ExchangeTS = ts
+	} else if yesB != nil && !yesB.ExchangeTS.IsZero() {
+		b.ExchangeTS = yesB.ExchangeTS
+	}
+	if yesB != nil {
+		b.Live = yesB.Live
+	} else {
+		b.Live = len(b.Asks) > 0
+	}
+	return len(b.Asks) > 0
+}
+
+// ApplySxbetBook SXBet orderbook_v3 全量（YES 视角；落库与 market_order_book_ws 一致）。
 func (s *Store) ApplySxbetBook(marketHash string, bids, asks []Level, ts time.Time) bool {
 	tick := 0.01
 	defer func() {

@@ -50,9 +50,15 @@ func TopFromStore(store *book.Store, oc BookOutcome, index int, fee float64) (Si
 		if noKey == "" {
 			noKey = bookID + ":no"
 		}
+		if strings.EqualFold(oc.Platform, appcommon.PlatformSxbet) {
+			noKey = bookID + ":not"
+		}
 		if noPx, noSz, ok := store.Ask(oc.Platform, noKey); ok && book.ValidPrice(noPx) {
 			st.NoPx, st.NoSz = noPx, noSz
 			return st, true
+		}
+		if strings.EqualFold(oc.Platform, appcommon.PlatformSxbet) {
+			return Side{}, false
 		}
 		bid, bidSz, ok2 := store.Bid(oc.Platform, bookID)
 		if !ok2 || !book.ValidPrice(bid) {

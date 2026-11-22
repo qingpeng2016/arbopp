@@ -34,4 +34,8 @@ func TestLevelsToYesBook_TakerFromMakerFrame(t *testing.T) {
 	if math.Abs(notDecimal-1.4308) > 0.02 {
 		t.Fatalf("not decimal ~%.3f", notDecimal)
 	}
+	notAsks := LevelsToNotAsks(one)
+	if len(notAsks) != 1 || math.Abs(notAsks[0].Price-(1-0.301)) > 1e-4 {
+		t.Fatalf("not ask got %+v want ~%.3f", notAsks, 1-0.301)
+	}
 }

@@ -40,6 +40,7 @@ type event struct {
 	ID       string
 	Bids     []book.Level
 	Asks     []book.Level
+	NotAsks  []book.Level // SX：押 Not 吃单价
 	NoBids   []book.Level
 	Side     string
 	Price    float64
@@ -390,7 +391,7 @@ func (w *watch) applySxbet(msg sxbetws.Message) {
 	case "book":
 		w.write(event{
 			Gen: msg.Gen, Platform: appcommon.PlatformSxbet, Kind: "sxbet_all_book", ID: msg.ID,
-			Bids: msg.Bids, Asks: msg.Asks, TS: msg.TS, RecvAt: recv,
+			Bids: msg.Bids, Asks: msg.Asks, NotAsks: msg.NotAsks, TS: msg.TS, RecvAt: recv,
 		})
 	}
 }
@@ -490,7 +491,7 @@ func (w *watch) write(e event) {
 		if !w.Books.ApplySxbetBook(e.ID, e.Bids, e.Asks, e.TS) {
 			return
 		}
-		w.syncComplementNoBook(appcommon.PlatformSxbet, e.ID, e.TS)
+		w.Books.ApplySxbetNotAsksBook(e.ID, e.NotAsks, e.TS)
 	case "kalshi_price_change":
 		// 订阅WS成功后，kalshi开始推送增量变化的订单簿信息
 		ok, gap := w.Books.ApplyKalshiDelta(e.ID, e.Side, e.Price, e.Delta, e.Seq, e.TS)

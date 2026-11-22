@@ -23,3 +23,22 @@ func TestTopFromStorePredictNOBook(t *testing.T) {
 		t.Fatalf("yes=%v no=%v", s.YesPx, s.NoPx)
 	}
 }
+
+func TestTopFromStoreSxbetNotAsks(t *testing.T) {
+	store := book.NewStore()
+	hash := "0xabc"
+	ts := time.Now().UTC()
+	store.ApplySxbetBook(hash,
+		[]book.Level{{Price: 0.67, Size: 100}},
+		[]book.Level{{Price: 0.69, Size: 200}}, ts)
+	store.ApplySxbetNotAsksBook(hash,
+		[]book.Level{{Price: 0.33, Size: 300}}, ts)
+	oc := OutcomeFields(appcommon.PlatformSxbet, hash, hash, hash+":no")
+	s, ok := TopFromStore(store, oc, 0, 0)
+	if !ok {
+		t.Fatal("TopFromStore")
+	}
+	if s.YesPx != 0.69 || s.NoPx != 0.33 {
+		t.Fatalf("yes=%v no=%v", s.YesPx, s.NoPx)
+	}
+}

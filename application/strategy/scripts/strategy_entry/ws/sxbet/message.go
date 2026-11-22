@@ -17,6 +17,7 @@ type Message struct {
 	Version  string
 	Bids     []book.Level
 	Asks     []book.Level
+	NotAsks  []book.Level // 买 NO：outcomeOne 吃单价（非 YES 互补）
 	TS       time.Time
 }
 
@@ -34,9 +35,10 @@ func messageFromBook(gen int, ob *httpentity.SxbetOrderbookV3) (Message, bool) {
 		return Message{}, false
 	}
 	bids, asks := LevelsToYesBook(ob.OutcomeOne, ob.OutcomeTwo)
+	notAsks := LevelsToNotAsks(ob.OutcomeOne)
 	return Message{
 		Gen: gen, Kind: "book", ID: hash, Version: strings.TrimSpace(ob.Version),
-		Bids: bids, Asks: asks, TS: time.Now().UTC(),
+		Bids: bids, Asks: asks, NotAsks: notAsks, TS: time.Now().UTC(),
 	}, true
 }
 
