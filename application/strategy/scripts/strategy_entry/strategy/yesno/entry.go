@@ -163,8 +163,10 @@ func (r *Runner) grabPersist() PersistGrab {
 		OppRepo:            safeOppRepo(ops),
 		OrderRepo:          safeOrderRepo(ops),
 		BookRepo:           safeBookRepo(ops),
-		BooksJSON:          r.booksJSONForPick,
-		BookRows:           r.bookRowsForPick,
+		YesLegInfo: func(i int, buyYes bool) string { return r.w.YesLegInfoJSON(i, buyYes) },
+		NoLegInfo:  func(i int, buyYes bool) string { return r.w.NoLegInfoJSON(i, buyYes) },
+		LegOrderBooks: func(i int) string { return r.w.FullOrderBooksJSON(i) },
+		BookRows:   r.bookRowsForPick,
 	}
 	if ops.BacktestTaskID > 0 {
 		pg.BacktestTaskID = ops.BacktestTaskID

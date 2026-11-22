@@ -293,13 +293,15 @@ CREATE TABLE IF NOT EXISTS `arb_binary_opportunity` (
   `sub_category` varchar(200) DEFAULT NULL,
   `competition` varchar(64) DEFAULT NULL COMMENT '联赛/杯赛',
   `competition_en` varchar(128) DEFAULT NULL,
-  `yes_market_outcome_id` bigint unsigned NOT NULL DEFAULT 0,
-  `no_market_outcome_id` bigint unsigned NOT NULL DEFAULT 0,
-  `leg3_market_outcome_id` bigint unsigned NOT NULL DEFAULT 0 COMMENT '1X2 第三腿；二元为 0',
-  `outcomes_json` text NOT NULL,
-  `order_books_json` mediumtext NOT NULL,
+  `yes_info` mediumtext NOT NULL COMMENT 'yes_market_id…yes_outcome_id…yes_token_name 缩进 JSON',
+  `no_info` mediumtext NOT NULL COMMENT 'no_market_id…no_outcome_id…no_token_name 缩进 JSON',
+  `yes_order_books` mediumtext NOT NULL COMMENT 'YES 价腿全量盘口缩进 JSON',
+  `no_order_books` mediumtext NOT NULL COMMENT 'NO 价腿全量盘口缩进 JSON',
+  `draw_info` mediumtext NOT NULL COMMENT '1X2 平局腿 JSON；二元为 {}',
+  `draw_order_books` mediumtext NOT NULL COMMENT '平局腿全量盘口 JSON',
   `yes_best_ask` decimal(20,8) DEFAULT NULL,
   `no_best_ask` decimal(20,8) DEFAULT NULL,
+  `draw_best_ask` decimal(20,8) DEFAULT NULL COMMENT '平局腿卖一（1X2）',
   `total_cost` decimal(20,8) NOT NULL,
   `profit_space` decimal(20,8) NOT NULL,
   `threshold_key` varchar(64) NOT NULL,
@@ -313,8 +315,7 @@ CREATE TABLE IF NOT EXISTS `arb_binary_opportunity` (
   KEY `idx_arb_binary_time` (`snapshot_at`),
   KEY `idx_arb_binary_map` (`map_key`,`snapshot_at`),
   KEY `idx_arb_binary_kind` (`opp_kind`,`snapshot_at`),
-  KEY `idx_arb_binary_snap_ms` (`map_key`,`snapshot_at_ms`),
-  KEY `idx_arb_binary_leg_outcomes` (`yes_market_outcome_id`,`no_market_outcome_id`)
+  KEY `idx_arb_binary_snap_ms` (`map_key`,`snapshot_at_ms`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='strategy_entry 套利机会';
 
 CREATE TABLE IF NOT EXISTS `orders` (
@@ -399,13 +400,15 @@ CREATE TABLE IF NOT EXISTS `backtest_arb_binary_opportunity` (
   `sub_category` varchar(200) DEFAULT NULL,
   `competition` varchar(64) DEFAULT NULL,
   `competition_en` varchar(128) DEFAULT NULL,
-  `yes_market_outcome_id` bigint unsigned NOT NULL DEFAULT 0,
-  `no_market_outcome_id` bigint unsigned NOT NULL DEFAULT 0,
-  `leg3_market_outcome_id` bigint unsigned NOT NULL DEFAULT 0,
-  `outcomes_json` text NOT NULL,
-  `order_books_json` mediumtext NOT NULL,
+  `yes_info` mediumtext NOT NULL COMMENT 'yes_market_id…yes_outcome_id…yes_token_name 缩进 JSON',
+  `no_info` mediumtext NOT NULL COMMENT 'no_market_id…no_outcome_id…no_token_name 缩进 JSON',
+  `yes_order_books` mediumtext NOT NULL COMMENT 'YES 价腿全量盘口缩进 JSON',
+  `no_order_books` mediumtext NOT NULL COMMENT 'NO 价腿全量盘口缩进 JSON',
+  `draw_info` mediumtext NOT NULL COMMENT '1X2 平局腿 JSON；二元为 {}',
+  `draw_order_books` mediumtext NOT NULL COMMENT '平局腿全量盘口 JSON',
   `yes_best_ask` decimal(20,8) DEFAULT NULL,
   `no_best_ask` decimal(20,8) DEFAULT NULL,
+  `draw_best_ask` decimal(20,8) DEFAULT NULL COMMENT '平局腿卖一（1X2）',
   `total_cost` decimal(20,8) NOT NULL,
   `profit_space` decimal(20,8) NOT NULL,
   `threshold_key` varchar(64) NOT NULL,
@@ -419,7 +422,7 @@ CREATE TABLE IF NOT EXISTS `backtest_arb_binary_opportunity` (
   KEY `idx_bt_opp_task` (`backtest_task_id`, `snapshot_at`),
   KEY `idx_bt_opp_map` (`map_key`, `snapshot_at`),
   KEY `idx_bt_opp_snap_ms` (`backtest_task_id`, `snapshot_at_ms`),
-  UNIQUE KEY `uk_bt_opp_snap_legs` (`backtest_task_id`, `snapshot_at_ms`, `opp_kind`, `yes_market_outcome_id`, `no_market_outcome_id`, `leg3_market_outcome_id`)
+  UNIQUE KEY `uk_bt_opp_snap_legs` (`backtest_task_id`, `snapshot_at_ms`, `opp_kind`, `map_key`(96), `total_cost`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `backtest_orders` (

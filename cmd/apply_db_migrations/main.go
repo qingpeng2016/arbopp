@@ -22,6 +22,7 @@ func main() {
 		{"backtest_orders", ensureBacktestOrders},
 		{"backtest_task.progress", ensureBacktestTaskProgress},
 		{"backtest_opp_uk", ensureBacktestOppUniqueKey},
+		{"arb_opp_leg_info", ensureArbOppLegInfo},
 		{"bot stat_collect", ensureBotStatCollect},
 		{"data_task.ingest_source", ensureDataTaskIngestSource},
 	}
@@ -102,19 +103,13 @@ func ensureBacktestOppUniqueKey(db *gorm.DB) error {
 	if !hasTable(db, "backtest_arb_binary_opportunity") {
 		return nil
 	}
-	if !hasColumn(db, "backtest_arb_binary_opportunity", "leg3_market_outcome_id") {
-		if err := db.Exec(`ALTER TABLE backtest_arb_binary_opportunity ADD COLUMN leg3_market_outcome_id bigint unsigned NOT NULL DEFAULT 0 AFTER no_market_outcome_id`).Error; err != nil {
-			return err
-		}
-	}
 	want := "uk_bt_opp_snap_legs"
 	if hasIndex(db, "backtest_arb_binary_opportunity", want) {
 		return nil
 	}
-	// drop old uk without opp_kind/leg3 if present (ignore errors)
 	_ = db.Exec(`ALTER TABLE backtest_arb_binary_opportunity DROP INDEX uk_bt_opp_snap_legs`).Error
 	return db.Exec(`ALTER TABLE backtest_arb_binary_opportunity ADD UNIQUE KEY uk_bt_opp_snap_legs (
-    backtest_task_id, snapshot_at_ms, opp_kind, yes_market_outcome_id, no_market_outcome_id, leg3_market_outcome_id
+    backtest_task_id, snapshot_at_ms, opp_kind, map_key(96), total_cost
   )`).Error
 }
 
@@ -156,6 +151,75 @@ ALTER TABLE data_task
 	if !hasIndex(db, "data_task", "idx_data_task_ingest_status") {
 		if err := db.Exec(`ALTER TABLE data_task ADD KEY idx_data_task_ingest_status (ingest_source, status)`).Error; err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func ensureArbOppLegInfo(db *gorm.DB) error {
+	tables := []string{"arb_binary_opportunity", "backtest_arb_binary_opportunity"}
+	for _, table := range tables {
+		if !hasTable(db, table) {
+			continue
+		}
+		if !hasColumn(db, table, "yes_info") {
+			if err := db.Exec(`ALTER TABLE ` + "`" + table + "`" + `
+  ADD COLUMN yes_info mediumtext NULL COMMENT 'YES 价腿 market/outcome/token 缩进 JSON' AFTER leg3_market_outcome_id,
+  ADD COLUMN no_info mediumtext NULL AFTER yes_info,
+  ADD COLUMN yes_order_books mediumtext NULL AFTER no_info,
+  ADD COLUMN no_order_books mediumtext NULL AFTER yes_order_books`).Error; err != nil {
+				return err
+			}
+			if err := db.Exec(`UPDATE ` + "`" + table + "`" + ` SET
+  yes_info = COALESCE(yes_info, '{}\n'),
+  no_info = COALESCE(no_info, '{}\n'),
+  yes_order_books = COALESCE(yes_order_books, '{}\n'),
+  no_order_books = COALESCE(no_order_books, '{}\n')`).Error; err != nil {
+				return err
+			}
+			if err := db.Exec(`ALTER TABLE ` + "`" + table + "`" + `
+  MODIFY COLUMN yes_info mediumtext NOT NULL,
+  MODIFY COLUMN no_info mediumtext NOT NULL,
+  MODIFY COLUMN yes_order_books mediumtext NOT NULL,
+  MODIFY COLUMN no_order_books mediumtext NOT NULL`).Error; err != nil {
+				return err
+			}
+		}
+		if hasColumn(db, table, "outcomes_json") {
+			_ = db.Exec(`ALTER TABLE ` + "`" + table + "`" + ` DROP COLUMN outcomes_json`).Error
+		}
+		if hasColumn(db, table, "order_books_json") {
+			_ = db.Exec(`ALTER TABLE ` + "`" + table + "`" + ` DROP COLUMN order_books_json`).Error
+		}
+		if table == "arb_binary_opportunity" && hasIndex(db, table, "idx_arb_binary_leg_outcomes") {
+			_ = db.Exec(`ALTER TABLE arb_binary_opportunity DROP INDEX idx_arb_binary_leg_outcomes`).Error
+		}
+		if hasColumn(db, table, "yes_market_outcome_id") {
+			_ = db.Exec(`ALTER TABLE ` + "`" + table + "`" + ` DROP COLUMN yes_market_outcome_id`).Error
+		}
+		if hasColumn(db, table, "no_market_outcome_id") {
+			_ = db.Exec(`ALTER TABLE ` + "`" + table + "`" + ` DROP COLUMN no_market_outcome_id`).Error
+		}
+		if table == "backtest_arb_binary_opportunity" && hasColumn(db, table, "yes_info") {
+			if hasIndex(db, table, "uk_bt_opp_snap_legs") {
+				_ = db.Exec(`ALTER TABLE backtest_arb_binary_opportunity DROP INDEX uk_bt_opp_snap_legs`).Error
+			}
+			if !hasIndex(db, table, "uk_bt_opp_snap_legs") {
+				_ = db.Exec(`ALTER TABLE backtest_arb_binary_opportunity ADD UNIQUE KEY uk_bt_opp_snap_legs (
+          backtest_task_id, snapshot_at_ms, opp_kind, map_key(96), total_cost
+        )`).Error
+			}
+		}
+		if !hasColumn(db, table, "draw_info") {
+			_ = db.Exec(`ALTER TABLE ` + "`" + table + "`" + `
+  ADD COLUMN draw_info mediumtext NULL AFTER no_order_books,
+  ADD COLUMN draw_order_books mediumtext NULL AFTER draw_info,
+  ADD COLUMN draw_best_ask decimal(20,8) NULL AFTER no_best_ask`).Error
+			_ = db.Exec(`UPDATE ` + "`" + table + "`" + ` SET draw_info='{}\n', draw_order_books='{}\n' WHERE draw_info IS NULL`).Error
+			_ = db.Exec(`ALTER TABLE ` + "`" + table + "`" + ` MODIFY draw_info mediumtext NOT NULL, MODIFY draw_order_books mediumtext NOT NULL`).Error
+		}
+		if hasColumn(db, table, "leg3_market_outcome_id") {
+			_ = db.Exec(`ALTER TABLE ` + "`" + table + "`" + ` DROP COLUMN leg3_market_outcome_id`).Error
 		}
 	}
 	return nil

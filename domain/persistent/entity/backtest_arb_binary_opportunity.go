@@ -16,13 +16,15 @@ type BacktestArbBinaryOpportunity struct {
 	SubCategory         *string          `gorm:"column:sub_category;type:varchar(200)"`
 	Competition         *string          `gorm:"column:competition;type:varchar(64)"`
 	CompetitionEn       *string          `gorm:"column:competition_en;type:varchar(128)"`
-	YesMarketOutcomeID  uint             `gorm:"column:yes_market_outcome_id;type:bigint unsigned;not null;default:0"`
-	NoMarketOutcomeID   uint             `gorm:"column:no_market_outcome_id;type:bigint unsigned;not null;default:0"`
-	Leg3MarketOutcomeID uint             `gorm:"column:leg3_market_outcome_id;type:bigint unsigned;not null;default:0"`
-	OutcomesJSON        string           `gorm:"column:outcomes_json;type:text;not null"`
-	OrderBooksJSON string           `gorm:"column:order_books_json;type:mediumtext;not null"`
-	YesBestAsk     *decimal.Decimal `gorm:"column:yes_best_ask;type:decimal(20,8)"`
-	NoBestAsk      *decimal.Decimal `gorm:"column:no_best_ask;type:decimal(20,8)"`
+	YesInfo             string           `gorm:"column:yes_info;type:mediumtext;not null"`
+	NoInfo              string           `gorm:"column:no_info;type:mediumtext;not null"`
+	YesOrderBooks       string           `gorm:"column:yes_order_books;type:mediumtext;not null"`
+	NoOrderBooks        string           `gorm:"column:no_order_books;type:mediumtext;not null"`
+	DrawInfo            string           `gorm:"column:draw_info;type:mediumtext;not null"`
+	DrawOrderBooks      string           `gorm:"column:draw_order_books;type:mediumtext;not null"`
+	YesBestAsk          *decimal.Decimal `gorm:"column:yes_best_ask;type:decimal(20,8)"`
+	NoBestAsk           *decimal.Decimal `gorm:"column:no_best_ask;type:decimal(20,8)"`
+	DrawBestAsk         *decimal.Decimal `gorm:"column:draw_best_ask;type:decimal(20,8)"`
 	TotalCost      decimal.Decimal  `gorm:"column:total_cost;type:decimal(20,8);not null"`
 	ProfitSpace    decimal.Decimal  `gorm:"column:profit_space;type:decimal(20,8);not null"`
 	ThresholdKey   string           `gorm:"column:threshold_key;type:varchar(64);not null"`

@@ -34,10 +34,10 @@ ORDER BY table_name`).Scan(&tables).Error; err != nil {
 	checks := []struct{ table, column string }{
 		{"orders", "strategy_type"},
 		{"orders", "backtest_task_id"},
-		{"arb_binary_opportunity", "leg3_market_outcome_id"},
+		{"arb_binary_opportunity", "draw_info"},
 		{"arb_binary_opportunity", "opp_kind"},
 		{"backtest_orders", "strategy_type"},
-		{"backtest_arb_binary_opportunity", "leg3_market_outcome_id"},
+		{"backtest_arb_binary_opportunity", "draw_info"},
 		{"stat_kv", "group_name"},
 		{"market_category", "config_json"},
 		{"config_strategy_fee", "taker_fee_coef"},

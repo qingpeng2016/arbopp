@@ -2,7 +2,6 @@ package yesno
 
 import (
 	"context"
-	"encoding/json"
 	"strconv"
 	"strings"
 	"time"
@@ -17,9 +16,9 @@ import (
 )
 
 const (
-	thresholdKeyMaxCost  = "binary_yes_no_max_cost"
-	strategyTypeYesNo    = "BINARY_YES_NO"
-	emptyOrderBooksJSON = `{"outcomes":[]}`
+	thresholdKeyMaxCost = "binary_yes_no_max_cost"
+	strategyTypeYesNo   = "BINARY_YES_NO"
+	emptyLegJSON        = "{}\n"
 )
 
 // PersistGrab 抢单落库依赖。
@@ -28,8 +27,10 @@ type PersistGrab struct {
 	OppRepo            persistentrepo.ArbBinaryOpportunityRepo
 	OrderRepo persistentrepo.ArbBinaryOrderRepo
 	BookRepo  persistentrepo.OrderBookRepo
-	BooksJSON func(a, b ExecSide) string
-	BookRows  func(a, b ExecSide) []*persistententity.OrderBook
+	YesLegInfo    func(outcomeIndex int, buyYes bool) string
+	NoLegInfo     func(outcomeIndex int, buyYes bool) string
+	LegOrderBooks func(outcomeIndex int) string
+	BookRows      func(a, b ExecSide) []*persistententity.OrderBook
 
 	BacktestTaskID    uint
 	BacktestOppRepo   persistentrepo.BacktestArbBinaryOpportunityRepo
@@ -79,13 +80,6 @@ func SaveGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit GrabHit)
 	aYes, bYes := hit.Pick.YesBuyYes, hit.Pick.NoBuyYes
 	qty, per, maxCost := hit.Pick.Qty, hit.Pick.Per, hit.MaxCost
 	aPx, bPx := SidePx(a.Side, aYes), SidePx(b.Side, bYes)
-	aSide, bSide := "NO", "NO"
-	if aYes {
-		aSide = "YES"
-	}
-	if bYes {
-		bSide = "YES"
-	}
 	yesPx, noPx := aPx, bPx
 	if !aYes {
 		yesPx, noPx = bPx, aPx
@@ -93,20 +87,16 @@ func SaveGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit GrabHit)
 	now, snapMs := snapshotTimes(d)
 	yesMoID, noMoID := comboLegMarketOutcomeIDs(a, b, aYes)
 	scope := fixtureScopeForGrab(d, yesMoID, noMoID)
-	outcomes, _ := json.Marshal([]map[string]any{
-		{"platform": a.Platform, "market_id": a.MarketID, "market_outcome_id": a.OutcomeID, "side": aSide, "best_ask": aPx, "size": qty, "fill": hit.YesFill},
-		{"platform": b.Platform, "market_id": b.MarketID, "market_outcome_id": b.OutcomeID, "side": bSide, "best_ask": bPx, "size": qty, "fill": hit.NoFill},
-	})
-	booksJSON := orderBooksJSONForHit(d, a, b)
+	yesInfo, noInfo, yesBooks, noBooks := legPersistFields(d, a, b, aYes, bYes)
 	yes := decimal.NewFromFloat(yesPx).Round(8)
 	no := decimal.NewFromFloat(noPx).Round(8)
 	row := &persistententity.ArbBinaryOpportunity{
 		OppKind: "BINARY_YES_NO", MapKey: strPtr(mapKey),
 		Category: scope.Category, SubCategory: scope.SubCategory,
 		Competition: scope.Competition, CompetitionEn: scope.CompetitionEn,
-		YesMarketOutcomeID: yesMoID, NoMarketOutcomeID: noMoID,
-		OutcomesJSON: string(outcomes), OrderBooksJSON: booksJSON,
-		YesBestAsk: &yes, NoBestAsk: &no,
+		YesInfo: yesInfo, NoInfo: noInfo, YesOrderBooks: yesBooks, NoOrderBooks: noBooks,
+		DrawInfo: emptyLegJSON, DrawOrderBooks: emptyLegJSON,
+		YesBestAsk: &yes, NoBestAsk: &no, DrawBestAsk: nil,
 		TotalCost: decimal.NewFromFloat(per).Round(8), ProfitSpace: decimal.NewFromFloat(1 - per).Round(8),
 		ThresholdKey: thresholdKeyMaxCost, ThresholdValue: decimal.NewFromFloat(maxCost).Round(8),
 		BookUpdatedAt: &now, SnapshotAt: now, SnapshotAtMs: snapMs,
@@ -228,7 +218,6 @@ func comboLegMarketOutcomeIDs(a, b ExecSide, aBuysYes bool) (yesLegID, noLegID u
 	return b.OutcomeID, a.OutcomeID
 }
 
-// orderBooksJSONForHit arb_binary_opportunity / backtest_arb_binary_opportunity 共用：命中时两腿内存盘口（至多 8 档）。
 func snapshotTimes(d PersistGrab) (time.Time, int64) {
 	if d.SnapshotAtMs != nil {
 		if ms := d.SnapshotAtMs(); ms > 0 {
@@ -243,15 +232,39 @@ func snapshotTimes(d PersistGrab) (time.Time, int64) {
 	return now, now.UnixMilli()
 }
 
-func orderBooksJSONForHit(d PersistGrab, a, b ExecSide) string {
-	if d.BooksJSON == nil {
-		return emptyOrderBooksJSON
+func comboLegSides(a, b ExecSide, aBuysYes, bBuysYes bool) (yesLeg, noLeg ExecSide, yesBuy, noBuy bool) {
+	if aBuysYes {
+		return a, b, true, bBuysYes
 	}
-	s := strings.TrimSpace(d.BooksJSON(a, b))
-	if s == "" {
-		return emptyOrderBooksJSON
+	return b, a, true, aBuysYes
+}
+
+func legPersistFields(d PersistGrab, a, b ExecSide, aBuysYes, bBuysYes bool) (yesInfo, noInfo, yesBooks, noBooks string) {
+	yesLeg, noLeg, yesBuy, noBuy := comboLegSides(a, b, aBuysYes, bBuysYes)
+	yesInfo, noInfo, yesBooks, noBooks = emptyLegJSON, emptyLegJSON, emptyLegJSON, emptyLegJSON
+	if d.YesLegInfo != nil {
+		yesInfo = d.YesLegInfo(yesLeg.Index, yesBuy)
 	}
-	return s
+	if d.NoLegInfo != nil {
+		noInfo = d.NoLegInfo(noLeg.Index, noBuy)
+	}
+	if d.LegOrderBooks != nil {
+		yesBooks = d.LegOrderBooks(yesLeg.Index)
+		noBooks = d.LegOrderBooks(noLeg.Index)
+	}
+	if strings.TrimSpace(yesInfo) == "" {
+		yesInfo = emptyLegJSON
+	}
+	if strings.TrimSpace(noInfo) == "" {
+		noInfo = emptyLegJSON
+	}
+	if strings.TrimSpace(yesBooks) == "" {
+		yesBooks = emptyLegJSON
+	}
+	if strings.TrimSpace(noBooks) == "" {
+		noBooks = emptyLegJSON
+	}
+	return yesInfo, noInfo, yesBooks, noBooks
 }
 
 func saveBacktestGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit GrabHit) {
@@ -259,13 +272,6 @@ func saveBacktestGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit 
 	aYes, bYes := hit.Pick.YesBuyYes, hit.Pick.NoBuyYes
 	qty, per, maxCost := hit.Pick.Qty, hit.Pick.Per, hit.MaxCost
 	aPx, bPx := SidePx(a.Side, aYes), SidePx(b.Side, bYes)
-	aSide, bSide := "NO", "NO"
-	if aYes {
-		aSide = "YES"
-	}
-	if bYes {
-		bSide = "YES"
-	}
 	yesPx, noPx := aPx, bPx
 	if !aYes {
 		yesPx, noPx = bPx, aPx
@@ -273,11 +279,7 @@ func saveBacktestGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit 
 	now, snapMs := snapshotTimes(d)
 	yesMoID, noMoID := comboLegMarketOutcomeIDs(a, b, aYes)
 	scope := fixtureScopeForGrab(d, yesMoID, noMoID)
-	outcomes, _ := json.Marshal([]map[string]any{
-		{"platform": a.Platform, "market_id": a.MarketID, "market_outcome_id": a.OutcomeID, "side": aSide, "best_ask": aPx, "size": qty, "fill": hit.YesFill},
-		{"platform": b.Platform, "market_id": b.MarketID, "market_outcome_id": b.OutcomeID, "side": bSide, "best_ask": bPx, "size": qty, "fill": hit.NoFill},
-	})
-	booksJSON := orderBooksJSONForHit(d, a, b)
+	yesInfo, noInfo, yesBooks, noBooks := legPersistFields(d, a, b, aYes, bYes)
 	yes := decimal.NewFromFloat(yesPx).Round(8)
 	no := decimal.NewFromFloat(noPx).Round(8)
 	row := &persistententity.BacktestArbBinaryOpportunity{
@@ -285,9 +287,9 @@ func saveBacktestGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit 
 		OppKind:        "BINARY_YES_NO", MapKey: strPtr(mapKey),
 		Category: scope.Category, SubCategory: scope.SubCategory,
 		Competition: scope.Competition, CompetitionEn: scope.CompetitionEn,
-		YesMarketOutcomeID: yesMoID, NoMarketOutcomeID: noMoID,
-		OutcomesJSON: string(outcomes), OrderBooksJSON: booksJSON,
-		YesBestAsk: &yes, NoBestAsk: &no,
+		YesInfo: yesInfo, NoInfo: noInfo, YesOrderBooks: yesBooks, NoOrderBooks: noBooks,
+		DrawInfo: emptyLegJSON, DrawOrderBooks: emptyLegJSON,
+		YesBestAsk: &yes, NoBestAsk: &no, DrawBestAsk: nil,
 		TotalCost: decimal.NewFromFloat(per).Round(8), ProfitSpace: decimal.NewFromFloat(1-per).Round(8),
 		ThresholdKey: thresholdKeyMaxCost, ThresholdValue: decimal.NewFromFloat(maxCost).Round(8),
 		BookUpdatedAt: &now, SnapshotAt: now, SnapshotAtMs: snapMs,

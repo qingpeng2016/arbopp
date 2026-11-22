@@ -2,8 +2,8 @@ package onextwo
 
 import (
 	"context"
-	"encoding/json"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/strategy/yesno"
@@ -16,19 +16,29 @@ import (
 )
 
 type persistDeps struct {
-	scope    func(yesMoID, noMoID uint) watchgroup.FixtureScope
-	opp      persistentrepo.ArbBinaryOpportunityRepo
-	order    persistentrepo.ArbBinaryOrderRepo
-	btOpp    persistentrepo.BacktestArbBinaryOpportunityRepo
-	btOrd    persistentrepo.BacktestOrderRepo
-	task     uint
-	snap     func() time.Time
-	snapMs   func() int64
+	scope       func(yesMoID, noMoID uint) watchgroup.FixtureScope
+	drawLegInfo func(outcomeIndex int, buyYes bool) string
+	yesLegInfo  func(outcomeIndex int, buyYes bool) string
+	noLegInfo   func(outcomeIndex int, buyYes bool) string
+	legBooks    func(outcomeIndex int) string
+	opp         persistentrepo.ArbBinaryOpportunityRepo
+	order       persistentrepo.ArbBinaryOrderRepo
+	btOpp       persistentrepo.BacktestArbBinaryOpportunityRepo
+	btOrd       persistentrepo.BacktestOrderRepo
+	task        uint
+	snap        func() time.Time
+	snapMs      func() int64
 }
 
 func (r *Runner) persistDeps() persistDeps {
 	ops := &r.w.Ops
-	d := persistDeps{task: ops.BacktestTaskID, scope: r.w.ScopeForOutcomeIDs, snap: ops.SnapshotNow, snapMs: ops.SnapshotAtMs}
+	d := persistDeps{
+		task: ops.BacktestTaskID, scope: r.w.ScopeForOutcomeIDs, snap: ops.SnapshotNow, snapMs: ops.SnapshotAtMs,
+		drawLegInfo: func(i int, buy bool) string { return r.w.DrawLegInfoJSON(i, buy) },
+		yesLegInfo:  func(i int, buy bool) string { return r.w.YesLegInfoJSON(i, buy) },
+		noLegInfo:   func(i int, buy bool) string { return r.w.NoLegInfoJSON(i, buy) },
+		legBooks:    func(i int) string { return r.w.FullOrderBooksJSON(i) },
+	}
 	if ops.BacktestOppRepo != nil {
 		d.btOpp = ops.BacktestOppRepo()
 	}
@@ -102,43 +112,33 @@ func snapshotTimes(d persistDeps) (time.Time, int64) {
 func buildOppBacktest(d persistDeps, mapKey string, hit GrabHit) *persistententity.BacktestArbBinaryOpportunity {
 	pick := hit.Pick
 	now, snapMs := snapshotTimes(d)
-	yesMoID, noMoID := pick.Legs[0].OutcomeID, pick.Legs[1].OutcomeID
-	leg3MoID := pick.Legs[2].OutcomeID
+	drawMoID, yesMoID, noMoID := pick.Legs[0].OutcomeID, pick.Legs[1].OutcomeID, pick.Legs[2].OutcomeID
 	scope := watchgroup.FixtureScope{}
 	if d.scope != nil {
 		scope = d.scope(yesMoID, noMoID)
 	}
-	sideWord := "YES"
+	_ = drawMoID
 	profitBase := 1.0
 	thKey := ThresholdKeyYesTriple
 	thVal := hit.Limits.YesTripleMax
-	stratType := StrategyTypeYesTriple
 	if !pick.BuyYes {
-		sideWord = "NO"
 		profitBase = 2.0
 		thKey = ThresholdKeyNoTriple
 		thVal = hit.Limits.NoTripleMax
-		stratType = StrategyTypeNoTriple
 	}
-	outcomes := make([]map[string]any, 0, 3)
-	for i, leg := range pick.Legs {
-		outcomes = append(outcomes, map[string]any{
-			"leg": i + 1, "platform": leg.Platform, "market_id": leg.MarketID,
-			"market_outcome_id": leg.OutcomeID, "side": sideWord, "best_ask": pick.Prices[i], "size": pick.Qty,
-		})
-	}
-	outJSON, _ := json.Marshal(outcomes)
-	yesAsk := decimal.NewFromFloat(pick.Prices[0]).Round(8)
-	noAsk := decimal.NewFromFloat(pick.Prices[1]).Round(8)
+	drawInfo, drawBooks, yesInfo, noInfo, yesBooks, noBooks := onextwoLegFields(d, pick)
+	drawAsk := decimal.NewFromFloat(pick.Prices[0]).Round(8)
+	yesAsk := decimal.NewFromFloat(pick.Prices[1]).Round(8)
+	noAsk := decimal.NewFromFloat(pick.Prices[2]).Round(8)
 	mapKeyPtr := mapKey
 	return &persistententity.BacktestArbBinaryOpportunity{
 		BacktestTaskID: d.task,
 		OppKind:        pick.Kind, MapKey: &mapKeyPtr,
 		Category: scope.Category, SubCategory: scope.SubCategory,
 		Competition: scope.Competition, CompetitionEn: scope.CompetitionEn,
-		YesMarketOutcomeID: yesMoID, NoMarketOutcomeID: noMoID, Leg3MarketOutcomeID: leg3MoID,
-		OutcomesJSON: string(outJSON), OrderBooksJSON: `{"legs":3,"strategy":"` + stratType + `"}`,
-		YesBestAsk: &yesAsk, NoBestAsk: &noAsk,
+		DrawInfo: drawInfo, DrawOrderBooks: drawBooks,
+		YesInfo: yesInfo, NoInfo: noInfo, YesOrderBooks: yesBooks, NoOrderBooks: noBooks,
+		DrawBestAsk: &drawAsk, YesBestAsk: &yesAsk, NoBestAsk: &noAsk,
 		TotalCost: decimal.NewFromFloat(pick.Per).Round(8),
 		ProfitSpace: decimal.NewFromFloat(profitBase - pick.Per).Round(8),
 		ThresholdKey: thKey, ThresholdValue: decimal.NewFromFloat(thVal).Round(8),
@@ -174,10 +174,9 @@ func saveLive(ctx context.Context, d persistDeps, mapKey string, hit GrabHit) {
 		OppKind: bt.OppKind, MapKey: bt.MapKey,
 		Category: bt.Category, SubCategory: bt.SubCategory,
 		Competition: bt.Competition, CompetitionEn: bt.CompetitionEn,
-		YesMarketOutcomeID: bt.YesMarketOutcomeID, NoMarketOutcomeID: bt.NoMarketOutcomeID,
-		Leg3MarketOutcomeID: bt.Leg3MarketOutcomeID,
-		OutcomesJSON: bt.OutcomesJSON, OrderBooksJSON: bt.OrderBooksJSON,
-		YesBestAsk: bt.YesBestAsk, NoBestAsk: bt.NoBestAsk,
+		DrawInfo: bt.DrawInfo, DrawOrderBooks: bt.DrawOrderBooks,
+		YesInfo: bt.YesInfo, NoInfo: bt.NoInfo, YesOrderBooks: bt.YesOrderBooks, NoOrderBooks: bt.NoOrderBooks,
+		DrawBestAsk: bt.DrawBestAsk, YesBestAsk: bt.YesBestAsk, NoBestAsk: bt.NoBestAsk,
 		TotalCost: bt.TotalCost, ProfitSpace: bt.ProfitSpace,
 		ThresholdKey: bt.ThresholdKey, ThresholdValue: bt.ThresholdValue,
 		BookUpdatedAt: bt.BookUpdatedAt, SnapshotAt: bt.SnapshotAt, SnapshotAtMs: bt.SnapshotAtMs,
@@ -210,6 +209,31 @@ func ordersForHit(taskID uint, strategyType, mapKey string, oppID uint, hit Grab
 		out = append(out, yesno.BacktestOrderForSide(strategyType, taskID, mapKey, oppID, sentAt, uint8(i+1), leg, pick.BuyYes, pick.Qty, px, fill, nil))
 	}
 	return out
+}
+
+func onextwoLegFields(d persistDeps, pick TriplePick) (drawInfo, drawBooks, yesInfo, noInfo, yesBooks, noBooks string) {
+	drawInfo, drawBooks, yesInfo, noInfo, yesBooks, noBooks = "{}\n", "{}\n", "{}\n", "{}\n", "{}\n", "{}\n"
+	buy := pick.BuyYes
+	if d.drawLegInfo != nil {
+		drawInfo = d.drawLegInfo(pick.Legs[0].Index, buy)
+	}
+	if d.yesLegInfo != nil {
+		yesInfo = d.yesLegInfo(pick.Legs[1].Index, buy)
+	}
+	if d.noLegInfo != nil {
+		noInfo = d.noLegInfo(pick.Legs[2].Index, buy)
+	}
+	if d.legBooks != nil {
+		drawBooks = d.legBooks(pick.Legs[0].Index)
+		yesBooks = d.legBooks(pick.Legs[1].Index)
+		noBooks = d.legBooks(pick.Legs[2].Index)
+	}
+	for _, p := range []*string{&drawInfo, &drawBooks, &yesInfo, &noInfo, &yesBooks, &noBooks} {
+		if strings.TrimSpace(*p) == "" {
+			*p = "{}\n"
+		}
+	}
+	return
 }
 
 func liveOrdersForHit(strategyType, mapKey string, oppID uint, hit GrabHit, sentAt time.Time) []*persistententity.ArbBinaryOrder {
