@@ -16,9 +16,9 @@ type Limits struct {
 
 // Quote 单所深度摊薄 YES+NO 的成本（Cover 返回值；线上 5.2 只做跨所卖一 TopHit，不用本结构做发现）。
 type Quote struct {
-	YesAvg, NoAvg       float64
-	YesFee, NoFee       float64
-	Qty, PerShare       float64
+	YesAvg, NoAvg float64
+	YesFee, NoFee float64
+	Qty, PerShare float64
 }
 
 // Fee 每份手续费，coef 为 p(1−p) 系数。
@@ -88,15 +88,6 @@ func Cover(yesAsks, noAsks []book.Level, yesFee, noFee, minQty, maxQty, maxCost 
 
 // TopHit 卖一套利：跨所两两组合时各买一边的 YES/NO 卖一。
 func TopHit(yesPx, yesSz, noPx, noSz, yesFee, noFee, orderAmount, levelFactor, maxCost float64) (qty, per float64, ok bool) {
-	if orderAmount <= 0 {
-		orderAmount = 100
-	}
-	if levelFactor <= 0 {
-		levelFactor = 2
-	}
-	if maxCost <= 0 || yesSz <= 0 || noSz <= 0 {
-		return 0, 0, false
-	}
 	if !book.ValidPrice(yesPx) || !book.ValidPrice(noPx) {
 		return 0, 0, false
 	}
@@ -104,19 +95,24 @@ func TopHit(yesPx, yesSz, noPx, noSz, yesFee, noFee, orderAmount, levelFactor, m
 	if per >= maxCost {
 		return 0, 0, false
 	}
-	pairPx := yesPx + noPx
-	if pairPx <= 0 {
-		return 0, 0, false
+	qty, ok = SizeForBudget(per, math.Min(yesSz, noSz), orderAmount, levelFactor)
+	return qty, per, ok
+}
+
+// SizeForBudget keeps the configured depth gate and caps the accepted order at
+// the quantity actually offered at the selected price.
+func SizeForBudget(cost, depth, orderAmount, levelFactor float64) (float64, bool) {
+	if orderAmount <= 0 {
+		orderAmount = 100
 	}
-	qty = orderAmount / pairPx
-	avail := yesSz
-	if noSz < avail {
-		avail = noSz
+	if levelFactor <= 0 {
+		levelFactor = 2
 	}
-	if avail*levelFactor < qty {
-		return 0, 0, false
+	target := orderAmount / cost
+	if !(cost > 0 && depth > 0 && target > 0 && depth*levelFactor >= target) {
+		return 0, false
 	}
-	return qty, per, true
+	return math.Min(target, depth), true
 }
 
 func positiveAsc(in []book.Level) []book.Level {

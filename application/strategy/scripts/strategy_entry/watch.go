@@ -61,16 +61,16 @@ type connState struct {
 
 type watch struct {
 	*watchgroup.Watch
-	entry    *Entry
-	ev       chan event
-	mu       sync.Mutex
-	conn     map[string]*connState
-	yesno    *yesno.Runner
-	onextwo  *onextwo.Runner
-	negRisk  []bool
-	wsHealth       *wsHealth
-	wsPersistMu    sync.Mutex
-	wsPersistLast  map[string]time.Time
+	entry         *Entry
+	ev            chan event
+	mu            sync.Mutex
+	conn          map[string]*connState
+	yesno         *yesno.Runner
+	onextwo       *onextwo.Runner
+	negRisk       []bool
+	wsHealth      *wsHealth
+	wsPersistMu   sync.Mutex
+	wsPersistLast map[string]time.Time
 }
 
 // newWatch 为一组 map_key 建内存盘口，并记下 token、ticker 对应哪条结果。
@@ -172,7 +172,7 @@ func newWatch(ctx context.Context, e *Entry, g group) *watch {
 			return w.entry.bookRepo
 		},
 		BooksJSONForPair: w.booksJSONForOutcomePair,
-		BookRowsForPair:  w.bookRowsForPairIndices,
+		BookRowsForPair:  w.bookRowsForHit,
 	}
 	w.yesno = yesno.Entry(wg)
 	w.onextwo = onextwo.Entry(wg)
@@ -451,19 +451,51 @@ func (w *watch) applyKalshi(msg kalshiws.Feed) {
 
 // write 把这一条写入内存盘口。price_change 的多档是消息体，写完检测一次。
 func (w *watch) write(e event) {
-	if e.Gen != w.currentGen(e.Platform) {
+	if e.TS.IsZero() {
+		e.TS = recvAtOrNow(e.RecvAt)
+	}
+	var rows []*persistententity.OrderBook
+	if !w.ApplyBookEvent(func() bool {
+		if !w.applyBookEvent(e) {
+			return false
+		}
+		if w.entry != nil && w.entry.wsBookQueue != nil {
+			rows = w.orderBookRowsFromEvent(e)
+		}
+		return true
+	}) {
 		return
+	}
+	w.touchWS(e.Platform)
+
+	w.enqueueBookPersistWS(e, rows)
+
+	outcomeIDs := w.outcomeIDsForGrab(e)
+	if len(outcomeIDs) == 0 {
+		return
+	}
+
+	start := recvAtOrNow(e.RecvAt)
+	for _, outcomeID := range outcomeIDs {
+		oid := outcomeID
+		go w.dispatchBookUpdate(oid, start)
+	}
+}
+
+func (w *watch) applyBookEvent(e event) bool {
+	if e.Gen != w.currentGen(e.Platform) {
+		return false
 	}
 	switch e.Kind {
 	case "pause":
 		// 连接换代或断开，这家盘口先标成不可交易。
 		w.markWSPause(e.Platform)
 		w.Books.PausePlatform(e.Platform)
-		return
+		return false
 	case "poly_all_book":
 		// 全量整本替换。订阅后的第一条，以及之后成交触发的 book，都走这里。
 		if !w.Books.ApplyPolyBook(e.ID, e.Bids, e.Asks, e.Tick, e.MinSize, e.TS) {
-			return
+			return false
 		}
 		if w.shouldSyncPolyComplementFromYes(e.ID) {
 			w.syncPolyComplementNo(e.ID, e.TS)
@@ -479,51 +511,39 @@ func (w *watch) write(e event) {
 	case "kalshi_all_book":
 		// 订阅成功后的全量。seq 作为后续增量的起点。
 		if !w.Books.ApplyKalshiSnapshot(e.ID, e.Bids, e.NoBids, e.Seq, e.TS) {
-			return
+			return false
 		}
 		w.syncComplementNoBook(appcommon.PlatformKalshi, e.ID, e.TS)
 	case "predict_all_book":
 		if !w.Books.ApplyPredictBook(e.ID, e.Bids, e.Asks, e.TS) {
-			return
+			return false
 		}
 		w.syncComplementNoBook(appcommon.PlatformPredict, e.ID, e.TS)
 	case "sxbet_all_book":
 		if !w.Books.ApplySxbetBook(e.ID, e.Bids, e.Asks, e.TS) {
-			return
+			return false
 		}
 		w.Books.ApplySxbetNotAsksBook(e.ID, e.NotAsks, e.TS)
 	case "kalshi_price_change":
 		// 订阅WS成功后，kalshi开始推送增量变化的订单簿信息
 		ok, gap := w.Books.ApplyKalshiDelta(e.ID, e.Side, e.Price, e.Delta, e.Seq, e.TS)
 		if gap {
+			w.Books.PausePlatform(appcommon.PlatformKalshi)
 			notification.SendErrorLog(w.Ctx, "strategy_entry-kalshi-seq-gap",
 				zap.String("map_key", w.MapKey),
 				zap.String("ticker", e.ID),
 				zap.Int64("seq", e.Seq))
 			w.reconnect(appcommon.PlatformKalshi)
-			return
+			return false
 		}
 		if !ok {
-			return
+			return false
 		}
 		w.syncComplementNoBook(appcommon.PlatformKalshi, e.ID, e.TS)
 	default:
-		return
+		return false
 	}
-	w.touchWS(e.Platform)
-
-	w.enqueueBookPersistWS(e)
-
-	outcomeIDs := w.outcomeIDsForGrab(e)
-	if len(outcomeIDs) == 0 {
-		return
-	}
-
-	start := recvAtOrNow(e.RecvAt)
-	for _, outcomeID := range outcomeIDs {
-		oid := outcomeID
-		go w.dispatchBookUpdate(oid, start)
-	}
+	return true
 }
 
 // outcomeIDsForGrab 从本条 WS 事件解析需试算的 outcome（YES/NO token、SX hash 等均触发）。
@@ -706,11 +726,7 @@ func snapshotMsForWSRow(row *persistententity.OrderBook, e event) int64 {
 	return eventSnapshotMs(e)
 }
 
-func (w *watch) enqueueBookPersistWS(e event) {
-	if w.entry == nil || w.entry.wsBookQueue == nil {
-		return
-	}
-	rows := w.orderBookRowsFromEvent(e)
+func (w *watch) enqueueBookPersistWS(e event, rows []*persistententity.OrderBook) {
 	if len(rows) == 0 {
 		return
 	}
@@ -910,6 +926,9 @@ func (w *watch) bookRowsForPolyToken(token string) []*persistententity.OrderBook
 	if row == nil {
 		return nil
 	}
+	if !b.ExchangeTS.IsZero() {
+		row.SnapshotAtMs = b.ExchangeTS.UnixMilli()
+	}
 	return []*persistententity.OrderBook{row}
 }
 
@@ -923,7 +942,25 @@ func (w *watch) bookRowsForSxbetMarket(e event) []*persistententity.OrderBook {
 	if !ok {
 		return nil
 	}
-	return w.sxbetPersistRows(&w.Outcomes[idx], b.Bids, b.Asks, eventSnapshotMs(e))
+	oc := &w.Outcomes[idx]
+	ms := eventSnapshotMs(e)
+	var rows []*persistententity.OrderBook
+	if token := strings.TrimSpace(oc.YesTokenID); token != "" {
+		row := bookRow(oc, w.fixtureForOutcome(oc), b.Bids, b.Asks, token)
+		row.SnapshotAtMs = ms
+		rows = append(rows, row)
+	}
+	no, ok := w.Books.Get(appcommon.PlatformSxbet, marketHash+":not")
+	if ok && no.Live {
+		token := strings.TrimSpace(oc.NoTokenID)
+		if token == "" {
+			token = marketHash + ":no"
+		}
+		row := bookRow(oc, w.fixtureForOutcome(oc), no.Bids, no.Asks, token)
+		row.SnapshotAtMs = ms
+		rows = append(rows, row)
+	}
+	return rows
 }
 
 func (w *watch) sxbetPersistRows(oc *persistententity.MarketOutcome, yesBids, yesAsks []book.Level, updateTimestampMs int64) []*persistententity.OrderBook {
@@ -1009,11 +1046,14 @@ func (w *watch) bookRowsForKalshiTicker(ticker string) []*persistententity.Order
 	if row == nil {
 		return nil
 	}
+	if !b.ExchangeTS.IsZero() {
+		row.SnapshotAtMs = b.ExchangeTS.UnixMilli()
+	}
 	return []*persistententity.OrderBook{row}
 }
 
 // bookRowsForHit 取出这次组合两边相关的盘口行，供协程直接写 DB。
-func (w *watch) bookRowsForHit(aIndex, bIndex int) []*persistententity.OrderBook {
+func (w *watch) bookRowsForHit(view book.Snapshot, aIndex, bIndex int) []*persistententity.OrderBook {
 	var rows []*persistententity.OrderBook
 	for _, outcomeIndex := range []int{aIndex, bIndex} {
 		if outcomeIndex < 0 || outcomeIndex >= len(w.Outcomes) {
@@ -1027,12 +1067,14 @@ func (w *watch) bookRowsForHit(aIndex, bIndex int) []*persistententity.OrderBook
 				if !ok {
 					continue
 				}
-				bk, ok := w.Books.Get(appcommon.PlatformPolymarket, token)
+				bk, ok := view.Get(appcommon.PlatformPolymarket, token)
 				if !ok {
 					continue
 				}
 				tokOc := &w.Outcomes[idx]
-				rows = append(rows, bookRow(tokOc, w.fixtureForOutcome(tokOc), bk.Bids, bk.Asks, token))
+				row := bookRow(tokOc, w.fixtureForOutcome(tokOc), bk.Bids, bk.Asks, token)
+				row.SnapshotAtMs = bk.ExchangeTS.UnixMilli()
+				rows = append(rows, row)
 			}
 			continue
 		}
@@ -1052,26 +1094,24 @@ func (w *watch) bookRowsForHit(aIndex, bIndex int) []*persistententity.OrderBook
 		if !ok {
 			continue
 		}
-		bk, ok := w.Books.Get(oc.Platform, bookID)
+		bk, ok := view.Get(oc.Platform, bookID)
 		if !ok {
 			continue
 		}
 		if strings.EqualFold(oc.Platform, appcommon.PlatformPredict) {
-			rows = append(rows, w.predictPersistRows(&w.Outcomes[idx], bk.Bids, bk.Asks, 0)...)
+			rows = append(rows, w.predictPersistRows(&w.Outcomes[idx], bk.Bids, bk.Asks, bk.ExchangeTS.UnixMilli())...)
 			continue
 		}
 		if strings.EqualFold(oc.Platform, appcommon.PlatformSxbet) {
-			rows = append(rows, w.sxbetPersistRows(&w.Outcomes[idx], bk.Bids, bk.Asks, 0)...)
+			rows = append(rows, w.sxbetPersistRows(&w.Outcomes[idx], bk.Bids, bk.Asks, bk.ExchangeTS.UnixMilli())...)
 			continue
 		}
 		hitOc := &w.Outcomes[idx]
-		rows = append(rows, bookRow(hitOc, w.fixtureForOutcome(hitOc), bk.Bids, bk.Asks, bookID))
+		row := bookRow(hitOc, w.fixtureForOutcome(hitOc), bk.Bids, bk.Asks, bookID)
+		row.SnapshotAtMs = bk.ExchangeTS.UnixMilli()
+		rows = append(rows, row)
 	}
 	return rows
-}
-
-func (w *watch) bookRowsForPairIndices(a, b int) []*persistententity.OrderBook {
-	return w.bookRowsForHit(a, b)
 }
 
 func (w *watch) sendOnOutcome(outcomeIndex int, buyYes bool, px, qty float64) (float64, error) {
@@ -1163,6 +1203,17 @@ func (w *watch) booksJSONForOutcomePair(outcomeIndexA, outcomeIndexB int) string
 
 // beginConn 换一代连接。旧连接上迟到的包会被丢掉。
 func (w *watch) beginConn(platform string) (context.Context, int) {
+	var result context.Context
+	var gen int
+	w.ApplyBookEvent(func() bool {
+		result, gen = w.beginBookConnection(platform)
+		w.Books.PausePlatform(platform)
+		return true
+	})
+	return result, gen
+}
+
+func (w *watch) beginBookConnection(platform string) (context.Context, int) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	st := w.conn[platform]

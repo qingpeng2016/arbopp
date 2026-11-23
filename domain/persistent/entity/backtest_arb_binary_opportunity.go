@@ -16,10 +16,13 @@ type BacktestArbBinaryOpportunity struct {
 	SubCategory         *string          `gorm:"column:sub_category;type:varchar(200)"`
 	Competition         *string          `gorm:"column:competition;type:varchar(64)"`
 	CompetitionEn       *string          `gorm:"column:competition_en;type:varchar(128)"`
+	Leg1Platform        *string          `gorm:"column:leg_1_platform;type:varchar(32)"`
 	Leg1Info            string           `gorm:"column:leg_1_info;type:mediumtext;not null"`
 	Leg1OrderBooks      string           `gorm:"column:leg_1_order_books;type:mediumtext;not null"`
+	Leg2Platform        *string          `gorm:"column:leg_2_platform;type:varchar(32)"`
 	Leg2Info            string           `gorm:"column:leg_2_info;type:mediumtext;not null"`
 	Leg2OrderBooks      string           `gorm:"column:leg_2_order_books;type:mediumtext;not null"`
+	Leg3Platform        *string          `gorm:"column:leg_3_platform;type:varchar(32)"`
 	Leg3Info            string           `gorm:"column:leg_3_info;type:mediumtext;not null"`
 	Leg3OrderBooks      string           `gorm:"column:leg_3_order_books;type:mediumtext;not null"`
 	Leg1BestAsk         *decimal.Decimal `gorm:"column:leg_1_best_ask;type:decimal(20,8)"`

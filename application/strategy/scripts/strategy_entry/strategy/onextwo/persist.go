@@ -37,7 +37,6 @@ func (r *Runner) persistDeps() persistDeps {
 		drawLegInfo: func(i int, buy bool) string { return r.w.DrawLegInfoJSON(i, buy) },
 		yesLegInfo:  func(i int, buy bool) string { return r.w.YesLegInfoJSON(i, buy) },
 		noLegInfo:   func(i int, buy bool) string { return r.w.NoLegInfoJSON(i, buy) },
-		legBooks:    func(i int, buy bool) string { return r.w.FullOrderBooksJSON(i, buy) },
 	}
 	if ops.BacktestOppRepo != nil {
 		d.btOpp = ops.BacktestOppRepo()
@@ -84,15 +83,14 @@ func NotifyGrab(ctx context.Context, mapKey string, hit GrabHit) {
 	_ = notification.GetGlobalNotificationManager().SendInfoAlert(ctx, title, fields)
 }
 
-func SaveGrabHit(ctx context.Context, d persistDeps, mapKey string, hit GrabHit) {
+func SaveGrabHit(ctx context.Context, d persistDeps, mapKey string, hit GrabHit) bool {
 	if d.task > 0 && d.btOpp != nil {
-		saveBacktest(ctx, d, mapKey, hit)
-		return
+		return saveBacktest(ctx, d, mapKey, hit)
 	}
 	if d.opp == nil {
-		return
+		return false
 	}
-	saveLive(ctx, d, mapKey, hit)
+	return saveLive(ctx, d, mapKey, hit)
 }
 
 func snapshotTimes(d persistDeps) (time.Time, int64) {
@@ -111,7 +109,15 @@ func snapshotTimes(d persistDeps) (time.Time, int64) {
 
 func buildOppBacktest(d persistDeps, mapKey string, hit GrabHit) *persistententity.BacktestArbBinaryOpportunity {
 	pick := hit.Pick
-	now, snapMs := snapshotTimes(d)
+	if !pick.At.IsZero() && (!hit.Legs[0].OK || !hit.Legs[1].OK || !hit.Legs[2].OK) {
+		return nil
+	}
+	now := pick.At
+	if now.IsZero() {
+		now, _ = snapshotTimes(d)
+	}
+	now = now.UTC()
+	snapMs := now.UnixMilli()
 	drawMoID, yesMoID, noMoID := pick.Legs[0].OutcomeID, pick.Legs[1].OutcomeID, pick.Legs[2].OutcomeID
 	scope := watchgroup.FixtureScope{}
 	if d.scope != nil {
@@ -143,27 +149,30 @@ func buildOppBacktest(d persistDeps, mapKey string, hit GrabHit) *persistententi
 		OppKind:        pick.Kind, MapKey: &mapKeyPtr,
 		Category: scope.Category, SubCategory: scope.SubCategory,
 		Competition: scope.Competition, CompetitionEn: scope.CompetitionEn,
-		Leg1Info: leg1Info, Leg1OrderBooks: leg1Books, Leg1BestAsk: &leg1Ask,
-		Leg2Info: leg2Info, Leg2OrderBooks: leg2Books, Leg2BestAsk: &leg2Ask,
-		Leg3Info: leg3Info, Leg3OrderBooks: leg3Books, Leg3BestAsk: &leg3Ask,
-		TotalCost: decimal.NewFromFloat(perShare).Round(8),
+		Leg1Platform: watchgroup.LegPlatform(pick.Legs[0].Platform),
+		Leg1Info:     leg1Info, Leg1OrderBooks: leg1Books, Leg1BestAsk: &leg1Ask,
+		Leg2Platform: watchgroup.LegPlatform(pick.Legs[1].Platform),
+		Leg2Info:     leg2Info, Leg2OrderBooks: leg2Books, Leg2BestAsk: &leg2Ask,
+		Leg3Platform: watchgroup.LegPlatform(pick.Legs[2].Platform),
+		Leg3Info:     leg3Info, Leg3OrderBooks: leg3Books, Leg3BestAsk: &leg3Ask,
+		TotalCost:   decimal.NewFromFloat(perShare).Round(8),
 		ProfitSpace: decimal.NewFromFloat(profitSpace).Round(8),
-		ArbQty: arbQty, ArbProfit: arbProfit,
+		ArbQty:      arbQty, ArbProfit: arbProfit,
 		ThresholdKey: thKey, ThresholdValue: decimal.NewFromFloat(thVal).Round(8),
 		BookUpdatedAt: &now, SnapshotAt: now, SnapshotAtMs: snapMs,
 	}
 }
 
-func saveBacktest(ctx context.Context, d persistDeps, mapKey string, hit GrabHit) {
+func saveBacktest(ctx context.Context, d persistDeps, mapKey string, hit GrabHit) bool {
 	row := buildOppBacktest(d, mapKey, hit)
 	if row == nil {
-		return
+		return false
 	}
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if err := d.btOpp.BatchCreate(runCtx, nil, []*persistententity.BacktestArbBinaryOpportunity{row}); err != nil {
 		notification.SendErrorLog(runCtx, "onextwo-backtest-OppCreateFailed", zap.Error(err))
-		return
+		return false
 	}
 	if d.btOrd != nil && row.ID > 0 {
 		strat := StrategyTypeYesTriple
@@ -175,12 +184,13 @@ func saveBacktest(ctx context.Context, d persistDeps, mapKey string, hit GrabHit
 			notification.SendErrorLog(runCtx, "onextwo-backtest-OrderCreateFailed", zap.Error(err))
 		}
 	}
+	return true
 }
 
-func saveLive(ctx context.Context, d persistDeps, mapKey string, hit GrabHit) {
+func saveLive(ctx context.Context, d persistDeps, mapKey string, hit GrabHit) bool {
 	bt := buildOppBacktest(d, mapKey, hit)
 	if bt == nil {
-		return
+		return false
 	}
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -188,9 +198,12 @@ func saveLive(ctx context.Context, d persistDeps, mapKey string, hit GrabHit) {
 		OppKind: bt.OppKind, MapKey: bt.MapKey,
 		Category: bt.Category, SubCategory: bt.SubCategory,
 		Competition: bt.Competition, CompetitionEn: bt.CompetitionEn,
-		Leg1Info: bt.Leg1Info, Leg1OrderBooks: bt.Leg1OrderBooks, Leg1BestAsk: bt.Leg1BestAsk,
-		Leg2Info: bt.Leg2Info, Leg2OrderBooks: bt.Leg2OrderBooks, Leg2BestAsk: bt.Leg2BestAsk,
-		Leg3Info: bt.Leg3Info, Leg3OrderBooks: bt.Leg3OrderBooks, Leg3BestAsk: bt.Leg3BestAsk,
+		Leg1Platform: bt.Leg1Platform,
+		Leg1Info:     bt.Leg1Info, Leg1OrderBooks: bt.Leg1OrderBooks, Leg1BestAsk: bt.Leg1BestAsk,
+		Leg2Platform: bt.Leg2Platform,
+		Leg2Info:     bt.Leg2Info, Leg2OrderBooks: bt.Leg2OrderBooks, Leg2BestAsk: bt.Leg2BestAsk,
+		Leg3Platform: bt.Leg3Platform,
+		Leg3Info:     bt.Leg3Info, Leg3OrderBooks: bt.Leg3OrderBooks, Leg3BestAsk: bt.Leg3BestAsk,
 		TotalCost: bt.TotalCost, ProfitSpace: bt.ProfitSpace,
 		ArbQty: bt.ArbQty, ArbProfit: bt.ArbProfit,
 		ThresholdKey: bt.ThresholdKey, ThresholdValue: bt.ThresholdValue,
@@ -198,7 +211,7 @@ func saveLive(ctx context.Context, d persistDeps, mapKey string, hit GrabHit) {
 	}
 	if err := d.opp.BatchCreate(runCtx, nil, []*persistententity.ArbBinaryOpportunity{live}); err != nil {
 		notification.SendErrorLog(runCtx, "onextwo-OppCreateFailed", zap.Error(err))
-		return
+		return false
 	}
 	if !hit.DryRun && d.order != nil && live.ID > 0 {
 		strat := StrategyTypeYesTriple
@@ -210,6 +223,7 @@ func saveLive(ctx context.Context, d persistDeps, mapKey string, hit GrabHit) {
 			notification.SendErrorLog(runCtx, "onextwo-OrderCreateFailed", zap.Error(err))
 		}
 	}
+	return true
 }
 
 func ordersForHit(taskID uint, strategyType, mapKey string, oppID uint, hit GrabHit, sentAt time.Time) []*persistententity.BacktestOrder {
@@ -236,7 +250,7 @@ func tripleArbQtyProfit(profitSpace float64, pick TriplePick) (decimal.Decimal, 
 	if minQ <= 0 {
 		return decimal.Zero, decimal.Zero
 	}
-	return decimal.NewFromFloat(minQ).Round(8), decimal.NewFromFloat(minQ*profitSpace).Round(8)
+	return decimal.NewFromFloat(minQ).Round(8), decimal.NewFromFloat(minQ * profitSpace).Round(8)
 }
 
 func tripleLegFields(d persistDeps, pick TriplePick, snaps [3]watchgroup.LegPersistSnap) (leg1Info, leg1Books, leg2Info, leg2Books, leg3Info, leg3Books string) {

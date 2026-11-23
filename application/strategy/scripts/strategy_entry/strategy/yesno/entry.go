@@ -16,6 +16,7 @@ import (
 type Runner struct {
 	w             *watchgroup.Watch
 	outcomeGroups map[string]OutcomeGroup
+	recent        watchgroup.RecentHits
 	orderMu       sync.Mutex // 仅在确认套利、发单/落库前 TryLock，不挡盘口试算
 }
 
@@ -23,6 +24,7 @@ type Runner struct {
 func Entry(w *watchgroup.Watch) *Runner {
 	return &Runner{
 		w:             w,
+		recent:        make(watchgroup.RecentHits),
 		outcomeGroups: buildOutcomeGroups(w),
 	}
 }
@@ -131,22 +133,11 @@ func (r *Runner) limits() Limits {
 }
 
 func (r *Runner) execSide(outcomeIndex int) (ExecSide, bool) {
-	oc := r.w.OutcomeAt(outcomeIndex)
-	store := r.w.Store()
-	if oc == nil || store == nil {
+	if r.w.Store() == nil {
 		return ExecSide{}, false
 	}
-	fee := 0.0
-	if r.w.Ops.TradeFee != nil {
-		fee = r.w.Ops.TradeFee(oc.Platform, deref(oc.Category), deref(oc.SubCategory))
-	}
-	bo := OutcomeFields(oc.Platform, oc.PlatformMarketOutcomeID, oc.YesTokenID, oc.NoTokenID)
-	side, ok := ExecSideAt(store, outcomeIndex, bo, fee)
-	if !ok {
-		return ExecSide{}, false
-	}
-	side.OutcomeID = oc.ID
-	return side, true
+	view, _ := r.w.StrategySnapshot()
+	return QuoteExecSide(r.w, view, outcomeIndex)
 }
 
 func deref(s *string) string {
@@ -173,21 +164,8 @@ func (s outcomeSender) Flatten(side Side, boughtYes bool, mine, other float64) {
 }
 
 func (r *Runner) snapPickLegs(fp FilledPick) (watchgroup.LegPersistSnap, watchgroup.LegPersistSnap) {
-	if r.w == nil {
-		return watchgroup.LegPersistSnap{OrderBooks: "{}\n"}, watchgroup.LegPersistSnap{OrderBooks: "{}\n"}
-	}
-	leg1 := r.w.LegSnapshot(fp.Yes.Index, fp.YesBuyYes)
-	leg2 := r.w.LegSnapshot(fp.No.Index, fp.NoBuyYes)
-	alignLegSnapToPick(&leg1, fp.Yes.Side, fp.YesBuyYes)
-	alignLegSnapToPick(&leg2, fp.No.Side, fp.NoBuyYes)
-	return leg1, leg2
-}
-
-func alignLegSnapToPick(snap *watchgroup.LegPersistSnap, side Side, buyYes bool) {
-	px, sz := SideTopAskSz(side, buyYes)
-	if px > 0 && px < 1 && sz > 0 {
-		snap.TopAsk, snap.TopSz, snap.OK = px, sz, true
-	}
+	return fp.Yes.PersistQuote(fp.YesBuyYes, fp.Costs[0], fp.Sizes[0]),
+		fp.No.PersistQuote(fp.NoBuyYes, fp.Costs[1], fp.Sizes[1])
 }
 
 func (r *Runner) grabPersist() PersistGrab {
@@ -197,10 +175,10 @@ func (r *Runner) grabPersist() PersistGrab {
 		OppRepo:            safeOppRepo(ops),
 		OrderRepo:          safeOrderRepo(ops),
 		BookRepo:           safeBookRepo(ops),
-		YesLegInfo: func(i int, buyYes bool) string { return r.w.YesLegInfoJSON(i, buyYes) },
-		NoLegInfo:  func(i int, buyYes bool) string { return r.w.NoLegInfoJSON(i, buyYes) },
-		LegOrderBooks: func(i int, buyYes bool) string { return r.w.FullOrderBooksJSON(i, buyYes) },
-		BookRows:   r.bookRowsForPick,
+		YesLegInfo:         func(i int, buyYes bool) string { return r.w.YesLegInfoJSON(i, buyYes) },
+		NoLegInfo:          func(i int, buyYes bool) string { return r.w.NoLegInfoJSON(i, buyYes) },
+
+		BookRows: r.bookRowsForPick,
 	}
 	if ops.BacktestTaskID > 0 {
 		pg.BacktestTaskID = ops.BacktestTaskID
@@ -248,9 +226,9 @@ func (r *Runner) booksJSONForPick(a, b ExecSide) string {
 	return r.w.Ops.BooksJSONForPair(a.Index, b.Index)
 }
 
-func (r *Runner) bookRowsForPick(a, b ExecSide) []*persistententity.OrderBook {
+func (r *Runner) bookRowsForPick(pick FilledPick) []*persistententity.OrderBook {
 	if r.w.Ops.BookRowsForPair == nil {
 		return nil
 	}
-	return r.w.Ops.BookRowsForPair(a.Index, b.Index)
+	return r.w.Ops.BookRowsForPair(pick.view, pick.Yes.Index, pick.No.Index)
 }

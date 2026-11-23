@@ -58,7 +58,11 @@ INSERT INTO `config_strategy_fee` (`platform`, `category`, `sub_category`, `take
   ('KALSHI', 'Sports', 'TableTennis', 0.07000000, '乒乓球。Kalshi 系列乘数 1，吃单系数 0.07', 1),
   ('KALSHI', 'Sports', 'Formula1', 0.07000000, 'F1。Kalshi 系列乘数 1，吃单系数 0.07', 1),
   ('KALSHI', 'Sports', 'Chess', 0.07000000, '国际象棋。Kalshi 系列乘数 1，吃单系数 0.07', 1),
-  ('KALSHI', 'Sports', 'Pickleball', 0.07000000, '匹克球。Kalshi 系列乘数 1，吃单系数 0.07', 1)
+  ('KALSHI', 'Sports', 'Pickleball', 0.07000000, '匹克球。Kalshi 系列乘数 1，吃单系数 0.07', 1),
+  ('PREDICT', 'Sports', '', 0.02000000, '无 market feeRateBps 时回退；有 bps 时试算用 bps/10000', 1),
+  ('PREDICT', 'Sports', 'Football', 0.02000000, '足球回退 bps', 1),
+  ('SXBET', 'Sports', '', 0.02000000, 'SX 赢家净利扣费：试算 cost=price/(1-coef*(1-price))', 1),
+  ('SXBET', 'Sports', 'Football', 0.02000000, '足球', 1)
 ON DUPLICATE KEY UPDATE
   `taker_fee_coef` = VALUES(`taker_fee_coef`),
   `description` = VALUES(`description`),

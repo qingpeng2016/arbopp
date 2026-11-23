@@ -1,169 +1,87 @@
 package onextwo
 
 import (
-	"math"
-	"sync"
+	"time"
 
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/book"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/strategy/yesno"
 )
 
-// legAt 指定平台单腿报价。
-func (r *Runner) legAt(g yesno.OutcomeGroup, platform string, buyYes bool) (yesno.ExecSide, float64, float64, bool) {
-	idx, ok := g.PlatformIndex(platform)
-	if !ok {
-		return yesno.ExecSide{}, 0, 0, false
-	}
-	side, ok := r.execSide(idx)
-	if !ok {
-		return yesno.ExecSide{}, 0, 0, false
-	}
-	px := yesno.SidePx(side.Side, buyYes)
-	sz := side.Side.YesSz
-	if !buyYes {
-		sz = side.Side.NoSz
-	}
-	if !book.ValidPrice(px) || sz <= 0 {
-		return yesno.ExecSide{}, 0, 0, false
-	}
-	per := px + yesno.Fee(px, side.Side.Fee)
-	return side, per, sz, true
+type pricedLeg struct {
+	side            yesno.ExecSide
+	cost, size      float64 // size：PayoutQuote 净兑付深度
+	topPx, topSize  float64 // 卖一裸价与原始挂单量
 }
 
-func (r *Runner) bestLeg(g yesno.OutcomeGroup, buyYes bool) (yesno.ExecSide, float64, float64, bool) {
-	plats := g.PlatformList()
-	if len(plats) == 0 {
-		return yesno.ExecSide{}, 0, 0, false
-	}
-	if len(plats) == 1 {
-		return r.legAt(g, plats[0], buyYes)
-	}
-	type legHit struct {
-		side   yesno.ExecSide
-		per    float64
-		sz     float64
-		ok     bool
-	}
-	hits := make([]legHit, len(plats))
-	var wg sync.WaitGroup
-	for i, plat := range plats {
-		wg.Add(1)
-		go func(i int, plat string) {
-			defer wg.Done()
-			side, per, sz, ok := r.legAt(g, plat, buyYes)
-			hits[i] = legHit{side: side, per: per, sz: sz, ok: ok}
-		}(i, plat)
-	}
-	wg.Wait()
-	var best yesno.ExecSide
-	bestPx := math.MaxFloat64
-	bestSz := 0.0
-	found := false
-	for _, h := range hits {
-		if !h.ok || h.per >= bestPx {
-			continue
+func (r *Runner) priceGroup(view book.Snapshot, at time.Time, group yesno.OutcomeGroup, buyYes bool) []pricedLeg {
+	out := make([]pricedLeg, 0, group.PlatformCount())
+	for _, platform := range group.PlatformList() {
+		idx, _ := group.PlatformIndex(platform)
+		if side, ok := yesno.QuoteExecSide(r.w, view, idx); ok {
+			if cost, size, ok := side.PayoutQuote(buyYes, at); ok {
+				topPx, topSz, topOK := side.TopAskSz(buyYes)
+				if !topOK {
+					continue
+				}
+				out = append(out, pricedLeg{side: side, cost: cost, size: size, topPx: topPx, topSize: topSz})
+			}
 		}
-		bestPx, bestSz, best, found = h.per, h.sz, h.side, true
 	}
-	if !found {
-		return yesno.ExecSide{}, 0, 0, false
-	}
-	return best, bestPx, bestSz, true
+	return out
 }
 
-func (r *Runner) tripleForPlatforms(groups [3]yesno.OutcomeGroup, plats [3]string, buyYes bool, maxCost float64, lim Limits) (TriplePick, bool) {
-	if maxCost <= 0 {
+func (r *Runner) priceTriple(legs [3]pricedLeg, at time.Time, buyYes bool, lim Limits) (TriplePick, bool) {
+	a, b, c := legs[0].side, legs[1].side, legs[2].side
+	if a.Platform == b.Platform && b.Platform == c.Platform {
 		return TriplePick{}, false
 	}
-	var legs [3]yesno.ExecSide
-	var prices, sizes [3]float64
-	var sumPx, minSz float64 = 0, math.MaxFloat64
-	for i := range groups {
-		side, perShare, sz, ok := r.legAt(groups[i], plats[i], buyYes)
-		if !ok {
-			return TriplePick{}, false
-		}
-		legs[i] = side
-		prices[i] = perShare
-		sizes[i] = sz
-		sumPx += perShare
-		if sz < minSz {
-			minSz = sz
-		}
-	}
-	if minSz <= 0 || sumPx <= 0 {
+	if !yesno.SameSettlementScope(r.w, a, b) || !yesno.SameSettlementScope(r.w, a, c) ||
+		!yesno.SameSettlementScope(r.w, b, c) {
 		return TriplePick{}, false
 	}
-	orderAmount := lim.OrderAmount
-	if orderAmount <= 0 {
-		orderAmount = 100
+	kind, maxCost := OppKindNoTriple, min(lim.NoTripleMax, 2)
+	if buyYes {
+		kind, maxCost = OppKindYesTriple, min(lim.YesTripleMax, 1)
 	}
-	levelFactor := lim.LevelFactor
-	if levelFactor <= 0 {
-		levelFactor = 2
-	}
-	qty := orderAmount / sumPx
-	if minSz*levelFactor+1e-9 < qty {
+	cost := legs[0].cost + legs[1].cost + legs[2].cost
+	if cost >= maxCost {
 		return TriplePick{}, false
 	}
-	per := sumPx
-	if per >= maxCost {
-		return TriplePick{}, false
-	}
-	kind := OppKindYesTriple
-	if !buyYes {
-		kind = OppKindNoTriple
-	}
-	return TriplePick{
-		Kind: kind, BuyYes: buyYes, Legs: legs, Prices: prices, LegSizes: sizes, Qty: qty, Per: per,
-	}, true
-}
-
-// allTriplePicks 三路各平台组合全部命中（并行试算）。
-func (r *Runner) allTriplePicks() []TriplePick {
-	draw, tA, tB, ok := r.moneylineTripleGroups()
+	qty, ok := yesno.SizeForBudget(cost, min(legs[0].size, legs[1].size, legs[2].size), lim.OrderAmount, lim.LevelFactor)
 	if !ok {
+		return TriplePick{}, false
+	}
+	pick := TriplePick{Kind: kind, BuyYes: buyYes, At: at, Qty: qty, Per: cost}
+	for i, leg := range legs {
+		pick.Legs[i] = leg.side
+		pick.Prices[i] = leg.topPx
+		pick.Costs[i] = leg.cost
+		pick.LegSizes[i] = leg.topSize
+	}
+	return pick, true
+}
+
+func (r *Runner) allTriplePicks(lim Limits) []TriplePick {
+	draw, teamA, teamB, ok := r.moneylineTripleGroups()
+	if !ok || r.w.Store() == nil {
 		return nil
 	}
-	lim := r.limits()
-	groups := [3]yesno.OutcomeGroup{draw, tA, tB}
-	lists := [3][]string{draw.PlatformList(), tA.PlatformList(), tB.PlatformList()}
-	type tripleJob struct {
-		buyYes  bool
-		maxCost float64
-		plats   [3]string
-	}
-	var jobs []tripleJob
+	view, at := r.w.StrategySnapshot()
+	var out []TriplePick
 	for _, buyYes := range []bool{true, false} {
-		maxCost := lim.YesTripleMax
-		if !buyYes {
-			maxCost = lim.NoTripleMax
-		}
-		for _, pd := range lists[0] {
-			for _, pa := range lists[1] {
-				for _, pb := range lists[2] {
-					jobs = append(jobs, tripleJob{buyYes: buyYes, maxCost: maxCost, plats: [3]string{pd, pa, pb}})
+		draws := r.priceGroup(view, at, draw, buyYes)
+		firstTeams := r.priceGroup(view, at, teamA, buyYes)
+		secondTeams := r.priceGroup(view, at, teamB, buyYes)
+		for _, a := range draws {
+			for _, b := range firstTeams {
+				for _, c := range secondTeams {
+					if pick, hit := r.priceTriple([3]pricedLeg{a, b, c}, at, buyYes, lim); hit {
+						out = append(out, pick)
+					}
 				}
 			}
 		}
 	}
-	var (
-		mu  sync.Mutex
-		out []TriplePick
-		wg  sync.WaitGroup
-	)
-	for _, j := range jobs {
-		wg.Add(1)
-		go func(j tripleJob) {
-			defer wg.Done()
-			if pick, hit := r.tripleForPlatforms(groups, j.plats, j.buyYes, j.maxCost, lim); hit {
-				mu.Lock()
-				out = append(out, pick)
-				mu.Unlock()
-			}
-		}(j)
-	}
-	wg.Wait()
 	return out
 }
 

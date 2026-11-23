@@ -1,7 +1,9 @@
 package onextwo
 
 import (
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/strategy/yesno"
 )
@@ -11,8 +13,10 @@ type TriplePick struct {
 	Kind     string // OppKindYesTriple | OppKindNoTriple
 	BuyYes   bool
 	Legs     [3]yesno.ExecSide
-	Prices   [3]float64
-	LegSizes [3]float64 // 各腿 TopHit 卖一量
+	Prices   [3]float64 // 卖一裸价（不含费，与 leg_*_best_ask 一致）
+	Costs    [3]float64 // 单位净兑付含费成本
+	At       time.Time
+	LegSizes [3]float64 // 各腿卖一原始挂单量（arb_qty 取 min）
 	Qty, Per float64
 }
 
@@ -43,20 +47,13 @@ func (r *Runner) moneylineTripleGroups() (draw, teamA, teamB yesno.OutcomeGroup,
 			continue
 		}
 		teamKeys = append(teamKeys, gk)
-		if len(teamKeys) == 1 {
-			teamA = g
-		}
-		if len(teamKeys) == 2 {
-			teamB = g
-		}
+
 	}
 	if draw.PlatformCount() < 1 || len(teamKeys) != 2 {
 		return yesno.OutcomeGroup{}, yesno.OutcomeGroup{}, yesno.OutcomeGroup{}, false
 	}
-	if draw.PlatformCount() < 1 || teamA.PlatformCount() < 1 || teamB.PlatformCount() < 1 {
-		return yesno.OutcomeGroup{}, yesno.OutcomeGroup{}, yesno.OutcomeGroup{}, false
-	}
-	return draw, teamA, teamB, true
+	sort.Strings(teamKeys)
+	return draw, r.outcomeGroups[teamKeys[0]], r.outcomeGroups[teamKeys[1]], true
 }
 
 func (r *Runner) fixtureGroupPrefix() string {

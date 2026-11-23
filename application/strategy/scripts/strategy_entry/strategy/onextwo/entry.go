@@ -12,6 +12,7 @@ import (
 type Runner struct {
 	w             *watchgroup.Watch
 	outcomeGroups map[string]yesno.OutcomeGroup
+	recent        watchgroup.RecentHits
 	orderMu       sync.Mutex
 }
 
@@ -19,6 +20,7 @@ type Runner struct {
 func Entry(w *watchgroup.Watch) *Runner {
 	return &Runner{
 		w:             w,
+		recent:        make(watchgroup.RecentHits),
 		outcomeGroups: buildOutcomeGroups(w),
 	}
 }
@@ -79,43 +81,8 @@ func (r *Runner) limits() Limits {
 
 func (r *Runner) snapTripleLegs(pick TriplePick) [3]watchgroup.LegPersistSnap {
 	var snaps [3]watchgroup.LegPersistSnap
-	if r.w == nil {
-		return snaps
-	}
-	buy := pick.BuyYes
-	for i := range pick.Legs {
-		snaps[i] = r.w.LegSnapshot(pick.Legs[i].Index, buy)
-		if pick.Prices[i] > 0 && pick.Prices[i] < 1 && pick.LegSizes[i] > 0 {
-			snaps[i].TopAsk = pick.Prices[i]
-			snaps[i].TopSz = pick.LegSizes[i]
-			snaps[i].OK = true
-		}
+	for i, leg := range pick.Legs {
+		snaps[i] = leg.PersistQuote(pick.BuyYes, pick.Costs[i], pick.LegSizes[i])
 	}
 	return snaps
-}
-
-func (r *Runner) execSide(outcomeIndex int) (yesno.ExecSide, bool) {
-	oc := r.w.OutcomeAt(outcomeIndex)
-	store := r.w.Store()
-	if oc == nil || store == nil {
-		return yesno.ExecSide{}, false
-	}
-	fee := 0.0
-	if r.w.Ops.TradeFee != nil {
-		fee = r.w.Ops.TradeFee(oc.Platform, deref(oc.Category), deref(oc.SubCategory))
-	}
-	bo := yesno.OutcomeFields(oc.Platform, oc.PlatformMarketOutcomeID, oc.YesTokenID, oc.NoTokenID)
-	side, ok := yesno.ExecSideAt(store, outcomeIndex, bo, fee)
-	if !ok {
-		return yesno.ExecSide{}, false
-	}
-	side.OutcomeID = oc.ID
-	return side, true
-}
-
-func deref(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
 }

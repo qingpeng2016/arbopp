@@ -1,7 +1,6 @@
 package onextwo
 
 import (
-	"context"
 	"time"
 
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/watchgroup"
@@ -30,7 +29,8 @@ func (r *Runner) grabOneAttempt(_ uint, retried bool) {
 		return
 	}
 	defer r.orderMu.Unlock()
-	all := r.allTriplePicks()
+	lim := r.limits()
+	all := r.allTriplePicks(lim)
 	pick, ok := bestTripleFrom(all)
 	if !ok {
 		return
@@ -43,17 +43,36 @@ func (r *Runner) grabOneAttempt(_ uint, retried bool) {
 			}
 		}
 	}
-	lim := r.limits()
-	bestHit := GrabHit{Pick: pick, Limits: lim, DryRun: dryRun}
 	ctx := r.w.Context()
 	mapKey := r.w.MapKey
 	deps := r.persistDeps()
+	r.recent.Prune(pick.At)
+	var bestHit GrabHit
+	var saved bool
 	for _, p := range all {
-		SaveGrabHit(ctx, deps, mapKey, GrabHit{Pick: p, Legs: r.snapTripleLegs(p), Limits: lim, DryRun: dryRun})
+		key := watchgroup.HitKey{
+			Kind: p.Kind, Indices: [3]int{p.Legs[0].Index, p.Legs[1].Index, p.Legs[2].Index},
+			Prices: p.Prices, Depths: p.LegSizes, Cost: p.Per, Quantity: p.Qty,
+		}
+		insert := func() bool {
+			hit := GrabHit{Pick: p, Legs: r.snapTripleLegs(p), Limits: lim, DryRun: dryRun}
+			if !SaveGrabHit(ctx, deps, mapKey, hit) {
+				return false
+			}
+			if !saved || p.Per < bestHit.Pick.Per {
+				bestHit, saved = hit, true
+			}
+			return true
+		}
+		if dryRun {
+			r.recent.Save(key, p.At, insert)
+		} else {
+			insert()
+		}
 	}
-	go func(ctx context.Context, mapKey string, best GrabHit) {
-		NotifyGrab(ctx, mapKey, best)
-	}(ctx, mapKey, bestHit)
+	if saved {
+		go NotifyGrab(ctx, mapKey, bestHit)
+	}
 }
 
 // OnBookUpdateAfterReplay 回测：本 snapshot 全部盘口写入后试一次 1X2（避免同一毫秒重复落库）。
@@ -74,12 +93,12 @@ func (r *Runner) grabOneBacktest() {
 		return
 	}
 	defer r.orderMu.Unlock()
-	all := r.allTriplePicks()
+	lim := r.limits()
+	all := r.allTriplePicks(lim)
 	_, ok := bestTripleFrom(all)
 	if !ok {
 		return
 	}
-	lim := r.limits()
 	ctx := r.w.Context()
 	deps := r.persistDeps()
 	mapKey := r.w.MapKey

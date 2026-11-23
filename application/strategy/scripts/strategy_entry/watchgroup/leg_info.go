@@ -42,6 +42,15 @@ type NoLegInfo struct {
 	NoTokenName   string `json:"no_token_name"`
 }
 
+// LegPlatform returns the normalized platform code for an opportunity leg.
+func LegPlatform(platform string) *string {
+	platform = strings.ToUpper(strings.TrimSpace(platform))
+	if platform == "" {
+		return nil
+	}
+	return &platform
+}
+
 // YesLegInfoJSON 由内存 outcome 与成交方向生成缩进 JSON。
 func (w *Watch) YesLegInfoJSON(outcomeIndex int, buyYes bool) string {
 	oc := w.OutcomeAt(outcomeIndex)

@@ -2,6 +2,7 @@ package watchgroup
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketmap"
@@ -22,7 +23,7 @@ type Ops struct {
 	OrderRepo        func() persistentrepo.ArbBinaryOrderRepo
 	BookRepo         func() persistentrepo.OrderBookRepo
 	BooksJSONForPair func(outcomeIndexA, outcomeIndexB int) string
-	BookRowsForPair  func(outcomeIndexA, outcomeIndexB int) []*persistententity.OrderBook
+	BookRowsForPair  func(view book.Snapshot, outcomeIndexA, outcomeIndexB int) []*persistententity.OrderBook
 
 	BacktestMode      bool
 	BacktestTaskID    uint
@@ -34,17 +35,36 @@ type Ops struct {
 
 // Watch 一组 map_key 的内存盘口与 outcome 行（yesno 策略直接读写字段/方法）。
 type Watch struct {
-	Ctx       context.Context
-	MapKey    string
-	Outcomes  []persistententity.MarketOutcome
+	Ctx      context.Context
+	MapKey   string
+	Outcomes []persistententity.MarketOutcome
 	// MarketsByRowID 本组 outcome 关联的父场次，用于落库 competition_en 等。
 	MarketsByRowID map[uint]persistententity.Market
-	ByToken   map[string]int
-	ByTicker  map[string]int
-	ByPredict map[string]int
-	BySxbet   map[string]int
-	Books     *book.Store
-	Ops       Ops
+	ByToken        map[string]int
+	ByTicker       map[string]int
+	ByPredict      map[string]int
+	BySxbet        map[string]int
+	Books          *book.Store
+	Ops            Ops
+	bookEventMu    sync.Mutex
+}
+
+// ApplyBookEvent publishes one feed event, including any derived NO books.
+func (w *Watch) ApplyBookEvent(apply func() bool) bool {
+	w.bookEventMu.Lock()
+	defer w.bookEventMu.Unlock()
+	return apply()
+}
+
+func (w *Watch) StrategySnapshot() (book.Snapshot, time.Time) {
+	w.bookEventMu.Lock()
+	view := w.Books.Snapshot()
+	w.bookEventMu.Unlock()
+	at := view.At
+	if w.Ops.BacktestMode && w.Ops.SnapshotNow != nil {
+		at = w.Ops.SnapshotNow()
+	}
+	return view, at
 }
 
 func (w *Watch) Context() context.Context { return w.Ctx }

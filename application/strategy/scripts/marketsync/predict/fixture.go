@@ -1,6 +1,7 @@
 package predict
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 	"time"
@@ -99,6 +100,9 @@ func predictOutcomeFromMarket(
 	if desc != "" {
 		descPtr = common.StrPtr(common.Truncate(desc, 2000))
 	}
+	config, _ := json.Marshal(struct {
+		FeeRateBps int `json:"feeRateBps"`
+	}{FeeRateBps: m.FeeRateBps})
 	return &persistententity.MarketOutcome{
 		Platform:                platform,
 		PlatformMarketID:        fixtureID,
@@ -106,6 +110,7 @@ func predictOutcomeFromMarket(
 		OutcomeName:             common.StrPtr(common.Truncate(title, 2000)),
 		MarketName:              common.StrPtrOptional(fixtureTitle),
 		Desc:                    descPtr,
+		Config:                  common.StrPtr(string(config)),
 		PlatformMarketOutcomeID: midStr,
 		MarketAddress:           common.StrPtr255(strings.TrimSpace(m.ConditionID)),
 		MarketURL:               url,

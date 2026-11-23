@@ -5,6 +5,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"time"
 
 	strategyentry "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/strategy/yesno"
@@ -194,6 +195,9 @@ func scanYesNoReplayStrategy(mapKey string, outcomes []outcomeRec, hist []wsRow,
 	rows := append([]wsRow(nil), hist...)
 	sort.Slice(rows, func(i, j int) bool { return rows[i].ID < rows[j].ID })
 	w, _ := buildScanWatch(mapKey, outcomes, params)
+	var replayAt time.Time
+	w.Ops.BacktestMode = true
+	w.Ops.SnapshotNow = func() time.Time { return replayAt }
 	runner := yesno.Entry(w)
 	type dedupeKey struct{ gk, yp, np string }
 	best := map[dedupeKey]yesnoHit{}
@@ -209,6 +213,7 @@ func scanYesNoReplayStrategy(mapKey string, outcomes []outcomeRec, hist []wsRow,
 		if !useWSRowForTopBook(row.Platform, row.TokenID, mo) {
 			continue
 		}
+		replayAt = time.UnixMilli(row.SnapshotAtMs)
 		applyBookRow(w.Books, row, mo)
 		ocID := mo.ID
 		if ocID == 0 {
@@ -246,6 +251,8 @@ func scanYesNoSnapshotStrategy(mapKey string, outcomes []outcomeRec, hist []wsRo
 	best := map[dedupeKey]yesnoHit{}
 	for ms, rows := range byMs {
 		w, _ := buildScanWatch(mapKey, outcomes, params)
+		w.Ops.BacktestMode = true
+		w.Ops.SnapshotNow = func() time.Time { return time.UnixMilli(ms) }
 		runner := yesno.Entry(w)
 		for _, row := range rows {
 			if mo, ok := byHash[strings.ToUpper(row.Platform)+"|"+strings.TrimSpace(row.PlatformMarketOutcomeID)]; ok {

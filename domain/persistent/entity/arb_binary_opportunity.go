@@ -8,7 +8,7 @@ import (
 
 // ArbBinaryOpportunity 跨平台套利命中（二元或 1X2 三路；腿槽位见 opp_kind）。
 //
-// 落库自洽：total_cost / leg_*_best_ask / arb_qty 与 TopHit 判定同源（pick 时刻卖一）；leg_*_order_books 为同锁内快照 JSON。
+// 落库自洽：leg_*_best_ask 为卖一裸价；total_cost 为含平台规则的每股净成本；arb_qty 为各腿卖一挂单量最小值。
 //
 //	opp_kind              leg_1      leg_2      leg_3
 //	BINARY_YES_NO         YES 腿     NO 腿      {}
@@ -22,10 +22,13 @@ type ArbBinaryOpportunity struct {
 	SubCategory         *string          `gorm:"column:sub_category;type:varchar(200)"`
 	Competition         *string          `gorm:"column:competition;type:varchar(64)"`
 	CompetitionEn       *string          `gorm:"column:competition_en;type:varchar(128)"`
+	Leg1Platform        *string          `gorm:"column:leg_1_platform;type:varchar(32)"`
 	Leg1Info            string           `gorm:"column:leg_1_info;type:mediumtext;not null"`
 	Leg1OrderBooks      string           `gorm:"column:leg_1_order_books;type:mediumtext;not null"`
+	Leg2Platform        *string          `gorm:"column:leg_2_platform;type:varchar(32)"`
 	Leg2Info            string           `gorm:"column:leg_2_info;type:mediumtext;not null"`
 	Leg2OrderBooks      string           `gorm:"column:leg_2_order_books;type:mediumtext;not null"`
+	Leg3Platform        *string          `gorm:"column:leg_3_platform;type:varchar(32)"`
 	Leg3Info            string           `gorm:"column:leg_3_info;type:mediumtext;not null"`
 	Leg3OrderBooks      string           `gorm:"column:leg_3_order_books;type:mediumtext;not null"`
 	Leg1BestAsk         *decimal.Decimal `gorm:"column:leg_1_best_ask;type:decimal(20,8)"`

@@ -5,11 +5,13 @@ import (
 
 	appcommon "github.com/gph-tech/fgmm-strategy-bitfinex/application/common"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/book"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/watchgroup"
 )
 
 // BookOutcome 读盘所需字段。
 type BookOutcome struct {
 	Platform, MarketID, YesToken, NoToken string
+	yesQuote, noQuote                     watchgroup.LegQuote
 }
 
 func OutcomeFields(platform, marketID, yesTok, noTok string) BookOutcome {
@@ -136,6 +138,7 @@ type ExecSide struct {
 	Side
 	OutcomeID                             uint
 	Platform, MarketID, YesToken, NoToken string
+	yesQuote, noQuote                     watchgroup.LegQuote
 }
 
 func ExecSideAt(store *book.Store, outcomeIndex int, oc BookOutcome, fee float64) (ExecSide, bool) {

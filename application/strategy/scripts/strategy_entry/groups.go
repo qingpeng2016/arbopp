@@ -47,7 +47,7 @@ const (
 	defaultPolySports            = 0.05
 	defaultKalshiSports          = 0.07
 	defaultPredictSports         = 0.02
-	defaultSxbetSports           = 0.02
+	defaultSxbetSports           = 0.01
 	configKeyPreEventScanMinutes = "pre_event_scan_minutes"
 	defaultPreEventScanMinutes   = 30
 	configKeyEndEventScanMinutes = "end_event_scan_minutes"

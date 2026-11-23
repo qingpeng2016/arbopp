@@ -1,7 +1,6 @@
 package yesno
 
 import (
-	"context"
 	"sync"
 	"time"
 
@@ -50,11 +49,11 @@ func (r *Runner) TryPickForOutcome(outcomeID uint) (pick FilledPick, ok bool) {
 
 // tryPickForGrab 盘口更新后在同一 OutcomeGroup 内选最优可成交组合（只读，不加锁）。
 func (r *Runner) tryPickForGrab(outcomeID uint) (pick FilledPick, ok bool) {
-	_, pick, ok = r.tryAllPicksForGrab(outcomeID)
+	_, pick, ok = r.tryAllPicksForGrab(outcomeID, r.limits())
 	return pick, ok
 }
 
-func (r *Runner) tryAllPicksForGrab(outcomeID uint) (all []FilledPick, best FilledPick, ok bool) {
+func (r *Runner) tryAllPicksForGrab(outcomeID uint, lim Limits) (all []FilledPick, best FilledPick, ok bool) {
 	outcomeIndex, okIdx := r.outcomeIndex(outcomeID)
 	if !okIdx {
 		return nil, FilledPick{}, false
@@ -67,7 +66,7 @@ func (r *Runner) tryAllPicksForGrab(outcomeID uint) (all []FilledPick, best Fill
 	if !okGrp {
 		return nil, FilledPick{}, false
 	}
-	return r.AllFilledPicks(group, r.limits())
+	return r.AllFilledPicks(group, lim)
 }
 
 // grabOne 实盘/联调：命中后异步落库（当前 DryRun，不发单）。
@@ -86,11 +85,11 @@ func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
 		return
 	}
 	defer r.orderMu.Unlock()
-	all, pick, ok := r.tryAllPicksForGrab(outcomeID)
+	lim := r.limits()
+	all, pick, ok := r.tryAllPicksForGrab(outcomeID, lim)
 	if !ok {
 		return
 	}
-	lim := r.limits()
 	const dryRun = true
 	if !dryRun && (!r.canTrade(pick.Yes.Platform) || !r.canTrade(pick.No.Platform)) {
 		return
@@ -101,24 +100,39 @@ func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
 	if !dryRun {
 		yesFill, noFill, yesErr, noErr = Fire(outcomeSender{r}, pick.Yes.Side, pick.No.Side, pick.YesBuyYes, pick.NoBuyYes, pick.Qty)
 	}
-	bestHit := GrabHit{
-		Pick: pick, MaxCost: lim.MaxCost,
-		YesFill: yesFill, NoFill: noFill, YesErr: yesErr, NoErr: noErr,
-		DryRun: dryRun,
-	}
 	ctx := r.grabContext()
 	mapKey := r.w.MapKey
 	persist := r.grabPersist()
+	r.recent.Prune(pick.At)
+	var bestHit GrabHit
+	var saved bool
 	for _, fp := range all {
-		leg1, leg2 := r.snapPickLegs(fp)
-		SaveGrabHit(ctx, persist, mapKey, GrabHit{
-			Pick: fp, Leg1: leg1, Leg2: leg2, MaxCost: lim.MaxCost,
-			YesFill: yesFill, NoFill: noFill, DryRun: dryRun,
-		})
+		key := watchgroup.HitKey{
+			Kind: strategyTypeYesNo, Indices: [3]int{fp.Yes.Index, fp.No.Index},
+			Prices: [3]float64{fp.Yes.YesPx, fp.No.NoPx}, Depths: [3]float64{fp.Sizes[0], fp.Sizes[1]},
+			Cost: fp.Per, Quantity: fp.Qty,
+		}
+		insert := func() bool {
+			leg1, leg2 := r.snapPickLegs(fp)
+			hit := GrabHit{Pick: fp, Leg1: leg1, Leg2: leg2, MaxCost: lim.MaxCost,
+				YesFill: yesFill, NoFill: noFill, YesErr: yesErr, NoErr: noErr, DryRun: dryRun}
+			if !SaveGrabHit(ctx, persist, mapKey, hit) {
+				return false
+			}
+			if !saved || fp.Per < bestHit.Pick.Per {
+				bestHit, saved = hit, true
+			}
+			return true
+		}
+		if dryRun {
+			r.recent.Save(key, fp.At, insert)
+		} else {
+			insert()
+		}
 	}
-	go func(ctx context.Context, mapKey string, best GrabHit) {
-		NotifyGrab(ctx, mapKey, best)
-	}(ctx, mapKey, bestHit)
+	if saved {
+		go NotifyGrab(ctx, mapKey, bestHit)
+	}
 }
 
 // grabOneBacktest 历史回放：不发真实单，同步写入 backtest_arb_*（由 Ops.BacktestTaskID 决定落库表）。
@@ -127,20 +141,19 @@ func (r *Runner) grabOneBacktest(outcomeID uint) {
 		return
 	}
 	defer r.orderMu.Unlock()
-	all, pick, ok := r.tryAllPicksForGrab(outcomeID)
+	lim := r.limits()
+	all, _, ok := r.tryAllPicksForGrab(outcomeID, lim)
 	if !ok {
 		return
 	}
-	lim := r.limits()
 	ctx := r.grabContext()
 	mapKey := r.w.MapKey
 	persist := r.grabPersist()
-	qty := pick.Qty
 	for _, fp := range all {
 		leg1, leg2 := r.snapPickLegs(fp)
 		SaveGrabHit(ctx, persist, mapKey, GrabHit{
 			Pick: fp, Leg1: leg1, Leg2: leg2, MaxCost: lim.MaxCost,
-			YesFill: qty, NoFill: qty,
+			YesFill: fp.Qty, NoFill: fp.Qty,
 		})
 	}
 }

@@ -2,6 +2,7 @@ package watchgroup
 
 import (
 	"strings"
+	"time"
 
 	appcommon "github.com/gph-tech/fgmm-strategy-bitfinex/application/common"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/book"
@@ -25,6 +26,11 @@ type fullOutcomeBooks struct {
 	Platform                string      `json:"platform"`
 	PlatformMarketOutcomeID string      `json:"platform_market_outcome_id"`
 	Books                   []bookSlice `json:"books"`
+	QuoteVersion            int         `json:"quote_version,omitempty"`
+	QuoteAtMs               int64       `json:"quote_at_ms,omitempty"`
+	NetCost                 float64     `json:"net_cost,omitempty"`
+	NetQty                  float64     `json:"net_qty,omitempty"`
+	FeeRate                 *float64    `json:"fee_rate,omitempty"`
 }
 
 // LegPersistSnap 落库用：全量盘口 JSON 与顶卖一同源。
@@ -90,71 +96,96 @@ func topAskFromOutcomeBooks(ob outcomeBooks) (price, size float64, ok bool) {
 	return 0, 0, false
 }
 
+// LegQuote captures the selected side once for pricing and opportunity evidence.
+type LegQuote struct {
+	platform, market, key, role string
+	book                        book.Book
+}
+
+func (q LegQuote) Top() (price, size float64, ok bool) {
+	if !q.book.Live || len(q.book.Asks) == 0 {
+		return 0, 0, false
+	}
+	ask := q.book.Asks[0]
+	return ask.Price, ask.Size, book.ValidPrice(ask.Price) && ask.Size > 0
+}
+
+func (q LegQuote) UpdatedAt() time.Time { return q.book.ExchangeTS }
+
+func (q LegQuote) Persist(cost, qty, feeRate float64) LegPersistSnap {
+	px, size, ok := q.Top()
+	if !ok {
+		return LegPersistSnap{}
+	}
+	return LegPersistSnap{
+		TopAsk: px, TopSz: size, OK: true,
+		OrderBooks: prettyJSON(fullOutcomeBooks{
+			Platform: q.platform, PlatformMarketOutcomeID: q.market,
+			Books:        []bookSlice{{BookKey: q.key, Role: q.role, Bids: q.book.Bids, Asks: q.book.Asks}},
+			QuoteVersion: 2, QuoteAtMs: q.book.ExchangeTS.UnixMilli(),
+			NetCost: cost, NetQty: qty, FeeRate: &feeRate,
+		}),
+	}
+}
+
+func (w *Watch) Quote(view book.Snapshot, outcomeIndex int, buyYes bool) LegQuote {
+	return w.readQuote(view.Get, outcomeIndex, buyYes)
+}
+
 func (w *Watch) collectOutcomeBooks(outcomeIndex, depth int, buyYes bool) outcomeBooks {
-	var ob outcomeBooks
-	if outcomeIndex < 0 || outcomeIndex >= len(w.Outcomes) {
-		return ob
+	if w.Books == nil {
+		return outcomeBooks{}
 	}
-	oc := &w.Outcomes[outcomeIndex]
-	ob = outcomeBooks{
-		Platform:                strings.ToUpper(strings.TrimSpace(oc.Platform)),
-		PlatformMarketOutcomeID: strings.TrimSpace(oc.PlatformMarketOutcomeID),
-	}
-	limit := depth
-	appendBook := func(platform, bookKey, role string) {
-		bookKey = strings.TrimSpace(bookKey)
-		if bookKey == "" || w.Books == nil {
-			return
-		}
-		b, ok := w.Books.Get(platform, bookKey)
-		if !ok {
-			return
-		}
-		ob.Books = append(ob.Books, bookSlice{
-			BookKey: bookKey,
-			Role:    role,
-			Bids:    sliceLevels(b.Bids, limit),
-			Asks:    sliceLevels(b.Asks, limit),
-		})
-	}
-	switch strings.ToUpper(strings.TrimSpace(oc.Platform)) {
-	case appcommon.PlatformPolymarket:
-		if buyYes {
-			appendBook(appcommon.PlatformPolymarket, oc.YesTokenID, "YES_TOKEN")
-		} else {
-			appendBook(appcommon.PlatformPolymarket, oc.NoTokenID, "NO_TOKEN")
-		}
-	case appcommon.PlatformKalshi:
-		mid := strings.TrimSpace(oc.PlatformMarketOutcomeID)
-		noKey := strings.TrimSpace(oc.NoTokenID)
-		if noKey == "" {
-			noKey = mid + ":no"
-		}
-		if buyYes {
-			appendBook(appcommon.PlatformKalshi, mid, "YES_BOOK")
-		} else {
-			appendBook(appcommon.PlatformKalshi, noKey, "NO_TOKEN")
-		}
-	case appcommon.PlatformSxbet:
-		mid := strings.TrimSpace(oc.PlatformMarketOutcomeID)
-		if buyYes {
-			appendBook(oc.Platform, mid, "YES_BOOK")
-		} else {
-			appendBook(oc.Platform, mid+":not", "NO_BOOK")
-		}
-	case appcommon.PlatformPredict:
-		mid := strings.TrimSpace(oc.PlatformMarketOutcomeID)
-		noKey := strings.TrimSpace(oc.NoTokenID)
-		if noKey == "" {
-			noKey = mid + ":no"
-		}
-		if buyYes {
-			appendBook(oc.Platform, mid, "YES_BOOK")
-		} else {
-			appendBook(oc.Platform, noKey, "NO_TOKEN")
-		}
+	q := w.readQuote(w.Books.Get, outcomeIndex, buyYes)
+	ob := outcomeBooks{Platform: q.platform, PlatformMarketOutcomeID: q.market}
+	if q.book.ID != "" {
+		ob.Books = []bookSlice{{BookKey: q.key, Role: q.role,
+			Bids: sliceLevels(q.book.Bids, depth), Asks: sliceLevels(q.book.Asks, depth)}}
 	}
 	return ob
+}
+
+func (w *Watch) readQuote(get func(string, string) (book.Book, bool), index int, buyYes bool) LegQuote {
+	oc := w.OutcomeAt(index)
+	if oc == nil {
+		return LegQuote{}
+	}
+	q := LegQuote{platform: strings.ToUpper(strings.TrimSpace(oc.Platform)),
+		market: strings.TrimSpace(oc.PlatformMarketOutcomeID)}
+	switch q.platform {
+	case appcommon.PlatformPolymarket:
+		q.key, q.role = strings.TrimSpace(oc.YesTokenID), "YES_TOKEN"
+		if !buyYes {
+			q.key, q.role = strings.TrimSpace(oc.NoTokenID), "NO_TOKEN"
+		}
+	case appcommon.PlatformPredict, appcommon.PlatformKalshi, appcommon.PlatformSxbet:
+		q.key, q.role = q.market, "YES_BOOK"
+		if !buyYes {
+			q.key, q.role = strings.TrimSpace(oc.NoTokenID), "NO_TOKEN"
+			if q.key == "" {
+				q.key = q.market + ":no"
+			}
+			if q.platform == appcommon.PlatformSxbet {
+				q.key, q.role = q.market+":not", "NO_BOOK"
+			}
+		}
+	default:
+		return q
+	}
+	if q.key == "" {
+		return q
+	}
+	var found bool
+	q.book, found = get(q.platform, q.key)
+	// Historical snapshots for Predict and Kalshi can contain only the YES book.
+	if !found && !buyYes && q.market != "" &&
+		(q.platform == appcommon.PlatformPredict || q.platform == appcommon.PlatformKalshi) {
+		if yes, ok := get(q.platform, q.market); ok {
+			yes.Bids, yes.Asks = book.NoBookFromYesBook(yes.Bids, yes.Asks)
+			q.book = yes
+		}
+	}
+	return q
 }
 
 func sliceLevels(ls []book.Level, n int) []book.Level {

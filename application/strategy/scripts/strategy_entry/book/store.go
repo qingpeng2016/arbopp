@@ -35,6 +35,35 @@ type Store struct {
 	books map[string]*Book
 }
 
+// Snapshot captures all books at one point. Store writers replace level slices
+// or copy them before applying deltas, so existing snapshots stay immutable.
+type Snapshot struct {
+	At    time.Time
+	books map[string]Book
+}
+
+func (s *Store) Snapshot() Snapshot {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	view := Snapshot{At: time.Now(), books: make(map[string]Book, len(s.books))}
+	for k, b := range s.books {
+		view.books[k] = *b
+	}
+	return view
+}
+
+func (s Snapshot) Get(platform, id string) (Book, bool) {
+	b, ok := s.books[key(platform, id)]
+	return cloneBook(b), ok
+}
+
+func cloneBook(b Book) Book {
+	b.Bids = Clone(b.Bids)
+	b.Asks = Clone(b.Asks)
+	b.NoBids = Clone(b.NoBids)
+	return b
+}
+
 func NewStore() *Store {
 	return &Store{books: map[string]*Book{}}
 }
@@ -60,11 +89,7 @@ func (s *Store) Get(platform, id string) (Book, bool) {
 	if b == nil {
 		return Book{}, false
 	}
-	cp := *b
-	cp.Bids = Clone(b.Bids)
-	cp.Asks = Clone(b.Asks)
-	cp.NoBids = Clone(b.NoBids)
-	return cp, true
+	return cloneBook(*b), true
 }
 
 func (s *Store) PausePlatform(platform string) {
@@ -229,9 +254,9 @@ func applyPolyLevel(b *Book, side string, price, size float64, ts time.Time) str
 	}
 	switch strings.ToUpper(side) {
 	case "BUY", "BID":
-		b.Bids = Upsert(b.Bids, price, size, true)
+		b.Bids = Upsert(Clone(b.Bids), price, size, true)
 	default:
-		b.Asks = Upsert(b.Asks, price, size, false)
+		b.Asks = Upsert(Clone(b.Asks), price, size, false)
 	}
 	if !ts.IsZero() {
 		b.ExchangeTS = ts
@@ -368,10 +393,10 @@ func (s *Store) ApplyKalshiDelta(ticker, side string, price, delta float64, seq 
 		return false, false
 	}
 	if strings.EqualFold(side, "no") {
-		b.NoBids = AddSize(b.NoBids, price, delta, true)
+		b.NoBids = AddSize(Clone(b.NoBids), price, delta, true)
 		b.Asks = AsksFromOppositeBids(b.NoBids)
 	} else {
-		b.Bids = AddSize(b.Bids, price, delta, true)
+		b.Bids = AddSize(Clone(b.Bids), price, delta, true)
 	}
 	if !ts.IsZero() {
 		b.ExchangeTS = ts
