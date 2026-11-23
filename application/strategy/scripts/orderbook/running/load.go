@@ -18,7 +18,9 @@ type Snapshot struct {
 	Outcomes    []persistententity.MarketOutcome
 }
 
-// LoadFromStatKV 读 description JSON；按各 group.map_key 加载 ACTIVE 场次及其盘口（盘口无 status，随 market）。
+// LoadFromStatKV 读 description JSON，加载 strategy_entry 在跑场次及其盘口。
+// 优先用 groups[].markets 中的 market.id（与 entry 心跳一致，含 SX 已 CLOSE 仍在连 WS 的腿）；
+// 无 markets 时回退为 map_key + status=ACTIVE。
 func LoadFromStatKV(
 	ctx context.Context,
 	statRepo persistentrepo.StatKVRepo,
@@ -42,8 +44,31 @@ func LoadFromStatKV(
 	out.Groups = groups
 
 	fixtures := map[uint]persistententity.Market{}
-	seenMK := map[string]struct{}{}
+	seenID := map[uint]struct{}{}
 	var marketRowIDs []uint
+	addMarket := func(m persistententity.Market) {
+		if _, ok := seenID[m.ID]; ok {
+			return
+		}
+		seenID[m.ID] = struct{}{}
+		fixtures[m.ID] = m
+		marketRowIDs = append(marketRowIDs, m.ID)
+	}
+
+	fromStatMarkets := marketIDsFromGroups(groups)
+	if len(fromStatMarkets) > 0 {
+		_, markets, err := marketRepo.List(ctx, nil, map[string]interface{}{
+			"id IN ?": fromStatMarkets,
+		}, "id asc", "")
+		if err != nil {
+			return out, err
+		}
+		for _, m := range markets {
+			addMarket(m)
+		}
+	}
+
+	seenMK := map[string]struct{}{}
 	for _, g := range groups {
 		mk := strings.TrimSpace(g.MapKey)
 		if mk == "" {
@@ -61,8 +86,7 @@ func LoadFromStatKV(
 			return out, err
 		}
 		for _, m := range markets {
-			fixtures[m.ID] = m
-			marketRowIDs = append(marketRowIDs, m.ID)
+			addMarket(m)
 		}
 	}
 	if len(marketRowIDs) == 0 {
@@ -77,6 +101,24 @@ func LoadFromStatKV(
 	out.Fixtures = fixtures
 	out.Outcomes = outcomes
 	return out, nil
+}
+
+func marketIDsFromGroups(groups []entrystat.Group) []uint {
+	seen := map[uint]struct{}{}
+	var ids []uint
+	for _, g := range groups {
+		for _, id := range g.Markets {
+			if id == 0 {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }
 
 func parseGroups(description string) ([]entrystat.Group, error) {
