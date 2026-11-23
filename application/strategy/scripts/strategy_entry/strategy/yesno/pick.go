@@ -64,7 +64,8 @@ func (r *Runner) AllFilledPicks(group OutcomeGroup, lim Limits) (all []FilledPic
 			}
 			noCost, noSize, noOK := no.PayoutQuote(false, at)
 			per := yesCost + noCost
-			if !noOK || per >= lim.MaxCost || per >= 1 {
+			// TEST: 仅阈值 config_strategy_threshold；不强制 per < 1（兑付硬顶已关）
+			if !noOK || per >= lim.MaxCost {
 				continue
 			}
 			_, yesTopSz, yesTopOK := yes.TopAskSz(true)

@@ -386,9 +386,7 @@ func saveBacktestGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit 
 
 // persistableBinarySnap TopHit 的 pick.Per 仍满足阈值（与落库 total_cost 同源）。
 func persistableBinarySnap(perShare, maxCost float64) bool {
-	if 1-perShare <= 0 {
-		return false
-	}
+	// TEST: 不强制 profit_space>0（原 1-perShare<=0 为兑付硬顶）
 	if maxCost > 0 && perShare >= maxCost {
 		return false
 	}

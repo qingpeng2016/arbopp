@@ -119,27 +119,13 @@ func LoadParams(ctx context.Context, thresholdRepo persistentrepo.ConfigStrategy
 // loadParams 从阈值表读成本上限和数量，从手续费表读各运动系数。
 func (e *Entry) loadParams(ctx context.Context) Params {
 	p := defaultParams()
-	p.MaxCost = e.threshold(ctx, thresholdMaxCost, p.MaxCost)
-	p.OrderAmount = e.threshold(ctx, thresholdOrderAmount, p.OrderAmount)
-	p.LevelFactor = e.threshold(ctx, thresholdLevelFactor, p.LevelFactor)
-	p.OneX2YesMax = e.threshold(ctx, threshold1X2YesMax, p.OneX2YesMax)
-	p.OneX2NoMax = e.threshold(ctx, threshold1X2NoMax, p.OneX2NoMax)
+	// TEST: 门槛仅 config_strategy_threshold；读不到保持 0，不回填代码默认
+	p.MaxCost = e.threshold(ctx, thresholdMaxCost)
+	p.OrderAmount = e.threshold(ctx, thresholdOrderAmount)
+	p.LevelFactor = e.threshold(ctx, thresholdLevelFactor)
+	p.OneX2YesMax = e.threshold(ctx, threshold1X2YesMax)
+	p.OneX2NoMax = e.threshold(ctx, threshold1X2NoMax)
 	p.fees = e.loadFees(ctx, p.fees)
-	if p.OrderAmount <= 0 {
-		p.OrderAmount = defaultOrderAmount
-	}
-	if p.LevelFactor <= 0 {
-		p.LevelFactor = defaultLevelFactor
-	}
-	if p.MaxCost <= 0 {
-		p.MaxCost = defaultMaxCost
-	}
-	if p.OneX2YesMax <= 0 {
-		p.OneX2YesMax = default1X2YesMax
-	}
-	if p.OneX2NoMax <= 0 {
-		p.OneX2NoMax = default1X2NoMax
-	}
 	return p
 }
 
@@ -166,26 +152,25 @@ func (e *Entry) loadFees(ctx context.Context, base map[string]float64) map[strin
 	return out
 }
 
-// threshold 读一个启用中的阈值，读不到就用默认值。
-func (e *Entry) threshold(ctx context.Context, key string, def float64) float64 {
+// threshold 读 config_strategy_threshold；无行/禁用/负值 → 0（TEST，不用代码默认）。
+func (e *Entry) threshold(ctx context.Context, key string) float64 {
 	if e.thresholdRepo == nil {
-		return def
+		return 0
 	}
 	row, err := e.thresholdRepo.FindOne(ctx, nil, map[string]interface{}{
 		"config_key = ?": key,
 		"status = ?":     1,
 	}, "")
 	if err != nil {
-		return def
+		return 0
 	}
-	return nonNegative(row.ConfigValue, def)
+	return thresholdNonNegative(row.ConfigValue)
 }
 
-// nonNegative 负数当无效，退回默认值。
-func nonNegative(v decimal.Decimal, def float64) float64 {
+func thresholdNonNegative(v decimal.Decimal) float64 {
 	f := v.InexactFloat64()
 	if f < 0 {
-		return def
+		return 0
 	}
 	return f
 }

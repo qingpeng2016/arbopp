@@ -139,7 +139,8 @@ func buildOppBacktest(d persistDeps, mapKey string, hit GrabHit) *persistententi
 	leg3Ask := decimal.NewFromFloat(asks[2]).Round(8)
 	perShare := pick.Per
 	profitSpace := profitBase - perShare
-	if profitSpace <= 0 || (thVal > 0 && perShare >= thVal) {
+	// TEST: 不强制 profitSpace>0；仍校验阈值
+	if thVal > 0 && perShare >= thVal {
 		return nil
 	}
 	arbQty, arbProfit := tripleArbQtyProfit(profitSpace, pick)

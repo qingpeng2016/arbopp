@@ -39,9 +39,10 @@ func (r *Runner) priceTriple(legs [3]pricedLeg, at time.Time, buyYes bool, lim L
 		!yesno.SameSettlementScope(r.w, b, c) {
 		return TriplePick{}, false
 	}
-	kind, maxCost := OppKindNoTriple, min(lim.NoTripleMax, 2)
+	// TEST: 仅用 config 1x2_*_max_cost，不 min(,2)/min(,1) 兑付硬顶
+	kind, maxCost := OppKindNoTriple, lim.NoTripleMax
 	if buyYes {
-		kind, maxCost = OppKindYesTriple, min(lim.YesTripleMax, 1)
+		kind, maxCost = OppKindYesTriple, lim.YesTripleMax
 	}
 	cost := legs[0].cost + legs[1].cost + legs[2].cost
 	if cost >= maxCost {

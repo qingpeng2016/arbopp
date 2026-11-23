@@ -63,18 +63,12 @@ func (r *Runner) OnBookUpdate(outcomeID uint) {
 }
 
 func (r *Runner) limits() Limits {
-	lim := Limits{YesTripleMax: 0.95, NoTripleMax: 1.90}
+	var lim Limits
 	if r.w.Ops.OneX2Limits != nil {
 		lim.YesTripleMax, lim.NoTripleMax = r.w.Ops.OneX2Limits()
 	}
 	if r.w.Ops.StrategyParams != nil {
 		_, lim.OrderAmount, lim.LevelFactor = r.w.Ops.StrategyParams()
-	}
-	if lim.YesTripleMax <= 0 {
-		lim.YesTripleMax = 0.95
-	}
-	if lim.NoTripleMax <= 0 {
-		lim.NoTripleMax = 1.90
 	}
 	return lim
 }

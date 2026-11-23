@@ -127,14 +127,14 @@ func newWatch(ctx context.Context, e *Entry, g group) *watch {
 	w.Ops = watchgroup.Ops{
 		StrategyParams: func() (float64, float64, float64) {
 			if w.entry == nil {
-				return 0.95, 100, 1
+				return 0, 0, 0
 			}
 			p := w.entry.Params()
 			return p.MaxCost, p.OrderAmount, p.LevelFactor
 		},
 		OneX2Limits: func() (float64, float64) {
 			if w.entry == nil {
-				return 0.95, 1.90
+				return 0, 0
 			}
 			p := w.entry.Params()
 			return p.OneX2YesMax, p.OneX2NoMax

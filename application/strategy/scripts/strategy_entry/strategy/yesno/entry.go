@@ -126,7 +126,7 @@ func (r *Runner) grabContext() context.Context {
 
 func (r *Runner) limits() Limits {
 	if r.w.Ops.StrategyParams == nil {
-		return Limits{MaxCost: 0.95, OrderAmount: 100, LevelFactor: 1}
+		return Limits{}
 	}
 	maxCost, orderAmount, levelFactor := r.w.Ops.StrategyParams()
 	return Limits{MaxCost: maxCost, OrderAmount: orderAmount, LevelFactor: levelFactor}

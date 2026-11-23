@@ -16,8 +16,9 @@ func TestPersistableBinarySnap(t *testing.T) {
 	} else {
 		t.Fatal("expected persistable")
 	}
-	if persistableBinarySnap(1.076557, 0.95) {
-		t.Fatal("no arb when perShare above 1")
+	// TEST 模式允许 per>1，只要低于 maxCost
+	if !persistableBinarySnap(1.076557, 1.15) {
+		t.Fatal("expected persistable under raised maxCost")
 	}
 	if persistableBinarySnap(0.96, 0.95) {
 		t.Fatal("no arb when perShare >= maxCost")
