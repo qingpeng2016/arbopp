@@ -17,11 +17,14 @@ type BacktestOrder struct {
 	Platform                string          `gorm:"column:platform;type:varchar(32);not null"`
 	PlatformMarketOutcomeID string          `gorm:"column:platform_market_outcome_id;type:varchar(255);not null;default:''"`
 	TokenID                 string          `gorm:"column:token_id;type:varchar(255);not null;default:''"`
+	ClientOrderID           string          `gorm:"column:client_order_id;type:varchar(64);not null;default:''"`
+	PlatformOrderID         string          `gorm:"column:platform_order_id;type:varchar(128);not null;default:''"`
 	Side                    string          `gorm:"column:side;type:varchar(8);not null"`
 	Action                  string          `gorm:"column:action;type:varchar(16);not null;default:BUY"`
 	Price                   decimal.Decimal `gorm:"column:price;type:decimal(20,8);not null"`
 	Qty                     decimal.Decimal `gorm:"column:qty;type:decimal(20,8);not null"`
 	FillQty                 decimal.Decimal `gorm:"column:fill_qty;type:decimal(20,8);not null;default:0"`
+	Fee                     decimal.Decimal `gorm:"column:fee;type:decimal(20,8);not null;default:0"`
 	Status                  string          `gorm:"column:status;type:varchar(32);not null"`
 	ErrMsg                  string          `gorm:"column:err_msg;type:varchar(1024);not null;default:''"`
 	SentAt                  time.Time       `gorm:"column:sent_at;type:datetime;not null"`

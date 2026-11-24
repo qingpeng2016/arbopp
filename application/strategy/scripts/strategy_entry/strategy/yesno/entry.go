@@ -149,9 +149,9 @@ func deref(s *string) string {
 
 type outcomeSender struct{ r *Runner }
 
-func (s outcomeSender) Send(side Side, buyYes bool, px, qty float64) (float64, error) {
+func (s outcomeSender) Send(side Side, buyYes bool, px, qty float64) (watchgroup.SendResult, error) {
 	if s.r.w.Ops.SendOnOutcome == nil {
-		return 0, nil
+		return watchgroup.SendResult{}, nil
 	}
 	return s.r.w.Ops.SendOnOutcome(side.Index, buyYes, px, qty)
 }

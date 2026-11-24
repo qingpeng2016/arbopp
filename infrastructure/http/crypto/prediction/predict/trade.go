@@ -3,6 +3,8 @@ package predict
 import (
 	"context"
 	"fmt"
+	"math/big"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -54,6 +56,11 @@ func (c *Client) PlaceMarketOrder(ctx context.Context, acc httpentity.PredictAcc
 	}
 	book := bookResp.Data
 	qtyWei := floatSharesToWei(req.Quantity)
+	// 有 PriceLimit 时按限价裁剪盘口，且不再加滑点，避免市价穿透 best_ask。
+	slippage := int64(defaultSlippageBps)
+	if req.PriceLimit > 0 && req.PriceLimit < 1 {
+		slippage = 0
+	}
 	var amounts marketAmounts
 	var ok bool
 	var side int64
@@ -65,7 +72,8 @@ func (c *Client) PlaceMarketOrder(ctx context.Context, acc httpentity.PredictAcc
 		} else {
 			bids = bidsFromYesAsks(book.Asks)
 		}
-		amounts, ok = marketSellByQuantity(bids, qtyWei, defaultSlippageBps)
+		bids = filterBidsAtOrAbove(bids, req.PriceLimit)
+		amounts, ok = marketSellByQuantity(bids, qtyWei, slippage)
 	} else {
 		side = 0
 		var asks []depthLevel
@@ -74,7 +82,8 @@ func (c *Client) PlaceMarketOrder(ctx context.Context, acc httpentity.PredictAcc
 		} else {
 			asks = asksFromYesBids(book.Bids)
 		}
-		amounts, ok = marketBuyByQuantity(asks, qtyWei, defaultSlippageBps)
+		asks = filterAsksAtOrBelow(asks, req.PriceLimit)
+		amounts, ok = marketBuyByQuantity(asks, qtyWei, slippage)
 	}
 	if !ok {
 		return nil, fmt.Errorf("predict order: insufficient book depth")
@@ -115,7 +124,7 @@ func (c *Client) PlaceMarketOrder(ctx context.Context, acc httpentity.PredictAcc
 			Order:         order,
 			PricePerShare: pricePerShare,
 			Strategy:      "MARKET",
-			SlippageBps:   strconv.FormatInt(defaultSlippageBps, 10),
+			SlippageBps:   strconv.FormatInt(slippage, 10),
 		},
 	}
 	apiKey := strings.TrimSpace(acc.APIKey)
@@ -138,4 +147,96 @@ func (c *Client) PlaceMarketOrder(ctx context.Context, acc httpentity.PredictAcc
 		OrderHash: resp.Data.OrderHash,
 		FillQty:   fill,
 	}, nil
+}
+
+// GetOrderByHash GET /orders/{hash}（JWT）；amountFilled 为份额 wei。
+func (c *Client) GetOrderByHash(ctx context.Context, acc httpentity.PredictAccount, orderHash string) (*repository.PredictOrderFill, error) {
+	if c == nil {
+		return nil, fmt.Errorf("predict client is nil")
+	}
+	orderHash = strings.TrimSpace(orderHash)
+	if orderHash == "" {
+		return nil, fmt.Errorf("predict order hash required")
+	}
+	jwt, err := c.ensureJWT(ctx, acc)
+	if err != nil {
+		return nil, err
+	}
+	apiKey := strings.TrimSpace(acc.APIKey)
+	if apiKey == "" {
+		apiKey = strings.TrimSpace(c.apiKey)
+	}
+	var resp httpentity.PredictGetOrderResponse
+	if err := c.doGETAuth(ctx, apiKey, jwt, "/orders/"+orderHash, nil, &resp); err != nil {
+		return nil, err
+	}
+	if !resp.Success {
+		return nil, fmt.Errorf("predict get order: %s", apiErr(resp.Message, resp.Error))
+	}
+	d := resp.Data
+	out := &repository.PredictOrderFill{
+		OrderID:      strings.TrimSpace(d.ID),
+		OrderHash:    strings.TrimSpace(d.Order.Hash),
+		Status:       strings.TrimSpace(d.Status),
+		Amount:       weiStringToShares(d.Amount),
+		AmountFilled: weiStringToShares(d.AmountFilled),
+	}
+	if out.OrderHash == "" {
+		out.OrderHash = orderHash
+	}
+	// 手续费从 matches 汇总（可选；失败不挡查单）。
+	if fee, err := c.sumMatchFees(ctx, apiKey, jwt, out.OrderHash); err == nil {
+		out.FeeUSDT = fee
+	}
+	return out, nil
+}
+
+func (c *Client) sumMatchFees(ctx context.Context, apiKey, jwt, orderHash string) (float64, error) {
+	q := url.Values{}
+	q.Set("orderHashes", orderHash)
+	q.Set("first", "50")
+	var resp httpentity.PredictGetMatchesResponse
+	if err := c.doGETAuth(ctx, apiKey, jwt, "/orders/matches", q, &resp); err != nil {
+		return 0, err
+	}
+	if !resp.Success {
+		return 0, fmt.Errorf("predict matches: %s", apiErr(resp.Message, resp.Error))
+	}
+	var sum float64
+	for _, m := range resp.Data {
+		sum += matchFeeUSDT(m.TakerFee)
+		if m.TakerFee == nil {
+			sum += weiStringToShares(m.TakerFeeAmount) // 兼容旧字段，按 COLLATERAL 口径
+		}
+		for i := range m.Makers {
+			sum += matchFeeUSDT(m.Makers[i].Fee)
+		}
+		for _, f := range m.MakerFeeAmounts {
+			sum += weiStringToShares(f)
+		}
+	}
+	return sum, nil
+}
+
+func matchFeeUSDT(f *httpentity.PredictMatchFee) float64 {
+	if f == nil {
+		return 0
+	}
+	// COLLATERAL=USDT wei；SHARES 时暂按份额 wei 记（无均价则无法换 USDT）
+	if strings.EqualFold(f.Type, "SHARES") {
+		return 0
+	}
+	return weiStringToShares(f.Amount)
+}
+
+func weiStringToShares(s string) float64 {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	n := new(big.Int)
+	if _, ok := n.SetString(s, 10); !ok {
+		return 0
+	}
+	return weiToFloatShares(n)
 }

@@ -123,8 +123,8 @@ func newStrategyEntrySession(
 		CanTrade: func(platform string) bool {
 			return true
 		},
-		SendOnOutcome: func(outcomeIndex int, buyYes bool, px, qty float64) (float64, error) {
-			return qty, nil
+		SendOnOutcome: func(outcomeIndex int, buyYes bool, px, qty float64) (watchgroup.SendResult, error) {
+			return watchgroup.SendResult{Fill: qty}, nil
 		},
 		BooksJSONForPair: func(outcomeIndexA, outcomeIndexB int) string {
 			return wg.BooksJSONForOutcomePair(outcomeIndexA, outcomeIndexB)

@@ -140,3 +140,42 @@ type PredictCreateOrderResponse struct {
 		OrderHash string `json:"orderHash"`
 	} `json:"data"`
 }
+
+// PredictGetOrderResponse GET /orders/{hash}。
+type PredictGetOrderResponse struct {
+	PredictEnvelope
+	Data PredictOrderData `json:"data"`
+}
+
+// PredictOrderData 查单 data。
+type PredictOrderData struct {
+	Order        PredictSignedOrder `json:"order"`
+	ID           string             `json:"id"`
+	MarketID     int64              `json:"marketId"`
+	Amount       string             `json:"amount"`
+	AmountFilled string             `json:"amountFilled"`
+	Strategy     string             `json:"strategy"`
+	Status       string             `json:"status"`
+}
+
+// PredictGetMatchesResponse GET /orders/matches。
+type PredictGetMatchesResponse struct {
+	PredictEnvelope
+	Data []PredictMatchEvent `json:"data"`
+}
+
+// PredictMatchEvent 撮合事件（手续费字段做宽松解析）。
+type PredictMatchEvent struct {
+	TakerFeeAmount  string   `json:"takerFeeAmount"`
+	MakerFeeAmounts []string `json:"makerFeeAmounts"`
+	TakerFee        *PredictMatchFee `json:"takerFee"`
+	Makers          []struct {
+		Fee *PredictMatchFee `json:"fee"`
+	} `json:"makers"`
+}
+
+// PredictMatchFee 单笔 fee。
+type PredictMatchFee struct {
+	Amount string `json:"amount"`
+	Type   string `json:"type"` // SHARES | COLLATERAL
+}

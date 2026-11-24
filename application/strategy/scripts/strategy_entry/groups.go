@@ -685,7 +685,7 @@ func kalshiCred(a persistententity.Account) (httpentity.KalshiAccount, bool) {
 	return acc, true
 }
 
-// sxbetCred SX Bet 发单：api_key + 私钥（EOA）；proxy_address 为已部署代理（可选校验）。
+// sxbetCred SX Bet 发单：api_key + 私钥（EOA）+ 已部署 proxy（官方要求，无 proxy 拒单）。
 func sxbetCred(a persistententity.Account) (httpentity.SxbetAccount, bool) {
 	acc := httpentity.SxbetAccount{
 		APIKey:       deref(a.APIKey),
@@ -693,7 +693,7 @@ func sxbetCred(a persistententity.Account) (httpentity.SxbetAccount, bool) {
 		EOAAddress:   deref(a.EoaAddress),
 		ProxyAddress: deref(a.ProxyAddress),
 	}
-	if acc.APIKey == "" || acc.PrivateKey == "" {
+	if acc.APIKey == "" || acc.PrivateKey == "" || acc.ProxyAddress == "" {
 		return acc, false
 	}
 	return acc, true

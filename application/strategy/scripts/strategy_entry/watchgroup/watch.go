@@ -17,7 +17,7 @@ type Ops struct {
 	OneX2Limits      func() (yesTripleMax, noTripleMax float64)
 	TradeFee         func(platform, category, sub string) float64
 	CanTrade         func(platform string) bool
-	SendOnOutcome    func(outcomeIndex int, buyYes bool, px, qty float64) (fill float64, err error)
+	SendOnOutcome    func(outcomeIndex int, buyYes bool, px, qty float64) (SendResult, error)
 	FlattenOnOutcome func(outcomeIndex int, boughtYes bool, mine, other float64)
 	OppRepo          func() persistentrepo.ArbBinaryOpportunityRepo
 	OrderRepo        func() persistentrepo.ArbBinaryOrderRepo

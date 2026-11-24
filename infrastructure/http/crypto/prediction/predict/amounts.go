@@ -138,6 +138,36 @@ func levelsFromBook(asks [][]float64) []depthLevel {
 	return out
 }
 
+// filterAsksAtOrBelow 买单限价：只吃价 ≤ limit 的卖档（FAK/市价穿透上限）。
+func filterAsksAtOrBelow(asks []depthLevel, limit float64) []depthLevel {
+	if !(limit > 0 && limit < 1) || len(asks) == 0 {
+		return asks
+	}
+	capWei := etherFloatToWei(limit)
+	out := make([]depthLevel, 0, len(asks))
+	for _, lv := range asks {
+		if lv.priceWei != nil && lv.priceWei.Cmp(capWei) <= 0 {
+			out = append(out, lv)
+		}
+	}
+	return out
+}
+
+// filterBidsAtOrAbove 卖单限价：只吃价 ≥ limit 的买档。
+func filterBidsAtOrAbove(bids []depthLevel, limit float64) []depthLevel {
+	if !(limit > 0 && limit < 1) || len(bids) == 0 {
+		return bids
+	}
+	floorWei := etherFloatToWei(limit)
+	out := make([]depthLevel, 0, len(bids))
+	for _, lv := range bids {
+		if lv.priceWei != nil && lv.priceWei.Cmp(floorWei) >= 0 {
+			out = append(out, lv)
+		}
+	}
+	return out
+}
+
 func etherFloatToWei(px float64) *big.Int {
 	f := new(big.Float).Mul(big.NewFloat(px), big.NewFloat(weiPrecision))
 	i, _ := f.Int(nil)

@@ -1114,36 +1114,51 @@ func (w *watch) bookRowsForHit(view book.Snapshot, aIndex, bIndex int) []*persis
 	return rows
 }
 
-func (w *watch) sendOnOutcome(outcomeIndex int, buyYes bool, px, qty float64) (float64, error) {
+func (w *watch) sendOnOutcome(outcomeIndex int, buyYes bool, px, qty float64) (watchgroup.SendResult, error) {
 	if outcomeIndex < 0 || outcomeIndex >= len(w.Outcomes) || w.entry == nil {
-		return 0, nil
+		return watchgroup.SendResult{}, nil
 	}
 	oc := &w.Outcomes[outcomeIndex]
 	c := w.entry.credsNow()
-	return broker.SendOnOutcome(
+	orderQty := qty
+	view, _ := w.StrategySnapshot()
+	es, esOK := yesno.QuoteExecSide(w.Watch, view, outcomeIndex)
+	if esOK {
+		orderQty = es.OrderShares(buyYes, qty)
+	}
+	res, err := broker.SendOnOutcome(
 		w.entry.poly, w.entry.kalshi, w.entry.predict, w.entry.sxbet,
 		broker.PolyCreds{Account: c.poly, OK: c.polyOK},
 		broker.KalshiCreds{Account: c.kalshi, OK: c.kalshiOK},
 		broker.PredictCreds{Account: c.predict, OK: c.predictOK},
 		broker.SxbetCreds{Account: c.sxbet, OK: c.sxbetOK},
-		oc, buyYes, px, qty,
+		oc, buyYes, px, orderQty,
 		outcomeIndex < len(w.negRisk) && w.negRisk[outcomeIndex],
 	)
+	if esOK {
+		res.Fill = es.FillToNet(buyYes, res.Fill)
+	}
+	return res, err
 }
 
 func (w *watch) flattenOnOutcome(outcomeIndex int, boughtYes bool, mine, other float64) {
-	if outcomeIndex < 0 || outcomeIndex >= len(w.Outcomes) || w.entry == nil {
+	if outcomeIndex < 0 || outcomeIndex >= len(w.Outcomes) || w.entry == nil || mine <= 0 || other > 0 {
 		return
 	}
 	oc := &w.Outcomes[outcomeIndex]
 	c := w.entry.credsNow()
+	qty := mine
+	view, _ := w.StrategySnapshot()
+	if es, esOK := yesno.QuoteExecSide(w.Watch, view, outcomeIndex); esOK {
+		qty = es.OrderShares(boughtYes, mine)
+	}
 	broker.FlattenOnOutcome(
 		w.entry.poly, w.entry.kalshi, w.entry.predict, w.entry.sxbet,
 		broker.PolyCreds{Account: c.poly, OK: c.polyOK},
 		broker.KalshiCreds{Account: c.kalshi, OK: c.kalshiOK},
 		broker.PredictCreds{Account: c.predict, OK: c.predictOK},
 		broker.SxbetCreds{Account: c.sxbet, OK: c.sxbetOK},
-		oc, boughtYes, mine, other,
+		oc, boughtYes, qty, 0,
 		outcomeIndex < len(w.negRisk) && w.negRisk[outcomeIndex],
 	)
 }

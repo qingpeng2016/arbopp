@@ -10,6 +10,7 @@ import (
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketmap"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketsync"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/orderbook"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/orderfillsync"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/statcollect"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/taskalert"
@@ -53,6 +54,7 @@ func BuildContainer() *dig.Container {
 	_ = c.Provide(marketmap.NewMarketMap)
 	_ = c.Provide(statcollect.NewCollect)
 	_ = c.Provide(wsbookflush.NewFlush)
+	_ = c.Provide(orderfillsync.NewSync)
 	_ = c.Provide(strategy.NewScheduler)
 	_ = c.Provide(strategy.NewEntry)
 

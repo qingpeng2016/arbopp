@@ -90,8 +90,41 @@ type SxbetCreateOrdersResponse struct {
 
 // SxbetPlaceOrderReq 策略侧发单请求（LIMIT + IOC ≈ FAK）。
 type SxbetPlaceOrderReq struct {
-	MarketHash string
-	BuyYes     bool    // true=outcomeOne；false=outcomeTwo(NO)
-	Price      float64 // taker 限价 0~1
-	Quantity   float64 // 策略份额（≈ USDC stake）
+	MarketHash    string
+	BuyYes        bool    // true=outcomeOne；false=outcomeTwo(NO)
+	Price         float64 // taker 限价 0~1（percentageOdds）
+	Quantity      float64 // USDC stake（写入 totalBetSize，非净兑付份额）
+	ClientOrderID string  // 可选，原样回传
+}
+
+// SxbetGetOrderResponse GET /orders-v3/{orderId}。
+type SxbetGetOrderResponse struct {
+	Status string         `json:"status"`
+	Data   SxbetOrderView `json:"data"`
+}
+
+// SxbetOrderView 订单视图。
+type SxbetOrderView struct {
+	OrderID       string `json:"orderId"`
+	Status        string `json:"status"` // ACTIVE / INACTIVE / …
+	TotalBetSize  string `json:"totalBetSize"`
+	RemainingSize string `json:"remainingSize"`
+	FillAmount    string `json:"fillAmount"`
+}
+
+// SxbetGetFillsResponse GET /fills-v3。
+type SxbetGetFillsResponse struct {
+	Status string `json:"status"`
+	Data   struct {
+		Fills []SxbetFillV3 `json:"fills"`
+	} `json:"data"`
+}
+
+// SxbetFillV3 单笔 fill。
+type SxbetFillV3 struct {
+	ID                string `json:"id"`
+	OrderID           string `json:"orderId"`
+	Status            string `json:"status"`
+	FillAmount        string `json:"fillAmount"`
+	CeRefundFeeAmount string `json:"ceRefundFeeAmount"`
 }

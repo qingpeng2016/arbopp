@@ -70,6 +70,10 @@ func (c *Client) doGET(ctx context.Context, path string, query url.Values, out a
 }
 
 func (c *Client) doGETWithKey(ctx context.Context, apiKey, path string, query url.Values, out any) error {
+	return c.doGETAuth(ctx, apiKey, "", path, query, out)
+}
+
+func (c *Client) doGETAuth(ctx context.Context, apiKey, bearer, path string, query url.Values, out any) error {
 	if c == nil {
 		return fmt.Errorf("predict client is nil")
 	}
@@ -90,6 +94,9 @@ func (c *Client) doGETWithKey(ctx context.Context, apiKey, path string, query ur
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set(apiKeyHeader, apiKey)
+	if b := strings.TrimSpace(bearer); b != "" {
+		req.Header.Set("Authorization", "Bearer "+b)
+	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err

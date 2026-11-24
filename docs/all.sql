@@ -288,8 +288,8 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- -----------------------------------------------------------------------------
 INSERT INTO `config_strategy_threshold` (`config_key`, `config_value`, `value_type`, `description`) VALUES
   ('binary_yes_no_max_cost', 0.95000000, 'DECIMAL', '二元 YES+NO 最大总成本'),
-  ('binary_yes_no_order_amount', 100.00000000, 'DECIMAL', '命中后这一对下单的金额，按两边卖一换算成份额'),
-  ('binary_yes_no_level_factor', 2.00000000, 'DECIMAL', '档位挂单份额乘以该倍数，小于下单份额则不下单'),
+  ('min_amount', 5.00000000, 'DECIMAL', '最小下单份额金额（÷各平台最低 best_ask → min_qty）'),
+  ('max_amount', 5.00000000, 'DECIMAL', '最大下单份额金额（÷各平台最低 best_ask → max_qty）'),
   ('1x2_yes_triple_max_cost', 0.95000000, 'DECIMAL', '1X2 三路 YES'),
   ('1x2_no_triple_max_cost', 1.90000000, 'DECIMAL', '1X2 三路 NO'),
   ('certain_min_return_pct', 0.10000000, 'DECIMAL', '必然事件最低收益率'),
@@ -327,6 +327,7 @@ INSERT INTO `bot_schedule_config` (`module`, `task_name`, `interval_seconds`, `e
   ('less_one', 'market_map', 3600, 20, 1, '维护 market.map_key / map_verified', 0, 1, 0),
   ('less_one', 'orderbook_sync', 60, 30, 1, '拉盘口写入 market_order_book', 0, 1, 0),
   ('less_one', 'strategy_entry', 20, 40, 1, '已核对场次 WebSocket 盘口，二元 YES+NO 全覆盖', 1, 1, 0),
+  ('less_one', 'order_fill_sync', 30, 45, 1, '回查 Poly/Predict/SX 成交，补全 orders.fill_qty/status/fee', 1, 1, 0),
   ('less_one', 'trade_execute', 5, 60, 1, '下单与内嵌敞口处理', 0, 1, 0),
   ('less_one', 'task_alert', 300, 70, 1, '机会/敞口/拒单率告警', 0, 1, 0),
   ('less_one', 'report_daily', 86400, 80, 1, '日复盘报表', 0, 1, 0),

@@ -16,12 +16,13 @@ type PredictListCategoriesParams struct {
 }
 
 // PredictMarketOrderReq 市价买入指定 outcome token（FAK 语义由 MARKET 策略承担）。
+// Predict 的 LIMIT 会挂单；套利路径用 MARKET + PriceLimit 裁剪盘口，未成交部分立即取消。
 type PredictMarketOrderReq struct {
 	MarketID   string  // numeric market id
 	TokenID    string  // outcome onChainId
 	BuyYes     bool    // YES 视角盘口换算
 	Sell       bool    // false=市价买入 token，true=市价卖出
-	PriceLimit float64 // 策略侧卖一价（用于校验，不单独限价发单）
+	PriceLimit float64 // 策略侧卖一价：买单只吃 ≤limit 档；有值时 slippage=0
 	Quantity   float64 // 份额
 }
 
@@ -32,6 +33,16 @@ type PredictPlaceOrderResult struct {
 	FillQty   float64
 }
 
+// PredictOrderFill 查单回补结果。
+type PredictOrderFill struct {
+	OrderID     string
+	OrderHash   string
+	Status      string  // OPEN / FILLED / …
+	Amount      float64 // 下单份额
+	AmountFilled float64
+	FeeUSDT     float64
+}
+
 // PredictRepo Predict.fun REST（x-api-key）。
 type PredictRepo interface {
 	GetCategories(ctx context.Context, params PredictListCategoriesParams) (*entity.PredictGetCategoriesResponse, error)
@@ -39,4 +50,5 @@ type PredictRepo interface {
 	GetOrderbooks(ctx context.Context, marketIDs []string) ([]entity.PredictOrderbook, error)
 	GetMarket(ctx context.Context, marketID string) (*entity.PredictMarket, error)
 	PlaceMarketOrder(ctx context.Context, acc entity.PredictAccount, req PredictMarketOrderReq) (*PredictPlaceOrderResult, error)
+	GetOrderByHash(ctx context.Context, acc entity.PredictAccount, orderHash string) (*PredictOrderFill, error)
 }

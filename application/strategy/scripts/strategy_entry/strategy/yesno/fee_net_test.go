@@ -31,3 +31,32 @@ func TestArbQtyFromPickTopSizes(t *testing.T) {
 		t.Fatalf("qty %v want 80", q)
 	}
 }
+
+func TestOrderSharesAndFillToNetRoundTrip(t *testing.T) {
+	const netQty = 10.0
+	pred := ExecSide{
+		Side:     Side{YesPx: 0.41, Fee: 0.02},
+		Platform: appcommon.PlatformPredict,
+	}
+	pred.YesPx = 0.41
+	shares := pred.OrderShares(true, netQty)
+	back := pred.FillToNet(true, shares)
+	if back < netQty-1e-6 || back > netQty+1e-6 {
+		t.Fatalf("predict round-trip %v -> %v -> %v", netQty, shares, back)
+	}
+
+	sx := ExecSide{
+		Side:     Side{YesPx: 0.35, Fee: 0.02},
+		Platform: appcommon.PlatformSxbet,
+	}
+	sx.YesPx = 0.35
+	stake := sx.OrderShares(true, netQty)
+	wantStake := netQty * 0.35 / (1 - 0.02*(1-0.35))
+	if stake < wantStake-1e-9 || stake > wantStake+1e-9 {
+		t.Fatalf("sx stake %v want %v", stake, wantStake)
+	}
+	backSX := sx.FillToNet(true, stake)
+	if backSX < netQty-1e-6 || backSX > netQty+1e-6 {
+		t.Fatalf("sx round-trip %v -> %v -> %v", netQty, stake, backSX)
+	}
+}

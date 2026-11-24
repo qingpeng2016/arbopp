@@ -107,11 +107,17 @@ func NotifyOrderResult(ctx context.Context, mapKey string, hit GrabHit) {
 		}
 		costSum += pick.Prices[i] * hit.Fills[i]
 	}
+	// YES 三腿结算恒 1；NO 三腿任意一结果成立时另两腿 NO 各兑付 1 → 结算恒 2。
+	settle := 1.0
+	if !pick.BuyYes {
+		settle = 2.0
+	}
 	title := "strategy_entry 1X2 下单结果：未套利成功"
 	if same {
-		profit := pick.Qty - costSum
+		profit := settle*pick.Qty - costSum
 		title = "strategy_entry 1X2 下单结果：套利成功"
 		fields = append(fields,
+			notification.FieldPair{Key: "settle_per_share", Value: strconv.FormatFloat(settle, 'f', -1, 64)},
 			notification.FieldPair{Key: "cost_sum", Value: strconv.FormatFloat(costSum, 'f', -1, 64)},
 			notification.FieldPair{Key: "arb_profit", Value: strconv.FormatFloat(profit, 'f', -1, 64)},
 		)
@@ -354,7 +360,11 @@ func liveOrdersForHit(strategyType, mapKey string, oppID uint, hit GrabHit, sent
 		if i < len(hit.FillErrs) {
 			sendErr = hit.FillErrs[i]
 		}
-		out = append(out, yesno.OrderForSide(strategyType, 0, mapKey, oppID, sentAt, uint8(i+1), leg, pick.BuyYes, pick.Qty, px, fill, sendErr))
+		var send watchgroup.SendResult
+		if i < len(hit.Sends) {
+			send = hit.Sends[i]
+		}
+		out = append(out, yesno.OrderForSide(strategyType, 0, mapKey, oppID, sentAt, uint8(i+1), leg, pick.BuyYes, pick.Qty, px, fill, sendErr, send))
 	}
 	return out
 }

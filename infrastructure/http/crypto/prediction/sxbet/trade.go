@@ -12,6 +12,7 @@ import (
 	"math"
 	"math/big"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -86,6 +87,7 @@ func (c *Client) PlaceIOCOrder(ctx context.Context, acc entity.SxbetAccount, req
 		BaseToken:                strings.TrimSpace(meta.ActiveAsset.BaseToken),
 		IsMakerBettingOutcomeOne: req.BuyYes,
 		TimeInForce:              "IOC",
+		ClientOrderID:            strings.TrimSpace(req.ClientOrderID),
 	}
 	sig, err := signSxbetOrder(meta, item, priv)
 	if err != nil {
@@ -119,6 +121,100 @@ func (c *Client) PlaceIOCOrder(ctx context.Context, acc entity.SxbetAccount, req
 		out.FillQty = parseBaseUnits(one.Outcome.FillAmount)
 	}
 	return out, nil
+}
+
+// GetOrderByID GET /orders-v3/{orderId}。
+func (c *Client) GetOrderByID(ctx context.Context, acc entity.SxbetAccount, orderID string) (*repo.SxbetOrderFill, error) {
+	orderID = strings.TrimSpace(orderID)
+	if orderID == "" {
+		return nil, fmt.Errorf("sxbet order id required")
+	}
+	apiKey := strings.TrimSpace(acc.APIKey)
+	if apiKey == "" {
+		apiKey = c.apiKey
+	}
+	var resp entity.SxbetGetOrderResponse
+	if err := c.doGETJSON(ctx, apiKey, "/orders-v3/"+orderID, nil, &resp); err != nil {
+		return nil, err
+	}
+	if strings.EqualFold(resp.Status, "failure") {
+		return nil, fmt.Errorf("sxbet get order failure")
+	}
+	o := resp.Data
+	fill := parseBaseUnits(o.TotalBetSize) - parseBaseUnits(o.RemainingSize)
+	if fill < 0 {
+		fill = 0
+	}
+	return &repo.SxbetOrderFill{
+		OrderID: strings.TrimSpace(o.OrderID),
+		Status:  strings.TrimSpace(o.Status),
+		FillQty: fill,
+	}, nil
+}
+
+// GetFillsByOrderID GET /fills-v3?orderId=；汇总 fillAmount 与 ceRefundFeeAmount。
+func (c *Client) GetFillsByOrderID(ctx context.Context, acc entity.SxbetAccount, orderID string) (*repo.SxbetOrderFill, error) {
+	orderID = strings.TrimSpace(orderID)
+	if orderID == "" {
+		return nil, fmt.Errorf("sxbet order id required")
+	}
+	apiKey := strings.TrimSpace(acc.APIKey)
+	if apiKey == "" {
+		apiKey = c.apiKey
+	}
+	q := url.Values{}
+	q.Set("orderId", orderID)
+	q.Set("perPage", "100")
+	var resp entity.SxbetGetFillsResponse
+	if err := c.doGETJSON(ctx, apiKey, "/fills-v3", q, &resp); err != nil {
+		return nil, err
+	}
+	if strings.EqualFold(resp.Status, "failure") {
+		return nil, fmt.Errorf("sxbet get fills failure")
+	}
+	out := &repo.SxbetOrderFill{OrderID: orderID}
+	for _, f := range resp.Data.Fills {
+		out.FillQty += parseBaseUnits(f.FillAmount)
+		out.FeeUSDT += parseBaseUnits(f.CeRefundFeeAmount)
+		if st := strings.TrimSpace(f.Status); st != "" {
+			out.Status = st
+		}
+	}
+	return out, nil
+}
+
+func (c *Client) doGETJSON(ctx context.Context, apiKey, path string, query url.Values, out any) error {
+	fullURL := c.baseURL + path
+	if len(query) > 0 {
+		fullURL += "?" + query.Encode()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "application/json")
+	if k := strings.TrimSpace(apiKey); k != "" {
+		req.Header.Set(apiKeyHeader, k)
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("sxbet GET %s: http %d: %s", path, resp.StatusCode, truncateErrBody(b))
+	}
+	if out == nil {
+		return nil
+	}
+	if err := json.Unmarshal(b, out); err != nil {
+		return fmt.Errorf("sxbet decode %s: %w (body %s)", path, err, truncateErrBody(b))
+	}
+	return nil
 }
 
 func (c *Client) doPOSTJSON(ctx context.Context, apiKey, path string, body any, out any) error {
@@ -268,11 +364,17 @@ func saltToUint(salt string) string {
 }
 
 func formatOdds(price float64) string {
-	// taker 限价 → 1e20 标度整数串
-	v := new(big.Float).SetFloat64(price * oddsScale)
-	i, _ := v.Int(nil)
-	if i == nil {
-		i = big.NewInt(0)
+	// taker 限价 → 1e20；向下对齐到 0.125% 阶梯（oddsLadderStepSize=125 → step=125e15）
+	const step = 125e15
+	raw := price * oddsScale
+	if raw < step {
+		raw = step
+	}
+	aligned := math.Floor(raw/step) * step
+	i := new(big.Int)
+	new(big.Float).SetFloat64(aligned).Int(i)
+	if i.Sign() <= 0 {
+		return "0"
 	}
 	return i.String()
 }

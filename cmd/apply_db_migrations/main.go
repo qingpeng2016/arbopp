@@ -27,6 +27,8 @@ func main() {
 		{"arb_opp_qty_profit", ensureArbOppQtyProfit},
 		{"bot stat_collect", ensureBotStatCollect},
 		{"data_task.ingest_source", ensureDataTaskIngestSource},
+		{"orders.fill_meta", ensureOrdersFillMeta},
+		{"bot order_fill_sync", ensureBotOrderFillSync},
 	}
 
 	for _, s := range steps {
@@ -281,4 +283,50 @@ func ensureBotStatCollect(db *gorm.DB) error {
 	return db.Exec(`
 INSERT INTO bot_schedule_config (module, task_name, interval_seconds, exe_sort, concurrency, description, is_enabled, is_strategy_enabled, is_primary_machine_run)
 VALUES ('less_one', 'stat_collect', 300, 25, 1, '刷新 stat_kv', 1, 1, 0)`).Error
+}
+
+func ensureBotOrderFillSync(db *gorm.DB) error {
+	var n int64
+	db.Raw(`SELECT COUNT(*) FROM bot_schedule_config WHERE module='less_one' AND task_name='order_fill_sync'`).Scan(&n)
+	if n > 0 {
+		return nil
+	}
+	return db.Exec(`
+INSERT INTO bot_schedule_config (module, task_name, interval_seconds, exe_sort, concurrency, description, is_enabled, is_strategy_enabled, is_primary_machine_run)
+VALUES ('less_one', 'order_fill_sync', 30, 45, 1, '回查 Poly/Predict/SX 成交，补全 orders.fill_qty/status/fee', 1, 1, 0)`).Error
+}
+
+func ensureOrdersFillMeta(db *gorm.DB) error {
+	for _, table := range []string{"orders", "backtest_orders"} {
+		if !hasTable(db, table) {
+			continue
+		}
+		if !hasColumn(db, table, "client_order_id") {
+			if err := db.Exec(`ALTER TABLE ` + "`" + table + "`" + `
+  ADD COLUMN client_order_id varchar(64) NOT NULL DEFAULT '' COMMENT '本地生成的客户端单号' AFTER token_id`).Error; err != nil {
+				return err
+			}
+		}
+		if !hasColumn(db, table, "platform_order_id") {
+			if err := db.Exec(`ALTER TABLE ` + "`" + table + "`" + `
+  ADD COLUMN platform_order_id varchar(128) NOT NULL DEFAULT '' COMMENT '平台返回订单 ID/hash' AFTER client_order_id`).Error; err != nil {
+				return err
+			}
+		}
+		if !hasColumn(db, table, "fee") {
+			if err := db.Exec(`ALTER TABLE ` + "`" + table + "`" + `
+  ADD COLUMN fee decimal(20,8) NOT NULL DEFAULT 0 COMMENT '手续费（结算币）' AFTER fill_qty`).Error; err != nil {
+				return err
+			}
+		}
+		if table == "orders" {
+			if !hasIndex(db, table, "idx_orders_client_oid") {
+				_ = db.Exec(`ALTER TABLE orders ADD KEY idx_orders_client_oid (client_order_id)`).Error
+			}
+			if !hasIndex(db, table, "idx_orders_platform_oid") {
+				_ = db.Exec(`ALTER TABLE orders ADD KEY idx_orders_platform_oid (platform, platform_order_id)`).Error
+			}
+		}
+	}
+	return nil
 }

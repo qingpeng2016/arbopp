@@ -75,16 +75,55 @@ func (s ExecSide) TopAskSz(buyYes bool) (px, sz float64, ok bool) {
 	return s.quote(buyYes).Top()
 }
 
-// OrderShares converts the strategy's net payout target to the number of
-// shares requested before a Predict buy fee is deducted.
+// OrderShares 将策略净兑付目标换成平台下单量。
+// Predict：扣费前份额；SX：USDC stake（totalBetSize）；其余：份额原样。
 func (s ExecSide) OrderShares(buyYes bool, netQty float64) float64 {
-	if s.Platform == appcommon.PlatformPredict {
-		price := SidePx(s.Side, buyYes)
-		if book.ValidPrice(price) {
-			return netQty / PredictNetRatio(price, s.Fee)
-		}
+	if netQty <= 0 {
+		return 0
 	}
-	return netQty
+	price := SidePx(s.Side, buyYes)
+	if !book.ValidPrice(price) {
+		return netQty
+	}
+	switch s.Platform {
+	case appcommon.PlatformPredict:
+		ratio := PredictNetRatio(price, s.Fee)
+		if ratio <= 0 {
+			return 0
+		}
+		return netQty / ratio
+	case appcommon.PlatformSxbet:
+		netRatio := 1 - s.Fee*(1-price)
+		if netRatio <= 0 {
+			return 0
+		}
+		return netQty * price / netRatio
+	default:
+		return netQty
+	}
+}
+
+// FillToNet 将平台回报成交量折回策略净兑付单位（与 OrderShares 互逆）。
+func (s ExecSide) FillToNet(buyYes bool, fill float64) float64 {
+	if fill <= 0 {
+		return 0
+	}
+	price := SidePx(s.Side, buyYes)
+	if !book.ValidPrice(price) {
+		return fill
+	}
+	switch s.Platform {
+	case appcommon.PlatformPredict:
+		return fill * PredictNetRatio(price, s.Fee)
+	case appcommon.PlatformSxbet:
+		netRatio := 1 - s.Fee*(1-price)
+		if netRatio <= 0 || price <= 0 {
+			return 0
+		}
+		return fill / price * netRatio
+	default:
+		return fill
+	}
 }
 
 func (s ExecSide) PersistQuote(buyYes bool, cost, size float64) watchgroup.LegPersistSnap {

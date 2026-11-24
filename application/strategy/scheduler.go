@@ -13,10 +13,11 @@ import (
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketmap"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketsync"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/orderbook"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/orderfillsync"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/statcollect"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry"
-	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/wsbookflush"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/taskalert"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/wsbookflush"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/dederi/logger"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/notification"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/conf"
@@ -47,6 +48,7 @@ type Scheduler struct {
 	marketMap       *marketmap.MarketMap
 	statCollect     *statcollect.Collect
 	wsBookFlush     *wsbookflush.Flush
+	orderFillSync   *orderfillsync.Sync
 	botScheduleRepo persistentrepo.BotScheduleConfigRepo
 	ns              *gocron.Scheduler
 	jobMap          map[string]*gocron.Job
@@ -66,6 +68,7 @@ func NewScheduler(
 	marketMap *marketmap.MarketMap,
 	statCollect *statcollect.Collect,
 	wsBookFlush *wsbookflush.Flush,
+	orderFillSync *orderfillsync.Sync,
 	botScheduleRepo persistentrepo.BotScheduleConfigRepo,
 ) *Scheduler {
 	return &Scheduler{
@@ -79,6 +82,7 @@ func NewScheduler(
 		marketMap:       marketMap,
 		statCollect:     statCollect,
 		wsBookFlush:     wsBookFlush,
+		orderFillSync:   orderFillSync,
 		botScheduleRepo: botScheduleRepo,
 		ns:              gocron.NewScheduler(time.Local),
 		jobMap:          make(map[string]*gocron.Job),
@@ -320,6 +324,12 @@ func (s *Scheduler) getHandleFunc(module, taskName string) func() {
 		return func() {
 			if s.wsBookFlush != nil {
 				s.wsBookFlush.Run(context.Background())
+			}
+		}
+	case orderfillsync.TaskName:
+		return func() {
+			if s.orderFillSync != nil {
+				s.orderFillSync.Run(context.Background())
 			}
 		}
 	default:

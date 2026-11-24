@@ -10,6 +10,7 @@ import (
 
 	appcommon "github.com/gph-tech/fgmm-strategy-bitfinex/application/common"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/book"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/watchgroup"
 	cryptoPredictionEnum "github.com/gph-tech/fgmm-strategy-bitfinex/common/enum/crypto/prediction"
 	httpentity "github.com/gph-tech/fgmm-strategy-bitfinex/domain/http/entity"
 	httprepo "github.com/gph-tech/fgmm-strategy-bitfinex/domain/http/repository"
@@ -42,10 +43,15 @@ type SxbetCreds struct {
 	OK      bool
 }
 
-// SendPoly 向 Polymarket 发 LIMIT + FAK（限价=best_ask，能成交多少是多少）。
-func SendPoly(poly httprepo.PolymarketRepo, cred PolyCreds, token string, price, qty float64, buy, neg bool) (float64, error) {
+func newClientOrderID() string {
+	return "se" + strconv.FormatInt(time.Now().UnixNano(), 36)
+}
+
+// SendPoly 向 Polymarket 发 LIMIT + FAK；下单后尽量 GetOrder 取 size_matched。
+func SendPoly(poly httprepo.PolymarketRepo, cred PolyCreds, token string, price, qty float64, buy, neg bool) (watchgroup.SendResult, error) {
+	out := watchgroup.SendResult{ClientOrderID: newClientOrderID()}
 	if poly == nil || token == "" || qty <= 0 || !cred.OK {
-		return 0, nil
+		return out, nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
@@ -67,20 +73,31 @@ func SendPoly(poly httprepo.PolymarketRepo, cred PolyCreds, token string, price,
 		if err == nil {
 			err = errEmptyOrder
 		}
-		return 0, err
+		return out, err
 	}
+	out.PlatformOrderID = strings.TrimSpace(resp.OrderID)
+	fill := 0.0
 	switch strings.ToLower(string(resp.Status)) {
-	case "filled", "partial", "matched":
-		return qty, nil
-	default:
-		return 0, nil
+	case "filled", "matched":
+		fill = qty
 	}
+	// 下单响应无成交量：立刻查单拿 size_matched（部分成交也能拿到）。
+	if out.PlatformOrderID != "" {
+		if detail, err2 := poly.GetOrderById(ctx, httpentity.GetOrderReq{OrderID: out.PlatformOrderID}, cred.Account); err2 == nil && detail != nil {
+			if m := book.ParseNum(detail.Order.SizeMatched); m > 0 {
+				fill = m
+			}
+		}
+	}
+	out.Fill = fill
+	return out, nil
 }
 
 // SendKalshi 向 Kalshi 发 IOC。
-func SendKalshi(kalshi httprepo.KalshiRepo, cred KalshiCreds, oc *persistententity.MarketOutcome, yes bool, price, qty float64, sell bool) (float64, error) {
+func SendKalshi(kalshi httprepo.KalshiRepo, cred KalshiCreds, oc *persistententity.MarketOutcome, yes bool, price, qty float64, sell bool) (watchgroup.SendResult, error) {
+	out := watchgroup.SendResult{ClientOrderID: newClientOrderID()}
 	if kalshi == nil || oc == nil || qty <= 0 || !cred.OK {
-		return 0, nil
+		return out, nil
 	}
 	ticker := strings.TrimSpace(oc.PlatformMarketOutcomeID)
 	side := "bid"
@@ -101,7 +118,7 @@ func SendKalshi(kalshi httprepo.KalshiRepo, cred KalshiCreds, oc *persistententi
 	defer cancel()
 	resp, err := kalshi.PlaceOrder(ctx, httpentity.KalshiPlaceOrderReq{
 		Ticker:                  ticker,
-		ClientOrderID:           strconv.FormatInt(time.Now().UnixNano(), 36),
+		ClientOrderID:           out.ClientOrderID,
 		Side:                    side,
 		Count:                   strconv.FormatFloat(qty, 'f', 2, 64),
 		Price:                   strconv.FormatFloat(px, 'f', 4, 64),
@@ -112,15 +129,21 @@ func SendKalshi(kalshi httprepo.KalshiRepo, cred KalshiCreds, oc *persistententi
 		if err == nil {
 			err = errEmptyOrder
 		}
-		return 0, err
+		return out, err
 	}
-	return book.ParseNum(resp.FillCountFp), nil
+	out.PlatformOrderID = strings.TrimSpace(resp.OrderID)
+	if cid := strings.TrimSpace(resp.ClientOrderID); cid != "" {
+		out.ClientOrderID = cid
+	}
+	out.Fill = book.ParseNum(resp.FillCountFp)
+	return out, nil
 }
 
-// SendPredict Predict.fun 市价 BUY（PriceLimit=best_ask，FAK 语义）。
-func SendPredict(predict httprepo.PredictRepo, cred PredictCreds, oc *persistententity.MarketOutcome, yes bool, price, qty float64, sell bool) (float64, error) {
+// SendPredict Predict.fun MARKET（未成交取消≈FAK）；price=限价，qty=平台份额。
+func SendPredict(predict httprepo.PredictRepo, cred PredictCreds, oc *persistententity.MarketOutcome, yes bool, price, qty float64, sell bool) (watchgroup.SendResult, error) {
+	out := watchgroup.SendResult{ClientOrderID: newClientOrderID()}
 	if predict == nil || oc == nil || qty <= 0 || !cred.OK {
-		return 0, nil
+		return out, nil
 	}
 	token := strings.TrimSpace(oc.YesTokenID)
 	if !yes {
@@ -140,37 +163,49 @@ func SendPredict(predict httprepo.PredictRepo, cred PredictCreds, oc *persistent
 		if err == nil {
 			err = errEmptyOrder
 		}
-		return 0, err
+		return out, err
+	}
+	// Predict 查单走 hash。
+	out.PlatformOrderID = strings.TrimSpace(resp.OrderHash)
+	if out.PlatformOrderID == "" {
+		out.PlatformOrderID = strings.TrimSpace(resp.OrderID)
 	}
 	if resp.FillQty > 0 {
-		return resp.FillQty, nil
+		if resp.FillQty < qty {
+			out.Fill = resp.FillQty
+		} else {
+			out.Fill = qty
+		}
 	}
-	return qty, nil
+	return out, nil
 }
 
-// SendSxbet SX Bet LIMIT+IOC（waitForOutcome）。
-func SendSxbet(sxbet httprepo.SxbetRepo, cred SxbetCreds, oc *persistententity.MarketOutcome, yes bool, price, qty float64) (float64, error) {
+// SendSxbet SX Bet LIMIT+IOC（waitForOutcome）；qty=USDC stake。
+func SendSxbet(sxbet httprepo.SxbetRepo, cred SxbetCreds, oc *persistententity.MarketOutcome, yes bool, price, qty float64) (watchgroup.SendResult, error) {
+	out := watchgroup.SendResult{ClientOrderID: newClientOrderID()}
 	if sxbet == nil || oc == nil || qty <= 0 || !cred.OK {
-		return 0, nil
+		return out, nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	resp, err := sxbet.PlaceIOCOrder(ctx, cred.Account, httpentity.SxbetPlaceOrderReq{
-		MarketHash: strings.TrimSpace(oc.PlatformMarketOutcomeID),
-		BuyYes:     yes,
-		Price:      price,
-		Quantity:   qty,
+		MarketHash:    strings.TrimSpace(oc.PlatformMarketOutcomeID),
+		BuyYes:        yes,
+		Price:         price,
+		Quantity:      qty,
+		ClientOrderID: out.ClientOrderID,
 	})
 	if err != nil || resp == nil {
 		if err == nil {
 			err = errEmptyOrder
 		}
-		return 0, err
+		return out, err
 	}
+	out.PlatformOrderID = strings.TrimSpace(resp.OrderID)
 	if resp.FillQty > 0 {
-		return resp.FillQty, nil
+		out.Fill = resp.FillQty
 	}
-	return 0, nil
+	return out, nil
 }
 
 // SendOnOutcome 在一条 market_outcome 上买 YES 或 NO（LIMIT+立刻成交）。
@@ -178,9 +213,9 @@ func SendOnOutcome(
 	poly httprepo.PolymarketRepo, kalshi httprepo.KalshiRepo, predict httprepo.PredictRepo, sxbet httprepo.SxbetRepo,
 	polyCred PolyCreds, kalshiCred KalshiCreds, predictCred PredictCreds, sxbetCred SxbetCreds,
 	oc *persistententity.MarketOutcome, yes bool, price, qty float64, negRisk bool,
-) (float64, error) {
+) (watchgroup.SendResult, error) {
 	if oc == nil {
-		return 0, nil
+		return watchgroup.SendResult{}, nil
 	}
 	if strings.EqualFold(oc.Platform, appcommon.PlatformKalshi) {
 		return SendKalshi(kalshi, kalshiCred, oc, yes, price, qty, false)
@@ -216,7 +251,6 @@ func FlattenOnOutcome(
 		return
 	}
 	if strings.EqualFold(oc.Platform, appcommon.PlatformSxbet) {
-		// SX 平仓：反向 outcome IOC 出清（限价给极差价）
 		_, _ = SendSxbet(sxbet, sxbetCred, oc, !boughtYes, 0.99, mine)
 		return
 	}

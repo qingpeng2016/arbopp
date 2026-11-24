@@ -39,4 +39,17 @@ type SxbetRepo interface {
 	GetMetadataObv3(ctx context.Context) (*entity.SxbetMetadataObv3, error)
 	// PlaceIOCOrder LIMIT+IOC（当场能成交多少是多少），waitForOutcome 取成交量。
 	PlaceIOCOrder(ctx context.Context, acc entity.SxbetAccount, req entity.SxbetPlaceOrderReq) (*SxbetPlaceOrderResult, error)
+	// GetOrderByID GET /orders-v3/{orderId}；INACTIVE 后约 10–20 分钟仍可查。
+	GetOrderByID(ctx context.Context, acc entity.SxbetAccount, orderID string) (*SxbetOrderFill, error)
+	// GetFillsByOrderID GET /fills-v3?orderId=
+	GetFillsByOrderID(ctx context.Context, acc entity.SxbetAccount, orderID string) (*SxbetOrderFill, error)
+}
+
+// SxbetOrderFill 查单/成交回补。
+type SxbetOrderFill struct {
+	OrderID  string
+	Status   string
+	FillQty  float64 // USDC stake
+	FeeUSDT  float64 // ceRefundFee 等已付费汇总
+	RawError string
 }

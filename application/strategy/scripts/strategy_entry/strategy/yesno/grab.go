@@ -9,27 +9,27 @@ import (
 
 // Sender 双边发单与单腿平仓。
 type Sender interface {
-	Send(side Side, buyYes bool, px, qty float64) (fill float64, err error)
+	Send(side Side, buyYes bool, px, qty float64) (watchgroup.SendResult, error)
 	Flatten(side Side, boughtYes bool, mine, other float64)
 }
 
 // Fire 并发双腿 LIMIT+FAK，再 flatten。
-func Fire(snd Sender, a, b Side, aBuyYes, bBuyYes bool, qty float64) (fillA, fillB float64, errA, errB error) {
+func Fire(snd Sender, a, b Side, aBuyYes, bBuyYes bool, qty float64) (ra, rb watchgroup.SendResult, errA, errB error) {
 	pxA, pxB := SidePx(a, aBuyYes), SidePx(b, bBuyYes)
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		fillA, errA = snd.Send(a, aBuyYes, pxA, qty)
+		ra, errA = snd.Send(a, aBuyYes, pxA, qty)
 	}()
 	go func() {
 		defer wg.Done()
-		fillB, errB = snd.Send(b, bBuyYes, pxB, qty)
+		rb, errB = snd.Send(b, bBuyYes, pxB, qty)
 	}()
 	wg.Wait()
-	snd.Flatten(a, aBuyYes, fillA, fillB)
-	snd.Flatten(b, bBuyYes, fillB, fillA)
-	return fillA, fillB, errA, errB
+	snd.Flatten(a, aBuyYes, ra.Fill, rb.Fill)
+	snd.Flatten(b, bBuyYes, rb.Fill, ra.Fill)
+	return ra, rb, errA, errB
 }
 
 // GrabHit 一次抢单结果。
@@ -39,6 +39,7 @@ type GrabHit struct {
 	MaxCost         float64
 	YesFill, NoFill float64
 	YesErr, NoErr   error
+	YesSend, NoSend watchgroup.SendResult
 	DryRun          bool   // true：只记机会表，不发单、不写 orders
 	ExtData         string // arb_binary_opportunity.ext_data
 	SkipOrderReason string
@@ -113,13 +114,14 @@ func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
 		}
 	}
 
-	var yesFill, noFill float64
+	var yesRes, noRes watchgroup.SendResult
 	var yesErr, noErr error
 	ordered := false
 	if tradeOK {
-		yesFill, noFill, yesErr, noErr = Fire(outcomeSender{r}, tradePick.Yes.Side, tradePick.No.Side, tradePick.YesBuyYes, tradePick.NoBuyYes, tradePick.Qty)
+		yesRes, noRes, yesErr, noErr = Fire(outcomeSender{r}, tradePick.Yes.Side, tradePick.No.Side, tradePick.YesBuyYes, tradePick.NoBuyYes, tradePick.Qty)
 		ordered = true
 	}
+	yesFill, noFill := yesRes.Fill, noRes.Fill
 
 	r.recent.Prune(all[0].At)
 	var bestHit GrabHit
@@ -137,6 +139,7 @@ func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
 		if isTradeLeg {
 			hit.DryRun = false
 			hit.YesFill, hit.NoFill, hit.YesErr, hit.NoErr = yesFill, noFill, yesErr, noErr
+			hit.YesSend, hit.NoSend = yesRes, noRes
 			hit.SkipOrderReason = ""
 			hit.ExtData = ExtDataJSON(fp.SizeCheck.Snapshot, map[string]any{
 				"ordered": true, "order_qty": fp.Qty, "fill_yes": yesFill, "fill_no": noFill,
@@ -180,7 +183,8 @@ func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
 	if ordered {
 		go NotifyOrderResult(ctx, mapKey, GrabHit{
 			Pick: tradePick, MaxCost: lim.MaxCost,
-			YesFill: yesFill, NoFill: noFill, YesErr: yesErr, NoErr: noErr, DryRun: false,
+			YesFill: yesFill, NoFill: noFill, YesErr: yesErr, NoErr: noErr,
+			YesSend: yesRes, NoSend: noRes, DryRun: false,
 			Leg1: r.mustSnap(tradePick).l1, Leg2: r.mustSnap(tradePick).l2,
 		})
 	}

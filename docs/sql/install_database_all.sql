@@ -334,11 +334,14 @@ CREATE TABLE IF NOT EXISTS `orders` (
   `platform` varchar(32) NOT NULL,
   `platform_market_outcome_id` varchar(255) NOT NULL DEFAULT '',
   `token_id` varchar(255) NOT NULL DEFAULT '',
+  `client_order_id` varchar(64) NOT NULL DEFAULT '' COMMENT '本地生成的客户端单号',
+  `platform_order_id` varchar(128) NOT NULL DEFAULT '' COMMENT '平台返回订单 ID/hash',
   `side` varchar(8) NOT NULL COMMENT 'YES|NO',
   `action` varchar(16) NOT NULL DEFAULT 'BUY',
   `price` decimal(20,8) NOT NULL,
   `qty` decimal(20,8) NOT NULL,
   `fill_qty` decimal(20,8) NOT NULL DEFAULT 0,
+  `fee` decimal(20,8) NOT NULL DEFAULT 0 COMMENT '手续费（结算币）',
   `status` varchar(32) NOT NULL,
   `err_msg` varchar(1024) NOT NULL DEFAULT '',
   `sent_at` datetime NOT NULL,
@@ -348,7 +351,9 @@ CREATE TABLE IF NOT EXISTS `orders` (
   KEY `idx_arb_order_opp` (`arb_opp_id`),
   KEY `idx_arb_order_map_time` (`map_key`,`sent_at`),
   KEY `idx_orders_bt_task` (`backtest_task_id`,`sent_at`),
-  KEY `idx_orders_strategy` (`strategy_type`,`sent_at`)
+  KEY `idx_orders_strategy` (`strategy_type`,`sent_at`),
+  KEY `idx_orders_client_oid` (`client_order_id`),
+  KEY `idx_orders_platform_oid` (`platform`,`platform_order_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='strategy_entry 下单（实盘）';
 
 CREATE TABLE IF NOT EXISTS `stat_kv` (
@@ -446,11 +451,14 @@ CREATE TABLE IF NOT EXISTS `backtest_orders` (
   `platform` varchar(32) NOT NULL,
   `platform_market_outcome_id` varchar(255) NOT NULL DEFAULT '',
   `token_id` varchar(255) NOT NULL DEFAULT '',
+  `client_order_id` varchar(64) NOT NULL DEFAULT '',
+  `platform_order_id` varchar(128) NOT NULL DEFAULT '',
   `side` varchar(8) NOT NULL,
   `action` varchar(16) NOT NULL DEFAULT 'BUY',
   `price` decimal(20,8) NOT NULL,
   `qty` decimal(20,8) NOT NULL,
   `fill_qty` decimal(20,8) NOT NULL DEFAULT 0,
+  `fee` decimal(20,8) NOT NULL DEFAULT 0,
   `status` varchar(32) NOT NULL,
   `err_msg` varchar(1024) NOT NULL DEFAULT '',
   `sent_at` datetime NOT NULL,
@@ -554,8 +562,8 @@ SET FOREIGN_KEY_CHECKS = 1;
 
 INSERT INTO `config_strategy_threshold` (`config_key`, `config_value`, `value_type`, `description`) VALUES
   ('binary_yes_no_max_cost', 0.95000000, 'DECIMAL', '二元 YES+NO 最大总成本'),
-  ('binary_yes_no_order_amount', 100.00000000, 'DECIMAL', '命中后这一对下单的金额，按两边卖一换算成份额'),
-  ('binary_yes_no_level_factor', 2.00000000, 'DECIMAL', '档位挂单份额乘以该倍数，小于下单份额则不下单'),
+  ('min_amount', 5.00000000, 'DECIMAL', '最小下单份额金额（÷各平台最低 best_ask → min_qty）'),
+  ('max_amount', 5.00000000, 'DECIMAL', '最大下单份额金额（÷各平台最低 best_ask → max_qty）'),
   ('1x2_yes_triple_max_cost', 0.95000000, 'DECIMAL', '1X2 三路 YES'),
   ('1x2_no_triple_max_cost', 1.90000000, 'DECIMAL', '1X2 三路 NO'),
   ('certain_min_return_pct', 0.10000000, 'DECIMAL', '必然事件最低收益率'),
@@ -620,6 +628,7 @@ INSERT INTO `bot_schedule_config` (`module`, `task_name`, `interval_seconds`, `e
   ('less_one', 'synthetic_history_sync', 3600, 36, 1, 'data_task synthetic_l2 伪造秒级簿', 0, 1, 0),
   ('less_one', 'backtest_replay', 3600, 37, 1, 'backtest_task pending 重放历史簿', 0, 1, 0),
   ('less_one', 'strategy_entry', 20, 40, 1, '已核对场次 WebSocket：二元 + 1X2', 1, 1, 0),
+  ('less_one', 'order_fill_sync', 30, 45, 1, '回查 Poly/Predict/SX 成交，补全 orders.fill_qty/status/fee', 1, 1, 0),
   ('less_one', 'ws_book_flush', 5, 31, 1, 'Redis 队列批量写 market_order_book_ws', 1, 1, 0),
   ('less_one', 'trade_execute', 5, 60, 1, '下单与敞口（预留）', 0, 1, 0),
   ('less_one', 'task_alert', 300, 70, 1, '告警', 0, 1, 0),

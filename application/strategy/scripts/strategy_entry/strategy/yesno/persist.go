@@ -172,8 +172,8 @@ func SaveGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit GrabHit)
 	}
 	if !hit.DryRun && d.OrderRepo != nil && row.ID > 0 {
 		orders := []*persistententity.ArbBinaryOrder{
-			orderForSide(strategyTypeYesNo, 0, mapKey, row.ID, now, 1, a, aYes, qty, aPx, hit.YesFill, hit.YesErr),
-			orderForSide(strategyTypeYesNo, 0, mapKey, row.ID, now, 2, b, bYes, qty, bPx, hit.NoFill, hit.NoErr),
+			orderForSide(strategyTypeYesNo, 0, mapKey, row.ID, now, 1, a, aYes, qty, aPx, hit.YesFill, hit.YesErr, hit.YesSend),
+			orderForSide(strategyTypeYesNo, 0, mapKey, row.ID, now, 2, b, bYes, qty, bPx, hit.NoFill, hit.NoErr, hit.NoSend),
 		}
 		if err := d.OrderRepo.BatchCreate(runCtx, nil, orders); err != nil {
 			notification.SendErrorLog(runCtx, "strategy_entry-OrderCreateFailed", zap.Error(err))
@@ -199,7 +199,7 @@ func backtestOrderForSide(strategyType string, backtestTaskID uint, mapKey strin
 	if buyYes {
 		side = "YES"
 	}
-	status, errMsg := orderStatus(fill, sendErr)
+	status, errMsg := orderStatus(fill, qty, sendErr)
 	return &persistententity.BacktestOrder{
 		BacktestTaskID: backtestTaskID, StrategyType: strategyType,
 		ArbOppID: oppID, MapKey: mapKey, SideNo: sideNo,
@@ -212,24 +212,26 @@ func backtestOrderForSide(strategyType string, backtestTaskID uint, mapKey strin
 }
 
 // OrderForSide 实盘组合腿（写 orders）。
-func OrderForSide(strategyType string, backtestTaskID uint, mapKey string, oppID uint, sentAt time.Time, sideNo uint8, s ExecSide, buyYes bool, qty, px, fill float64, sendErr error) *persistententity.ArbBinaryOrder {
-	return orderForSide(strategyType, backtestTaskID, mapKey, oppID, sentAt, sideNo, s, buyYes, qty, px, fill, sendErr)
+func OrderForSide(strategyType string, backtestTaskID uint, mapKey string, oppID uint, sentAt time.Time, sideNo uint8, s ExecSide, buyYes bool, qty, px, fill float64, sendErr error, send watchgroup.SendResult) *persistententity.ArbBinaryOrder {
+	return orderForSide(strategyType, backtestTaskID, mapKey, oppID, sentAt, sideNo, s, buyYes, qty, px, fill, sendErr, send)
 }
 
-func orderForSide(strategyType string, backtestTaskID uint, mapKey string, oppID uint, sentAt time.Time, sideNo uint8, s ExecSide, buyYes bool, qty, px, fill float64, sendErr error) *persistententity.ArbBinaryOrder {
+func orderForSide(strategyType string, backtestTaskID uint, mapKey string, oppID uint, sentAt time.Time, sideNo uint8, s ExecSide, buyYes bool, qty, px, fill float64, sendErr error, send watchgroup.SendResult) *persistententity.ArbBinaryOrder {
 	side := "NO"
 	if buyYes {
 		side = "YES"
 	}
-	status, errMsg := orderStatus(fill, sendErr)
+	status, errMsg := orderStatus(fill, qty, sendErr)
 	return &persistententity.ArbBinaryOrder{
 		BacktestTaskID: backtestTaskID, StrategyType: strategyType,
 		ArbOppID: oppID, MapKey: mapKey, SideNo: sideNo,
 		Platform: s.Platform, PlatformMarketOutcomeID: s.MarketID,
 		TokenID: sideToken(s.Platform, s.YesToken, s.NoToken, buyYes),
-		Side:    side, Action: "BUY",
+		ClientOrderID: send.ClientOrderID, PlatformOrderID: send.PlatformOrderID,
+		Side: side, Action: "BUY",
 		Price: decimal.NewFromFloat(px).Round(8), Qty: decimal.NewFromFloat(qty).Round(8),
-		FillQty: decimal.NewFromFloat(fill).Round(8), Status: status, ErrMsg: errMsg, SentAt: sentAt,
+		FillQty: decimal.NewFromFloat(fill).Round(8), Fee: decimal.NewFromFloat(send.Fee).Round(8),
+		Status: status, ErrMsg: errMsg, SentAt: sentAt,
 	}
 }
 
@@ -251,7 +253,7 @@ func sideToken(platform, yesToken, noToken string, buyYes bool) string {
 	return strings.TrimSpace(noToken)
 }
 
-func orderStatus(fill float64, sendErr error) (status, errMsg string) {
+func orderStatus(fill, qty float64, sendErr error) (status, errMsg string) {
 	if sendErr != nil {
 		msg := sendErr.Error()
 		if len(msg) > 1000 {
@@ -261,6 +263,9 @@ func orderStatus(fill float64, sendErr error) (status, errMsg string) {
 	}
 	if fill <= 0 {
 		return "NO_FILL", ""
+	}
+	if qty > 0 && fill+1e-8 < qty {
+		return "PARTIAL", ""
 	}
 	return "FILLED", ""
 }

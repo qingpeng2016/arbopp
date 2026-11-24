@@ -18,6 +18,7 @@ type GrabHit struct {
 	SkipOrderReason string
 	Fills           [3]float64
 	FillErrs        [3]error
+	Sends           [3]watchgroup.SendResult
 }
 
 func (r *Runner) grabOne(outcomeID uint) {
@@ -66,9 +67,10 @@ func (r *Runner) grabOneAttempt(_ uint, retried bool) {
 
 	var fills [3]float64
 	var fillErrs [3]error
+	var sends [3]watchgroup.SendResult
 	ordered := false
 	if tradeOK {
-		fills, fillErrs = fireTriple(r, tradePick)
+		fills, fillErrs, sends = fireTriple(r, tradePick)
 		ordered = true
 	}
 
@@ -85,12 +87,25 @@ func (r *Runner) grabOneAttempt(_ uint, retried bool) {
 		}
 		isTrade := ordered && sameTriple(p, tradePick)
 		hit := GrabHit{Pick: p, Legs: r.snapTripleLegs(p), Limits: lim, DryRun: true}
+		canAll := true
+		for i := range p.Legs {
+			if !r.canTrade(p.Legs[i].Platform) {
+				canAll = false
+				break
+			}
+		}
 		if !p.SizeCheckOK {
 			hit.SkipOrderReason = "size_check_failed"
 			hit.ExtData = yesno.ExtDataJSON(p.SizeCheck.Snapshot, map[string]any{"skip_order_reason": "size_check_failed"})
+		} else if !canAll {
+			hit.SkipOrderReason = "account_unavailable"
+			hit.ExtData = yesno.ExtDataJSON(p.SizeCheck.Snapshot, map[string]any{
+				"skip_order_reason": "account_unavailable",
+				"platforms":         []string{p.Legs[0].Platform, p.Legs[1].Platform, p.Legs[2].Platform},
+			})
 		} else if isTrade {
 			hit.DryRun = false
-			hit.Fills, hit.FillErrs = fills, fillErrs
+			hit.Fills, hit.FillErrs, hit.Sends = fills, fillErrs, sends
 			hit.ExtData = yesno.ExtDataJSON(p.SizeCheck.Snapshot, map[string]any{"ordered": true, "order_qty": p.Qty, "fills": fills})
 		} else {
 			hit.SkipOrderReason = "not_selected_for_order"
@@ -116,7 +131,7 @@ func (r *Runner) grabOneAttempt(_ uint, retried bool) {
 	}
 	if ordered {
 		go NotifyOrderResult(ctx, mapKey, GrabHit{
-			Pick: tradePick, Limits: lim, DryRun: false, Fills: fills, FillErrs: fillErrs,
+			Pick: tradePick, Limits: lim, DryRun: false, Fills: fills, FillErrs: fillErrs, Sends: sends,
 			Legs: r.snapTripleLegs(tradePick),
 		})
 	}
@@ -134,7 +149,7 @@ func sameTriple(a, b TriplePick) bool {
 	return true
 }
 
-func fireTriple(r *Runner, pick TriplePick) (fills [3]float64, errs [3]error) {
+func fireTriple(r *Runner, pick TriplePick) (fills [3]float64, errs [3]error, sends [3]watchgroup.SendResult) {
 	var wg sync.WaitGroup
 	wg.Add(3)
 	for i := 0; i < 3; i++ {
@@ -144,7 +159,8 @@ func fireTriple(r *Runner, pick TriplePick) (fills [3]float64, errs [3]error) {
 			if r.w.Ops.SendOnOutcome == nil {
 				return
 			}
-			fills[i], errs[i] = r.w.Ops.SendOnOutcome(pick.Legs[i].Index, pick.BuyYes, pick.Prices[i], pick.Qty)
+			res, err := r.w.Ops.SendOnOutcome(pick.Legs[i].Index, pick.BuyYes, pick.Prices[i], pick.Qty)
+			sends[i], fills[i], errs[i] = res, res.Fill, err
 		}()
 	}
 	wg.Wait()
@@ -164,7 +180,7 @@ func fireTriple(r *Runner, pick TriplePick) (fills [3]float64, errs [3]error) {
 			r.w.Ops.FlattenOnOutcome(pick.Legs[i].Index, pick.BuyYes, fills[i], 0)
 		}
 	}
-	return fills, errs
+	return fills, errs, sends
 }
 
 func (r *Runner) persistMissedLock() {
