@@ -1,17 +1,23 @@
 package onextwo
 
 import (
+	"sync"
 	"time"
 
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/strategy/yesno"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/watchgroup"
 )
 
 // GrabHit 1X2 命中。
 type GrabHit struct {
-	Pick   TriplePick
-	Legs   [3]watchgroup.LegPersistSnap // 落库盘口与 leg_*_best_ask 同源快照
-	Limits Limits
-	DryRun bool
+	Pick            TriplePick
+	Legs            [3]watchgroup.LegPersistSnap
+	Limits          Limits
+	DryRun          bool
+	ExtData         string
+	SkipOrderReason string
+	Fills           [3]float64
+	FillErrs        [3]error
 }
 
 func (r *Runner) grabOne(outcomeID uint) {
@@ -25,28 +31,51 @@ func (r *Runner) grabOneAttempt(_ uint, retried bool) {
 				time.Sleep(25 * time.Millisecond)
 				r.grabOneAttempt(0, true)
 			}()
+			return
 		}
+		r.persistMissedLock()
 		return
 	}
 	defer r.orderMu.Unlock()
 	lim := r.limits()
 	all := r.allTriplePicks(lim)
-	pick, ok := bestTripleFrom(all)
-	if !ok {
+	if len(all) == 0 {
 		return
 	}
-	const dryRun = true
-	if !dryRun {
-		for i := range pick.Legs {
-			if !r.canTrade(pick.Legs[i].Platform) {
-				return
+
+	var tradePick TriplePick
+	var tradeOK bool
+	for _, p := range all {
+		if !p.SizeCheckOK {
+			continue
+		}
+		okTrade := true
+		for i := range p.Legs {
+			if !r.canTrade(p.Legs[i].Platform) {
+				okTrade = false
+				break
 			}
 		}
+		if !okTrade {
+			continue
+		}
+		if !tradeOK || p.Per < tradePick.Per {
+			tradePick, tradeOK = p, true
+		}
 	}
+
+	var fills [3]float64
+	var fillErrs [3]error
+	ordered := false
+	if tradeOK {
+		fills, fillErrs = fireTriple(r, tradePick)
+		ordered = true
+	}
+
 	ctx := r.w.Context()
 	mapKey := r.w.MapKey
 	deps := r.persistDeps()
-	r.recent.Prune(pick.At)
+	r.recent.Prune(all[0].At)
 	var bestHit GrabHit
 	var saved bool
 	for _, p := range all {
@@ -54,8 +83,20 @@ func (r *Runner) grabOneAttempt(_ uint, retried bool) {
 			Kind: p.Kind, Indices: [3]int{p.Legs[0].Index, p.Legs[1].Index, p.Legs[2].Index},
 			Prices: p.Prices, Depths: p.LegSizes, Cost: p.Per, Quantity: p.Qty,
 		}
+		isTrade := ordered && sameTriple(p, tradePick)
+		hit := GrabHit{Pick: p, Legs: r.snapTripleLegs(p), Limits: lim, DryRun: true}
+		if !p.SizeCheckOK {
+			hit.SkipOrderReason = "size_check_failed"
+			hit.ExtData = yesno.ExtDataJSON(p.SizeCheck.Snapshot, map[string]any{"skip_order_reason": "size_check_failed"})
+		} else if isTrade {
+			hit.DryRun = false
+			hit.Fills, hit.FillErrs = fills, fillErrs
+			hit.ExtData = yesno.ExtDataJSON(p.SizeCheck.Snapshot, map[string]any{"ordered": true, "order_qty": p.Qty, "fills": fills})
+		} else {
+			hit.SkipOrderReason = "not_selected_for_order"
+			hit.ExtData = yesno.ExtDataJSON(p.SizeCheck.Snapshot, map[string]any{"skip_order_reason": hit.SkipOrderReason})
+		}
 		insert := func() bool {
-			hit := GrabHit{Pick: p, Legs: r.snapTripleLegs(p), Limits: lim, DryRun: dryRun}
 			if !SaveGrabHit(ctx, deps, mapKey, hit) {
 				return false
 			}
@@ -64,7 +105,7 @@ func (r *Runner) grabOneAttempt(_ uint, retried bool) {
 			}
 			return true
 		}
-		if dryRun {
+		if hit.DryRun {
 			r.recent.Save(key, p.At, insert)
 		} else {
 			insert()
@@ -72,6 +113,78 @@ func (r *Runner) grabOneAttempt(_ uint, retried bool) {
 	}
 	if saved {
 		go NotifyGrab(ctx, mapKey, bestHit)
+	}
+	if ordered {
+		go NotifyOrderResult(ctx, mapKey, GrabHit{
+			Pick: tradePick, Limits: lim, DryRun: false, Fills: fills, FillErrs: fillErrs,
+			Legs: r.snapTripleLegs(tradePick),
+		})
+	}
+}
+
+func sameTriple(a, b TriplePick) bool {
+	if a.Kind != b.Kind || a.BuyYes != b.BuyYes {
+		return false
+	}
+	for i := 0; i < 3; i++ {
+		if a.Legs[i].Index != b.Legs[i].Index {
+			return false
+		}
+	}
+	return true
+}
+
+func fireTriple(r *Runner, pick TriplePick) (fills [3]float64, errs [3]error) {
+	var wg sync.WaitGroup
+	wg.Add(3)
+	for i := 0; i < 3; i++ {
+		i := i
+		go func() {
+			defer wg.Done()
+			if r.w.Ops.SendOnOutcome == nil {
+				return
+			}
+			fills[i], errs[i] = r.w.Ops.SendOnOutcome(pick.Legs[i].Index, pick.BuyYes, pick.Prices[i], pick.Qty)
+		}()
+	}
+	wg.Wait()
+	// 单腿成交不全时 flatten
+	for i := 0; i < 3; i++ {
+		othersOK := true
+		for j := 0; j < 3; j++ {
+			if i == j {
+				continue
+			}
+			if fills[j] <= 0 {
+				othersOK = false
+				break
+			}
+		}
+		if fills[i] > 0 && !othersOK && r.w.Ops.FlattenOnOutcome != nil {
+			r.w.Ops.FlattenOnOutcome(pick.Legs[i].Index, pick.BuyYes, fills[i], 0)
+		}
+	}
+	return fills, errs
+}
+
+func (r *Runner) persistMissedLock() {
+	lim := r.limits()
+	all := r.allTriplePicks(lim)
+	if len(all) == 0 {
+		return
+	}
+	ctx := r.w.Context()
+	mapKey := r.w.MapKey
+	deps := r.persistDeps()
+	for _, p := range all {
+		hit := GrabHit{
+			Pick: p, Legs: r.snapTripleLegs(p), Limits: lim, DryRun: true,
+			SkipOrderReason: "map_key_lock_missed",
+			ExtData: yesno.ExtDataJSON(p.SizeCheck.Snapshot, map[string]any{
+				"skip_order_reason": "map_key_lock_missed", "map_key": mapKey,
+			}),
+		}
+		SaveGrabHit(ctx, deps, mapKey, hit)
 	}
 }
 

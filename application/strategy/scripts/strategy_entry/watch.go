@@ -130,7 +130,7 @@ func newWatch(ctx context.Context, e *Entry, g group) *watch {
 				return 0, 0, 0
 			}
 			p := w.entry.Params()
-			return p.MaxCost, p.OrderAmount, p.LevelFactor
+			return p.MaxCost, p.MinAmount, p.MaxAmount
 		},
 		OneX2Limits: func() (float64, float64) {
 			if w.entry == nil {
@@ -1121,10 +1121,11 @@ func (w *watch) sendOnOutcome(outcomeIndex int, buyYes bool, px, qty float64) (f
 	oc := &w.Outcomes[outcomeIndex]
 	c := w.entry.credsNow()
 	return broker.SendOnOutcome(
-		w.entry.poly, w.entry.kalshi, w.entry.predict,
+		w.entry.poly, w.entry.kalshi, w.entry.predict, w.entry.sxbet,
 		broker.PolyCreds{Account: c.poly, OK: c.polyOK},
 		broker.KalshiCreds{Account: c.kalshi, OK: c.kalshiOK},
 		broker.PredictCreds{Account: c.predict, OK: c.predictOK},
+		broker.SxbetCreds{Account: c.sxbet, OK: c.sxbetOK},
 		oc, buyYes, px, qty,
 		outcomeIndex < len(w.negRisk) && w.negRisk[outcomeIndex],
 	)
@@ -1137,10 +1138,11 @@ func (w *watch) flattenOnOutcome(outcomeIndex int, boughtYes bool, mine, other f
 	oc := &w.Outcomes[outcomeIndex]
 	c := w.entry.credsNow()
 	broker.FlattenOnOutcome(
-		w.entry.poly, w.entry.kalshi, w.entry.predict,
+		w.entry.poly, w.entry.kalshi, w.entry.predict, w.entry.sxbet,
 		broker.PolyCreds{Account: c.poly, OK: c.polyOK},
 		broker.KalshiCreds{Account: c.kalshi, OK: c.kalshiOK},
 		broker.PredictCreds{Account: c.predict, OK: c.predictOK},
+		broker.SxbetCreds{Account: c.sxbet, OK: c.sxbetOK},
 		oc, boughtYes, mine, other,
 		outcomeIndex < len(w.negRisk) && w.negRisk[outcomeIndex],
 	)

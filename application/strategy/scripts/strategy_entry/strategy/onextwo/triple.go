@@ -16,8 +16,10 @@ type TriplePick struct {
 	Prices   [3]float64 // 卖一裸价（不含费，与 leg_*_best_ask 一致）
 	Costs    [3]float64 // 单位净兑付含费成本
 	At       time.Time
-	LegSizes [3]float64 // 各腿卖一原始挂单量（arb_qty 取 min）
-	Qty, Per float64
+	LegSizes    [3]float64 // 各腿卖一原始挂单量（arb_qty 取 min）
+	Qty, Per    float64
+	SizeCheck   yesno.OrderSizeCheckResult
+	SizeCheckOK bool
 }
 
 func outcomeNormFromGroupKey(groupKey string) string {

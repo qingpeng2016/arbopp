@@ -37,7 +37,7 @@ func TestTopHitAndBestFilledPick(t *testing.T) {
 			{Platform: appcommon.PlatformPredict, PlatformMarketOutcomeID: predictID},
 		},
 	}
-	wg.Ops.StrategyParams = func() (float64, float64, float64) { return 0.95, 100, 1 }
+	wg.Ops.StrategyParams = func() (float64, float64, float64) { return 0.95, 5, 100 }
 	wg.Ops.TradeFee = func(platform, _, _ string) float64 {
 		switch strings.ToUpper(strings.TrimSpace(platform)) {
 		case appcommon.PlatformKalshi:

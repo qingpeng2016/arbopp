@@ -13,7 +13,7 @@ import (
 
 // Ops 本组 watch 上由 strategy_entry 注入的行情以外能力（参数、发单、落库）。
 type Ops struct {
-	StrategyParams   func() (maxCost, orderAmount, levelFactor float64)
+	StrategyParams   func() (maxCost, minAmount, maxAmount float64)
 	OneX2Limits      func() (yesTripleMax, noTripleMax float64)
 	TradeFee         func(platform, category, sub string) float64
 	CanTrade         func(platform string) bool

@@ -128,8 +128,8 @@ func (r *Runner) limits() Limits {
 	if r.w.Ops.StrategyParams == nil {
 		return Limits{}
 	}
-	maxCost, orderAmount, levelFactor := r.w.Ops.StrategyParams()
-	return Limits{MaxCost: maxCost, OrderAmount: orderAmount, LevelFactor: levelFactor}
+	maxCost, minAmount, maxAmount := r.w.Ops.StrategyParams()
+	return Limits{MaxCost: maxCost, MinAmount: minAmount, MaxAmount: maxAmount}
 }
 
 func (r *Runner) execSide(outcomeIndex int) (ExecSide, bool) {

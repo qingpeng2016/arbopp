@@ -9,9 +9,9 @@ import (
 
 // Limits 门槛（与 strategy_entry.Params 同源）。
 type Limits struct {
-	MaxCost     float64
-	OrderAmount float64
-	LevelFactor float64
+	MaxCost   float64
+	MinAmount float64 // config min_amount（金额）
+	MaxAmount float64 // config max_amount（金额）
 }
 
 // Quote 单所深度摊薄 YES+NO 的成本（Cover 返回值；线上 5.2 只做跨所卖一 TopHit，不用本结构做发现）。
@@ -86,8 +86,8 @@ func Cover(yesAsks, noAsks []book.Level, yesFee, noFee, minQty, maxQty, maxCost 
 	return q, true
 }
 
-// TopHit 卖一套利：跨所两两组合时各买一边的 YES/NO 卖一。
-func TopHit(yesPx, yesSz, noPx, noSz, yesFee, noFee, orderAmount, levelFactor, maxCost float64) (qty, per float64, ok bool) {
+// TopHit 卖一套利：跨所两两组合时各买一边的 YES/NO 卖一（份额走 CheckOrderSize）。
+func TopHit(yesPx, yesSz, noPx, noSz, yesFee, noFee, minAmount, maxAmount, maxCost float64) (qty, per float64, ok bool) {
 	if !book.ValidPrice(yesPx) || !book.ValidPrice(noPx) {
 		return 0, 0, false
 	}
@@ -95,24 +95,11 @@ func TopHit(yesPx, yesSz, noPx, noSz, yesFee, noFee, orderAmount, levelFactor, m
 	if per >= maxCost {
 		return 0, 0, false
 	}
-	qty, ok = SizeForBudget(per, math.Min(yesSz, noSz), orderAmount, levelFactor)
-	return qty, per, ok
-}
-
-// SizeForBudget keeps the configured depth gate and caps the accepted order at
-// the quantity actually offered at the selected price.
-func SizeForBudget(cost, depth, orderAmount, levelFactor float64) (float64, bool) {
-	if orderAmount <= 0 {
-		orderAmount = 100
-	}
-	if levelFactor <= 0 {
-		levelFactor = 2
-	}
-	target := orderAmount / cost
-	if !(cost > 0 && depth > 0 && target > 0 && depth*levelFactor >= target) {
-		return 0, false
-	}
-	return math.Min(target, depth), true
+	chk := CheckOrderSize(OrderSizeCheckInput{
+		BestAsks: []float64{yesPx, noPx}, AskSizes: []float64{yesSz, noSz},
+		MinAmount: minAmount, MaxAmount: maxAmount,
+	})
+	return chk.Qty, per, chk.OK
 }
 
 func positiveAsc(in []book.Level) []book.Level {

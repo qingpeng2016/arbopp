@@ -29,21 +29,23 @@ type creds struct {
 	predictOK     bool
 	predictAPIKey string
 	predictKeyOK  bool
+	sxbet         httpentity.SxbetAccount
+	sxbetOK       bool
 }
 
 const (
 	TaskName                     = "strategy_entry"
 	defaultMaxGroups             = 50
 	thresholdMaxCost             = "binary_yes_no_max_cost"
-	thresholdOrderAmount         = "binary_yes_no_order_amount"
-	thresholdLevelFactor         = "binary_yes_no_level_factor"
+	thresholdMinAmount           = "min_amount"
+	thresholdMaxAmount           = "max_amount"
 	threshold1X2YesMax           = "1x2_yes_triple_max_cost"
 	threshold1X2NoMax            = "1x2_no_triple_max_cost"
 	defaultMaxCost               = 0.95
 	default1X2YesMax             = 0.95
 	default1X2NoMax              = 1.90
-	defaultOrderAmount           = 100.0
-	defaultLevelFactor           = 2.0
+	defaultMinAmount             = 5.0
+	defaultMaxAmount             = 5.0
 	defaultPolySports            = 0.05
 	defaultKalshiSports          = 0.07
 	defaultPredictSports         = 0.02
@@ -57,8 +59,8 @@ const (
 // Params 5.2 的可配置门槛。手续费按平台和运动放在 fees 里，比较时只读。
 type Params struct {
 	MaxCost     float64
-	OrderAmount float64
-	LevelFactor float64
+	MinAmount   float64
+	MaxAmount   float64
 	OneX2YesMax float64
 	OneX2NoMax  float64
 	fees        map[string]float64
@@ -68,8 +70,8 @@ type Params struct {
 func defaultParams() Params {
 	return Params{
 		MaxCost:     defaultMaxCost,
-		OrderAmount: defaultOrderAmount,
-		LevelFactor: defaultLevelFactor,
+		MinAmount:   defaultMinAmount,
+		MaxAmount:   defaultMaxAmount,
 		OneX2YesMax: default1X2YesMax,
 		OneX2NoMax:  default1X2NoMax,
 		fees: map[string]float64{
@@ -119,10 +121,10 @@ func LoadParams(ctx context.Context, thresholdRepo persistentrepo.ConfigStrategy
 // loadParams 从阈值表读成本上限和数量，从手续费表读各运动系数。
 func (e *Entry) loadParams(ctx context.Context) Params {
 	p := defaultParams()
-	// TEST: 门槛仅 config_strategy_threshold；读不到保持 0，不回填代码默认
+	// 门槛仅 config_strategy_threshold；读不到保持 0，不回填代码默认
 	p.MaxCost = e.threshold(ctx, thresholdMaxCost)
-	p.OrderAmount = e.threshold(ctx, thresholdOrderAmount)
-	p.LevelFactor = e.threshold(ctx, thresholdLevelFactor)
+	p.MinAmount = e.threshold(ctx, thresholdMinAmount)
+	p.MaxAmount = e.threshold(ctx, thresholdMaxAmount)
 	p.OneX2YesMax = e.threshold(ctx, threshold1X2YesMax)
 	p.OneX2NoMax = e.threshold(ctx, threshold1X2NoMax)
 	p.fees = e.loadFees(ctx, p.fees)
@@ -610,6 +612,14 @@ func (e *Entry) refreshCreds(ctx context.Context) {
 					c.predictKeyOK = true
 				}
 			}
+		case appcommon.PlatformSxbet:
+			if c.sxbetOK {
+				continue
+			}
+			if acc, ok := sxbetCred(a); ok {
+				c.sxbet = acc
+				c.sxbetOK = true
+			}
 		}
 	}
 	e.credBox.Store(c)
@@ -670,6 +680,20 @@ func kalshiCred(a persistententity.Account) (httpentity.KalshiAccount, bool) {
 		Passphrase: deref(a.APIPassphraseEnc),
 	}
 	if acc.KeyID == "" || acc.PrivateKey == "" {
+		return acc, false
+	}
+	return acc, true
+}
+
+// sxbetCred SX Bet 发单：api_key + 私钥（EOA）；proxy_address 为已部署代理（可选校验）。
+func sxbetCred(a persistententity.Account) (httpentity.SxbetAccount, bool) {
+	acc := httpentity.SxbetAccount{
+		APIKey:       deref(a.APIKey),
+		PrivateKey:   deref(a.PrivateKeyEnc),
+		EOAAddress:   deref(a.EoaAddress),
+		ProxyAddress: deref(a.ProxyAddress),
+	}
+	if acc.APIKey == "" || acc.PrivateKey == "" {
 		return acc, false
 	}
 	return acc, true

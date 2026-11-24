@@ -54,6 +54,9 @@ func NotifyGrab(ctx context.Context, mapKey string, hit GrabHit) {
 	if hit.DryRun {
 		title = "strategy_entry 套利命中（未发单）"
 		mode = "dry_run"
+		if hit.SkipOrderReason != "" {
+			mode = hit.SkipOrderReason
+		}
 	}
 	_ = notification.GetGlobalNotificationManager().SendInfoAlert(ctx, title, []notification.FieldPair{
 		{Key: "mode", Value: mode},
@@ -67,6 +70,50 @@ func NotifyGrab(ctx context.Context, mapKey string, hit GrabHit) {
 		{Key: "err_a", Value: errA},
 		{Key: "err_b", Value: errB},
 	})
+}
+
+// NotifyOrderResult 下单结果专用通知（order_webhook_url）。
+// 两边成交份额一致 → 利润 = qty - Σ(price_i * qty)；否则提示未套利成功。
+func NotifyOrderResult(ctx context.Context, mapKey string, hit GrabHit) {
+	a, b := hit.Pick.Yes, hit.Pick.No
+	aPx, bPx := SidePx(a.Side, hit.Pick.YesBuyYes), SidePx(b.Side, hit.Pick.NoBuyYes)
+	errA, errB := "", ""
+	if hit.YesErr != nil {
+		errA = hit.YesErr.Error()
+	}
+	if hit.NoErr != nil {
+		errB = hit.NoErr.Error()
+	}
+	fields := []notification.FieldPair{
+		{Key: "map_key", Value: mapKey},
+		{Key: "side_a", Value: sideLabel(a.Platform, hit.Pick.YesBuyYes)},
+		{Key: "side_b", Value: sideLabel(b.Platform, hit.Pick.NoBuyYes)},
+		{Key: "limit_a", Value: strconv.FormatFloat(aPx, 'f', -1, 64)},
+		{Key: "limit_b", Value: strconv.FormatFloat(bPx, 'f', -1, 64)},
+		{Key: "order_qty", Value: strconv.FormatFloat(hit.Pick.Qty, 'f', -1, 64)},
+		{Key: "fill_a", Value: strconv.FormatFloat(hit.YesFill, 'f', -1, 64)},
+		{Key: "fill_b", Value: strconv.FormatFloat(hit.NoFill, 'f', -1, 64)},
+		{Key: "err_a", Value: errA},
+		{Key: "err_b", Value: errB},
+	}
+	const eps = 1e-6
+	sameFill := hit.YesFill > eps && math.Abs(hit.YesFill-hit.NoFill) <= eps &&
+		math.Abs(hit.YesFill-hit.Pick.Qty) <= eps
+	title := "strategy_entry 下单结果：未套利成功"
+	if sameFill {
+		costSum := aPx*hit.YesFill + bPx*hit.NoFill
+		profit := hit.YesFill - costSum
+		title = "strategy_entry 下单结果：套利成功"
+		fields = append(fields,
+			notification.FieldPair{Key: "cost_sum", Value: strconv.FormatFloat(costSum, 'f', -1, 64)},
+			notification.FieldPair{Key: "arb_profit", Value: strconv.FormatFloat(profit, 'f', -1, 64)},
+		)
+	} else {
+		fields = append(fields, notification.FieldPair{
+			Key: "note", Value: "各平台成交份额不一致或未足额成交，未形成完整套利",
+		})
+	}
+	_ = notification.GetGlobalNotificationManager().SendOrderAlert(ctx, title, fields)
 }
 
 func SaveGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit GrabHit) bool {
@@ -115,6 +162,7 @@ func SaveGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit GrabHit)
 		ArbQty: arbQty, ArbProfit: arbProfit,
 		ThresholdKey: thresholdKeyMaxCost, ThresholdValue: decimal.NewFromFloat(maxCost).Round(8),
 		BookUpdatedAt: &now, SnapshotAt: now, SnapshotAtMs: snapMs,
+		ExtData: extDataPtr(hit.ExtData),
 	}
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -218,6 +266,14 @@ func orderStatus(fill float64, sendErr error) (status, errMsg string) {
 }
 
 func strPtr(s string) *string { return &s }
+
+func extDataPtr(s string) *string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	return &s
+}
 
 func fixtureScopeForGrab(d PersistGrab, yesMoID, noMoID uint) watchgroup.FixtureScope {
 	if d.ScopeForOutcomeIDs == nil {

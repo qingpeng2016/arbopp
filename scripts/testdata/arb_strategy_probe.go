@@ -121,7 +121,7 @@ func TestOpportunityAuditProbes(t *testing.T) {
 		store.ApplyPredictBook("team2", nil, probeLevels(.4), now)
 		w.Ops.TradeFee = func(string, string, string) float64 { return .02 }
 		r := Runner{w: w}
-		lim := Limits{YesTripleMax: .95, LevelFactor: 1, OrderAmount: 90}
+		lim := Limits{YesTripleMax: .95, MinAmount: 5, MaxAmount: 90}
 		view, at := w.StrategySnapshot()
 		var legs [3]pricedLeg
 		for i := range legs {

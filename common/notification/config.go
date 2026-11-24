@@ -11,30 +11,32 @@ import (
 type NotificationManager struct {
 	alertClient  *LarkClient // 异常报警机器人
 	notifyClient *LarkClient // 通知消息机器人
+	orderClient  *LarkClient // 下单结果机器人
 }
 
 // NewNotificationManager 创建通知管理器
 func NewNotificationManager() *NotificationManager {
 	larkConf := conf.GetLarkNotificationConf()
 	if larkConf == nil {
-		return &NotificationManager{alertClient: nil, notifyClient: nil}
+		return &NotificationManager{}
 	}
 
-	var alertClient, notifyClient *LarkClient
+	var alertClient, notifyClient, orderClient *LarkClient
 
-	// 创建异常报警机器人客户端
 	if larkConf.AlertWebhookURL != "" {
 		alertClient = NewLarkClient(larkConf.AlertWebhookURL)
 	}
-
-	// 创建通知消息机器人客户端
 	if larkConf.NotifyWebhookURL != "" {
 		notifyClient = NewLarkClient(larkConf.NotifyWebhookURL)
+	}
+	if larkConf.OrderWebhookURL != "" {
+		orderClient = NewLarkClient(larkConf.OrderWebhookURL)
 	}
 
 	return &NotificationManager{
 		alertClient:  alertClient,
 		notifyClient: notifyClient,
+		orderClient:  orderClient,
 	}
 }
 
@@ -84,6 +86,23 @@ func (nm *NotificationManager) SendInfoAlert(ctx context.Context, infoMsg string
 		return nil
 	}
 	return nm.notifyClient.SendInfoAlert(ctx, larkConf.ServiceName, infoMsg, fields)
+}
+
+// SendOrderAlert 发送下单结果通知（使用 order_webhook_url；未配置时回退 notify）。
+func (nm *NotificationManager) SendOrderAlert(ctx context.Context, infoMsg string, fields []FieldPair) error {
+	client := nm.orderClient
+	if client == nil {
+		client = nm.notifyClient
+	}
+	if client == nil {
+		logger.InfoZ(ctx, "order-notification-disabled", zap.String("type", "order"))
+		return nil
+	}
+	larkConf := conf.GetLarkNotificationConf()
+	if larkConf == nil {
+		return nil
+	}
+	return client.SendInfoAlert(ctx, larkConf.ServiceName, infoMsg, fields)
 }
 
 // IsAlertEnabled 检查异常报警是否启用

@@ -23,6 +23,8 @@ type FilledPick struct {
 	Qty, Per            float64
 	At                  time.Time
 	view                book.Snapshot
+	SizeCheck           OrderSizeCheckResult // 下单前份额检查快照
+	SizeCheckOK         bool
 }
 
 func (r *Runner) bestFilledPick(group OutcomeGroup) (FilledPick, bool) {
@@ -68,18 +70,26 @@ func (r *Runner) AllFilledPicks(group OutcomeGroup, lim Limits) (all []FilledPic
 			if !noOK || per >= lim.MaxCost {
 				continue
 			}
-			_, yesTopSz, yesTopOK := yes.TopAskSz(true)
-			_, noTopSz, noTopOK := no.TopAskSz(false)
+			yesAsk, yesTopSz, yesTopOK := yes.TopAskSz(true)
+			noAsk, noTopSz, noTopOK := no.TopAskSz(false)
 			if !yesTopOK || !noTopOK {
 				continue
 			}
-			qty, hit := SizeForBudget(per, math.Min(yesSize, noSize), lim.OrderAmount, lim.LevelFactor)
-			if !hit {
-				continue
+			// 成本门槛通过即记入候选；份额是否可下由 CheckOrderSize 判定（失败也落机会表）。
+			chk := CheckOrderSize(OrderSizeCheckInput{
+				Platforms: []string{yes.Platform, no.Platform},
+				BestAsks:  []float64{yesAsk, noAsk},
+				AskSizes:  []float64{yesTopSz, noTopSz},
+				MinAmount: lim.MinAmount, MaxAmount: lim.MaxAmount,
+			})
+			qty := chk.Qty
+			if !chk.OK {
+				qty = math.Min(yesTopSz, noTopSz)
 			}
 			pick := FilledPick{Yes: yes, No: no, YesBuyYes: true, Costs: [2]float64{yesCost, noCost},
 				Sizes: [2]float64{yesSize, noSize}, TopSizes: [2]float64{yesTopSz, noTopSz},
-				Qty: qty, Per: per, At: at, view: view}
+				Qty: qty, Per: per, At: at, view: view,
+				SizeCheck: chk, SizeCheckOK: chk.OK}
 			all = append(all, pick)
 			if !ok || per < best.Per {
 				best, ok = pick, true

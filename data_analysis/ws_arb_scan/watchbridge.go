@@ -62,7 +62,7 @@ func buildScanWatch(mapKey string, outcomes []outcomeRec, params strategyentry.P
 	}
 	w.Ops = watchgroup.Ops{
 		StrategyParams: func() (float64, float64, float64) {
-			return params.MaxCost, params.OrderAmount, params.LevelFactor
+			return params.MaxCost, params.MinAmount, params.MaxAmount
 		},
 		OneX2Limits: func() (float64, float64) {
 			return params.OneX2YesMax, params.OneX2NoMax

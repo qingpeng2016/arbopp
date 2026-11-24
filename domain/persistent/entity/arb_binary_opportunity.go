@@ -43,6 +43,7 @@ type ArbBinaryOpportunity struct {
 	BookUpdatedAt  *time.Time       `gorm:"column:book_updated_at;type:datetime"`
 	SnapshotAt     time.Time        `gorm:"column:snapshot_at;type:datetime;not null"`
 	SnapshotAtMs   int64            `gorm:"column:snapshot_at_ms;type:bigint;not null;default:0"`
+	ExtData        *string          `gorm:"column:ext_data;type:text"` // 锁失败/下单前检查失败/下单现场 JSON
 	CreatedAt      time.Time        `gorm:"column:created_at;type:datetime;not null;default:CURRENT_TIMESTAMP"`
 	UpdatedAt      time.Time        `gorm:"column:updated_at;type:datetime;not null;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"`
 }

@@ -35,7 +35,7 @@ func TestFee(t *testing.T) {
 }
 
 func TestTopHitUnderMaxCost(t *testing.T) {
-	qty, per, ok := TopHit(0.38, 500, 0.44, 500, 0.05, 0.07, 100, 1, 0.95)
+	qty, per, ok := TopHit(0.38, 500, 0.44, 500, 0.05, 0.07, 5, 100, 0.95)
 	if !ok || qty <= 0 || per >= 0.95 {
 		t.Fatalf("qty=%v per=%v ok=%v", qty, per, ok)
 	}

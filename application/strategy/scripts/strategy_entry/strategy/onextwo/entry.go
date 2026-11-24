@@ -68,7 +68,7 @@ func (r *Runner) limits() Limits {
 		lim.YesTripleMax, lim.NoTripleMax = r.w.Ops.OneX2Limits()
 	}
 	if r.w.Ops.StrategyParams != nil {
-		_, lim.OrderAmount, lim.LevelFactor = r.w.Ops.StrategyParams()
+		_, lim.MinAmount, lim.MaxAmount = r.w.Ops.StrategyParams()
 	}
 	return lim
 }

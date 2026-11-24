@@ -59,6 +59,9 @@ func NotifyGrab(ctx context.Context, mapKey string, hit GrabHit) {
 	if hit.DryRun {
 		title = "strategy_entry 套利命中（未发单）"
 		mode = "dry_run"
+		if hit.SkipOrderReason != "" {
+			mode = hit.SkipOrderReason
+		}
 	}
 	pick := hit.Pick
 	tripleSide := "NO"
@@ -81,6 +84,48 @@ func NotifyGrab(ctx context.Context, mapKey string, hit GrabHit) {
 		)
 	}
 	_ = notification.GetGlobalNotificationManager().SendInfoAlert(ctx, title, fields)
+}
+
+// NotifyOrderResult 1X2 下单结果（order_webhook_url）。
+func NotifyOrderResult(ctx context.Context, mapKey string, hit GrabHit) {
+	pick := hit.Pick
+	fields := []notification.FieldPair{
+		{Key: "map_key", Value: mapKey},
+		{Key: "strategy", Value: pick.Kind},
+		{Key: "order_qty", Value: strconv.FormatFloat(pick.Qty, 'f', -1, 64)},
+	}
+	const eps = 1e-6
+	same := true
+	var costSum float64
+	for i := 0; i < 3; i++ {
+		fields = append(fields,
+			notification.FieldPair{Key: "fill_" + strconv.Itoa(i+1), Value: strconv.FormatFloat(hit.Fills[i], 'f', -1, 64)},
+			notification.FieldPair{Key: "limit_" + strconv.Itoa(i+1), Value: strconv.FormatFloat(pick.Prices[i], 'f', -1, 64)},
+		)
+		if hit.Fills[i] <= eps || abs(hit.Fills[i]-pick.Qty) > eps {
+			same = false
+		}
+		costSum += pick.Prices[i] * hit.Fills[i]
+	}
+	title := "strategy_entry 1X2 下单结果：未套利成功"
+	if same {
+		profit := pick.Qty - costSum
+		title = "strategy_entry 1X2 下单结果：套利成功"
+		fields = append(fields,
+			notification.FieldPair{Key: "cost_sum", Value: strconv.FormatFloat(costSum, 'f', -1, 64)},
+			notification.FieldPair{Key: "arb_profit", Value: strconv.FormatFloat(profit, 'f', -1, 64)},
+		)
+	} else {
+		fields = append(fields, notification.FieldPair{Key: "note", Value: "三腿成交份额不一致或未足额，未形成完整套利"})
+	}
+	_ = notification.GetGlobalNotificationManager().SendOrderAlert(ctx, title, fields)
+}
+
+func abs(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 func SaveGrabHit(ctx context.Context, d persistDeps, mapKey string, hit GrabHit) bool {
@@ -209,6 +254,7 @@ func saveLive(ctx context.Context, d persistDeps, mapKey string, hit GrabHit) bo
 		ArbQty: bt.ArbQty, ArbProfit: bt.ArbProfit,
 		ThresholdKey: bt.ThresholdKey, ThresholdValue: bt.ThresholdValue,
 		BookUpdatedAt: bt.BookUpdatedAt, SnapshotAt: bt.SnapshotAt, SnapshotAtMs: bt.SnapshotAtMs,
+		ExtData: extDataPtr(hit.ExtData),
 	}
 	if err := d.opp.BatchCreate(runCtx, nil, []*persistententity.ArbBinaryOpportunity{live}); err != nil {
 		notification.SendErrorLog(runCtx, "onextwo-OppCreateFailed", zap.Error(err))
@@ -303,11 +349,20 @@ func liveOrdersForHit(strategyType, mapKey string, oppID uint, hit GrabHit, sent
 	out := make([]*persistententity.ArbBinaryOrder, 0, 3)
 	for i, leg := range pick.Legs {
 		px := pick.Prices[i]
-		fill := pick.Qty
-		if hit.DryRun {
-			fill = 0
+		fill := hit.Fills[i]
+		var sendErr error
+		if i < len(hit.FillErrs) {
+			sendErr = hit.FillErrs[i]
 		}
-		out = append(out, yesno.OrderForSide(strategyType, 0, mapKey, oppID, sentAt, uint8(i+1), leg, pick.BuyYes, pick.Qty, px, fill, nil))
+		out = append(out, yesno.OrderForSide(strategyType, 0, mapKey, oppID, sentAt, uint8(i+1), leg, pick.BuyYes, pick.Qty, px, fill, sendErr))
 	}
 	return out
+}
+
+func extDataPtr(s string) *string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	return &s
 }

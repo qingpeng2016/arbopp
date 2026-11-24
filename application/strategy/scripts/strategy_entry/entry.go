@@ -147,7 +147,7 @@ func (e *Entry) canTrade(platform string) bool {
 		return c.predictOK && e.predict != nil
 	}
 	if strings.EqualFold(platform, appcommon.PlatformSxbet) {
-		return e.sxbet != nil && e.sxbetAPIKey() != ""
+		return c.sxbetOK && e.sxbet != nil
 	}
 	return c.polyOK && e.poly != nil
 }

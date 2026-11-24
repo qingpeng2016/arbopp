@@ -112,7 +112,7 @@ func newStrategyEntrySession(
 			return time.Now().UTC().UnixMilli()
 		},
 		StrategyParams: func() (float64, float64, float64) {
-			return params.MaxCost, params.OrderAmount, params.LevelFactor
+			return params.MaxCost, params.MinAmount, params.MaxAmount
 		},
 		OneX2Limits: func() (float64, float64) {
 			return params.OneX2YesMax, params.OneX2NoMax

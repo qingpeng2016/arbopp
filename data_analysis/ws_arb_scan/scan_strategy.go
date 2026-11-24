@@ -169,9 +169,9 @@ func crossPlatStats(runner *yesno.Runner, w *watchgroup.Watch) (cross int, best 
 						continue
 					}
 					_, perA, _ := yesno.TopHit(sa.YesPx, sa.YesSz, sb.NoPx, sb.NoSz, sa.Fee, sb.Fee,
-						loose.OrderAmount, loose.LevelFactor, loose.MaxCost)
+						loose.MinAmount, loose.MaxAmount, loose.MaxCost)
 					_, perB, _ := yesno.TopHit(sb.YesPx, sb.YesSz, sa.NoPx, sa.NoSz, sb.Fee, sa.Fee,
-						loose.OrderAmount, loose.LevelFactor, loose.MaxCost)
+						loose.MinAmount, loose.MaxAmount, loose.MaxCost)
 					for _, per := range []float64{perA, perB} {
 						if per > 0 && per < best {
 							best = per

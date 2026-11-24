@@ -13,7 +13,7 @@ type Sender interface {
 	Flatten(side Side, boughtYes bool, mine, other float64)
 }
 
-// Fire 并发双腿 FAK，再 flatten。
+// Fire 并发双腿 LIMIT+FAK，再 flatten。
 func Fire(snd Sender, a, b Side, aBuyYes, bBuyYes bool, qty float64) (fillA, fillB float64, errA, errB error) {
 	pxA, pxB := SidePx(a, aBuyYes), SidePx(b, bBuyYes)
 	var wg sync.WaitGroup
@@ -35,11 +35,13 @@ func Fire(snd Sender, a, b Side, aBuyYes, bBuyYes bool, qty float64) (fillA, fil
 // GrabHit 一次抢单结果。
 type GrabHit struct {
 	Pick            FilledPick
-	Leg1, Leg2      watchgroup.LegPersistSnap // 同锁盘口 JSON；TopAsk/TopSz 与 pick 对齐
+	Leg1, Leg2      watchgroup.LegPersistSnap
 	MaxCost         float64
 	YesFill, NoFill float64
 	YesErr, NoErr   error
-	DryRun          bool // true：只记机会表，不发单、不写 arb_binary_order
+	DryRun          bool   // true：只记机会表，不发单、不写 orders
+	ExtData         string // arb_binary_opportunity.ext_data
+	SkipOrderReason string
 }
 
 // TryPickForOutcome 盘口更新后试算最优组合（回测扫描等只读路径，不落库）。
@@ -47,7 +49,6 @@ func (r *Runner) TryPickForOutcome(outcomeID uint) (pick FilledPick, ok bool) {
 	return r.tryPickForGrab(outcomeID)
 }
 
-// tryPickForGrab 盘口更新后在同一 OutcomeGroup 内选最优可成交组合（只读，不加锁）。
 func (r *Runner) tryPickForGrab(outcomeID uint) (pick FilledPick, ok bool) {
 	_, pick, ok = r.tryAllPicksForGrab(outcomeID, r.limits())
 	return pick, ok
@@ -69,7 +70,6 @@ func (r *Runner) tryAllPicksForGrab(outcomeID uint, lim Limits) (all []FilledPic
 	return r.AllFilledPicks(group, lim)
 }
 
-// grabOne 实盘/联调：命中后异步落库（当前 DryRun，不发单）。
 func (r *Runner) grabOne(outcomeID uint) {
 	r.grabOneAttempt(outcomeID, false)
 }
@@ -81,29 +81,47 @@ func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
 				time.Sleep(25 * time.Millisecond)
 				r.grabOneAttempt(id, true)
 			}(outcomeID)
+			return
 		}
+		r.persistMissedLock(outcomeID)
 		return
 	}
 	defer r.orderMu.Unlock()
+
 	lim := r.limits()
-	all, pick, ok := r.tryAllPicksForGrab(outcomeID, lim)
+	all, _, ok := r.tryAllPicksForGrab(outcomeID, lim)
 	if !ok {
 		return
 	}
-	const dryRun = true
-	if !dryRun && (!r.canTrade(pick.Yes.Platform) || !r.canTrade(pick.No.Platform)) {
-		return
-	}
-	// 联调机会表：暂不发单。要恢复实盘时设 dryRun=false 并取消 Fire 注释。
-	var yesFill, noFill float64
-	var yesErr, noErr error
-	if !dryRun {
-		yesFill, noFill, yesErr, noErr = Fire(outcomeSender{r}, pick.Yes.Side, pick.No.Side, pick.YesBuyYes, pick.NoBuyYes, pick.Qty)
-	}
+
 	ctx := r.grabContext()
 	mapKey := r.w.MapKey
 	persist := r.grabPersist()
-	r.recent.Prune(pick.At)
+
+	// 选一份可下单的最优（成本最低且份额检查通过、账号可用）
+	var tradePick FilledPick
+	var tradeOK bool
+	for _, fp := range all {
+		if !fp.SizeCheckOK {
+			continue
+		}
+		if !r.canTrade(fp.Yes.Platform) || !r.canTrade(fp.No.Platform) {
+			continue
+		}
+		if !tradeOK || fp.Per < tradePick.Per {
+			tradePick, tradeOK = fp, true
+		}
+	}
+
+	var yesFill, noFill float64
+	var yesErr, noErr error
+	ordered := false
+	if tradeOK {
+		yesFill, noFill, yesErr, noErr = Fire(outcomeSender{r}, tradePick.Yes.Side, tradePick.No.Side, tradePick.YesBuyYes, tradePick.NoBuyYes, tradePick.Qty)
+		ordered = true
+	}
+
+	r.recent.Prune(all[0].At)
 	var bestHit GrabHit
 	var saved bool
 	for _, fp := range all {
@@ -112,10 +130,36 @@ func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
 			Prices: [3]float64{fp.Yes.YesPx, fp.No.NoPx}, Depths: [3]float64{fp.Sizes[0], fp.Sizes[1]},
 			Cost: fp.Per, Quantity: fp.Qty,
 		}
+		isTradeLeg := ordered && fp.Yes.Index == tradePick.Yes.Index && fp.No.Index == tradePick.No.Index &&
+			fp.YesBuyYes == tradePick.YesBuyYes && fp.NoBuyYes == tradePick.NoBuyYes
+
+		hit := r.buildGrabHit(fp, lim)
+		if isTradeLeg {
+			hit.DryRun = false
+			hit.YesFill, hit.NoFill, hit.YesErr, hit.NoErr = yesFill, noFill, yesErr, noErr
+			hit.SkipOrderReason = ""
+			hit.ExtData = ExtDataJSON(fp.SizeCheck.Snapshot, map[string]any{
+				"ordered": true, "order_qty": fp.Qty, "fill_yes": yesFill, "fill_no": noFill,
+			})
+		} else if !fp.SizeCheckOK {
+			// already set in buildGrabHit
+		} else if !r.canTrade(fp.Yes.Platform) || !r.canTrade(fp.No.Platform) {
+			hit.DryRun = true
+			hit.SkipOrderReason = "account_unavailable"
+			hit.ExtData = ExtDataJSON(fp.SizeCheck.Snapshot, map[string]any{
+				"skip_order_reason": "account_unavailable",
+				"platforms":         []string{fp.Yes.Platform, fp.No.Platform},
+			})
+		} else {
+			// 有更优腿已下单，本组合仅记机会
+			hit.DryRun = true
+			hit.SkipOrderReason = "not_selected_for_order"
+			hit.ExtData = ExtDataJSON(fp.SizeCheck.Snapshot, map[string]any{
+				"skip_order_reason": "not_selected_for_order",
+			})
+		}
+
 		insert := func() bool {
-			leg1, leg2 := r.snapPickLegs(fp)
-			hit := GrabHit{Pick: fp, Leg1: leg1, Leg2: leg2, MaxCost: lim.MaxCost,
-				YesFill: yesFill, NoFill: noFill, YesErr: yesErr, NoErr: noErr, DryRun: dryRun}
 			if !SaveGrabHit(ctx, persist, mapKey, hit) {
 				return false
 			}
@@ -124,7 +168,7 @@ func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
 			}
 			return true
 		}
-		if dryRun {
+		if hit.DryRun {
 			r.recent.Save(key, fp.At, insert)
 		} else {
 			insert()
@@ -133,9 +177,57 @@ func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
 	if saved {
 		go NotifyGrab(ctx, mapKey, bestHit)
 	}
+	if ordered {
+		go NotifyOrderResult(ctx, mapKey, GrabHit{
+			Pick: tradePick, MaxCost: lim.MaxCost,
+			YesFill: yesFill, NoFill: noFill, YesErr: yesErr, NoErr: noErr, DryRun: false,
+			Leg1: r.mustSnap(tradePick).l1, Leg2: r.mustSnap(tradePick).l2,
+		})
+	}
 }
 
-// grabOneBacktest 历史回放：不发真实单，同步写入 backtest_arb_*（由 Ops.BacktestTaskID 决定落库表）。
+type snapPair struct{ l1, l2 watchgroup.LegPersistSnap }
+
+func (r *Runner) mustSnap(fp FilledPick) snapPair {
+	a, b := r.snapPickLegs(fp)
+	return snapPair{a, b}
+}
+
+func (r *Runner) persistMissedLock(outcomeID uint) {
+	lim := r.limits()
+	all, _, ok := r.tryAllPicksForGrab(outcomeID, lim)
+	if !ok {
+		return
+	}
+	ctx := r.grabContext()
+	mapKey := r.w.MapKey
+	persist := r.grabPersist()
+	for _, fp := range all {
+		hit := r.buildGrabHit(fp, lim)
+		hit.DryRun = true
+		hit.SkipOrderReason = "map_key_lock_missed"
+		hit.ExtData = ExtDataJSON(fp.SizeCheck.Snapshot, map[string]any{
+			"skip_order_reason": "map_key_lock_missed",
+			"map_key":           mapKey,
+		})
+		SaveGrabHit(ctx, persist, mapKey, hit)
+	}
+}
+
+func (r *Runner) buildGrabHit(fp FilledPick, lim Limits) GrabHit {
+	leg1, leg2 := r.snapPickLegs(fp)
+	hit := GrabHit{Pick: fp, Leg1: leg1, Leg2: leg2, MaxCost: lim.MaxCost, DryRun: true}
+	if !fp.SizeCheckOK {
+		hit.SkipOrderReason = "size_check_failed"
+		hit.ExtData = ExtDataJSON(fp.SizeCheck.Snapshot, map[string]any{
+			"skip_order_reason": "size_check_failed",
+		})
+	} else if fp.SizeCheck.Snapshot != nil {
+		hit.ExtData = ExtDataJSON(fp.SizeCheck.Snapshot)
+	}
+	return hit
+}
+
 func (r *Runner) grabOneBacktest(outcomeID uint) {
 	if !r.orderMu.TryLock() {
 		return

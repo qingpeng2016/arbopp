@@ -305,6 +305,7 @@ CREATE TABLE IF NOT EXISTS `arb_binary_opportunity` (
   `book_updated_at` datetime DEFAULT NULL,
   `snapshot_at` datetime NOT NULL,
   `snapshot_at_ms` bigint NOT NULL DEFAULT 0,
+  `ext_data` text NULL COMMENT '扩展JSON：map_key锁失败、下单前检查失败阈值快照、下单现场',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),

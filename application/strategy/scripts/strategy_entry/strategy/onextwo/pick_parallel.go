@@ -48,11 +48,17 @@ func (r *Runner) priceTriple(legs [3]pricedLeg, at time.Time, buyYes bool, lim L
 	if cost >= maxCost {
 		return TriplePick{}, false
 	}
-	qty, ok := yesno.SizeForBudget(cost, min(legs[0].size, legs[1].size, legs[2].size), lim.OrderAmount, lim.LevelFactor)
-	if !ok {
-		return TriplePick{}, false
+	chk := yesno.CheckOrderSize(yesno.OrderSizeCheckInput{
+		Platforms: []string{legs[0].side.Platform, legs[1].side.Platform, legs[2].side.Platform},
+		BestAsks:  []float64{legs[0].topPx, legs[1].topPx, legs[2].topPx},
+		AskSizes:  []float64{legs[0].topSize, legs[1].topSize, legs[2].topSize},
+		MinAmount: lim.MinAmount, MaxAmount: lim.MaxAmount,
+	})
+	qty := chk.Qty
+	if !chk.OK {
+		qty = min(legs[0].topSize, legs[1].topSize, legs[2].topSize)
 	}
-	pick := TriplePick{Kind: kind, BuyYes: buyYes, At: at, Qty: qty, Per: cost}
+	pick := TriplePick{Kind: kind, BuyYes: buyYes, At: at, Qty: qty, Per: cost, SizeCheck: chk, SizeCheckOK: chk.OK}
 	for i, leg := range legs {
 		pick.Legs[i] = leg.side
 		pick.Prices[i] = leg.topPx
