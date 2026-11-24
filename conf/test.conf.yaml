@@ -29,6 +29,7 @@ redis:
 # 通知配置1111111
 notification:
   lark:
+    order_webhook_url: "https://open.larksuite.com/open-apis/bot/v2/hook/7d895b56-378a-4dc8-ad66-3e156e3cdcdd"
     alert_webhook_url: "https://open.larksuite.com/open-apis/bot/v2/hook/a870bc3a-2c08-4b0d-9738-6f97652117d4"
     notify_webhook_url: "https://open.larksuite.com/open-apis/bot/v2/hook/3ff44ed5-10fa-4dfd-9830-a2232c7def79"
     service_name: "prediction-arbitrage"       # 服务名称
