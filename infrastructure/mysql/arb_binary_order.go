@@ -73,3 +73,23 @@ func (r *ArbBinaryOrderImpl) UpdateFill(ctx context.Context, id uint, fillQty, f
 	}
 	return r.db.WithContext(ctx).Model(&entity.ArbBinaryOrder{}).Where("id = ?", id).Updates(up).Error
 }
+
+// 终态：FAK/IOC 路径下成交完成或明确失败；其余（含空串）视为未终态。
+var orderTerminalStatuses = []string{"FILLED", "PARTIAL", "NO_FILL", "ERROR"}
+
+func (r *ArbBinaryOrderImpl) HasNonTerminalByMapKey(ctx context.Context, mapKey string) (bool, error) {
+	mapKey = strings.TrimSpace(mapKey)
+	if mapKey == "" {
+		return false, nil
+	}
+	var n int64
+	err := r.db.WithContext(ctx).Model(&entity.ArbBinaryOrder{}).
+		Where("map_key = ?", mapKey).
+		Where("UPPER(TRIM(status)) NOT IN ?", orderTerminalStatuses).
+		Limit(1).
+		Count(&n).Error
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}

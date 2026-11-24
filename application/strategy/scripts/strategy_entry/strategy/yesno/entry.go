@@ -120,6 +120,20 @@ func (r *Runner) canTrade(platform string) bool {
 	return r.w.Ops.CanTrade(platform)
 }
 
+// blockingOpenOrders 该 map_key 在 orders 表仍有未终态单则阻塞新下单。
+func (r *Runner) blockingOpenOrders(ctx context.Context, mapKey string) bool {
+	return HasBlockingOpenOrders(ctx, safeOrderRepo(&r.w.Ops), mapKey)
+}
+
+// HasBlockingOpenOrders 共享给 1X2：map_key 存在未终态订单。
+func HasBlockingOpenOrders(ctx context.Context, repo persistentrepo.ArbBinaryOrderRepo, mapKey string) bool {
+	if repo == nil || strings.TrimSpace(mapKey) == "" {
+		return false
+	}
+	ok, err := repo.HasNonTerminalByMapKey(ctx, mapKey)
+	return err == nil && ok
+}
+
 func (r *Runner) grabContext() context.Context {
 	return r.w.Context()
 }

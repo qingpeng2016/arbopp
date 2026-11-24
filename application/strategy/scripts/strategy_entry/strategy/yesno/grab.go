@@ -98,6 +98,7 @@ func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
 	ctx := r.grabContext()
 	mapKey := r.w.MapKey
 	persist := r.grabPersist()
+	openBlocked := r.blockingOpenOrders(ctx, mapKey)
 
 	// 选一份可下单的最优（成本最低且份额检查通过、账号可用）
 	var tradePick FilledPick
@@ -117,7 +118,7 @@ func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
 	var yesRes, noRes watchgroup.SendResult
 	var yesErr, noErr error
 	ordered := false
-	if tradeOK {
+	if tradeOK && !openBlocked {
 		yesRes, noRes, yesErr, noErr = Fire(outcomeSender{r}, tradePick.Yes.Side, tradePick.No.Side, tradePick.YesBuyYes, tradePick.NoBuyYes, tradePick.Qty)
 		ordered = true
 	}
@@ -152,6 +153,13 @@ func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
 			hit.ExtData = ExtDataJSON(fp.SizeCheck.Snapshot, map[string]any{
 				"skip_order_reason": "account_unavailable",
 				"platforms":         []string{fp.Yes.Platform, fp.No.Platform},
+			})
+		} else if openBlocked {
+			hit.DryRun = true
+			hit.SkipOrderReason = "non_terminal_orders"
+			hit.ExtData = ExtDataJSON(fp.SizeCheck.Snapshot, map[string]any{
+				"skip_order_reason": "non_terminal_orders",
+				"map_key":           mapKey,
 			})
 		} else {
 			// 有更优腿已下单，本组合仅记机会

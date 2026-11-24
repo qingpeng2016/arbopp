@@ -44,6 +44,11 @@ func (r *Runner) grabOneAttempt(_ uint, retried bool) {
 		return
 	}
 
+	ctx := r.w.Context()
+	mapKey := r.w.MapKey
+	deps := r.persistDeps()
+	openBlocked := yesno.HasBlockingOpenOrders(ctx, deps.order, mapKey)
+
 	var tradePick TriplePick
 	var tradeOK bool
 	for _, p := range all {
@@ -69,14 +74,11 @@ func (r *Runner) grabOneAttempt(_ uint, retried bool) {
 	var fillErrs [3]error
 	var sends [3]watchgroup.SendResult
 	ordered := false
-	if tradeOK {
+	if tradeOK && !openBlocked {
 		fills, fillErrs, sends = fireTriple(r, tradePick)
 		ordered = true
 	}
 
-	ctx := r.w.Context()
-	mapKey := r.w.MapKey
-	deps := r.persistDeps()
 	r.recent.Prune(all[0].At)
 	var bestHit GrabHit
 	var saved bool
@@ -102,6 +104,12 @@ func (r *Runner) grabOneAttempt(_ uint, retried bool) {
 			hit.ExtData = yesno.ExtDataJSON(p.SizeCheck.Snapshot, map[string]any{
 				"skip_order_reason": "account_unavailable",
 				"platforms":         []string{p.Legs[0].Platform, p.Legs[1].Platform, p.Legs[2].Platform},
+			})
+		} else if openBlocked {
+			hit.SkipOrderReason = "non_terminal_orders"
+			hit.ExtData = yesno.ExtDataJSON(p.SizeCheck.Snapshot, map[string]any{
+				"skip_order_reason": "non_terminal_orders",
+				"map_key":           mapKey,
 			})
 		} else if isTrade {
 			hit.DryRun = false
