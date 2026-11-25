@@ -8,14 +8,14 @@ import (
 
 func TestBuildSxbetEventURLFromMarket(t *testing.T) {
 	m := httpentity.SxbetMarket{
-		SportXeventID: "L20940405",
-		SportID:       8,
-		SportLabel:    "Football",
-		LeagueLabel:   "NCAAF",
-		Group1:        "NCAAF",
+		SportXeventID: "L20826652",
+		SportID:       5,
+		SportLabel:    "Soccer",
+		LeagueLabel:   "Liga Profesional",
+		Group1:        "Liga Profesional",
 	}
 	got := buildSxbetEventURLFromMarket(m)
-	want := "https://sx.bet/sports/football/ncaaf/L20940405"
+	want := "https://sx.bet/soccer/liga-profesional/event/L20826652/1X2"
 	if got != want {
 		t.Fatalf("event url: got %q want %q", got, want)
 	}
@@ -23,13 +23,13 @@ func TestBuildSxbetEventURLFromMarket(t *testing.T) {
 
 func TestBuildSxbetMarketURLFromMarket(t *testing.T) {
 	m := httpentity.SxbetMarket{
-		SportXeventID: "L20940405",
-		SportID:       8,
-		Group1:        "NCAAF",
+		SportXeventID: "L20826652",
+		SportID:       5,
+		Group1:        "Liga Profesional",
 		MarketHash:    "0xabc",
 	}
 	got := buildSxbetMarketURLFromMarket(m)
-	want := "https://sx.bet/sports/football/ncaaf/L20940405/market/0xabc"
+	want := "https://sx.bet/soccer/liga-profesional/event/L20826652/1X2"
 	if got != want {
 		t.Fatalf("market url: got %q want %q", got, want)
 	}

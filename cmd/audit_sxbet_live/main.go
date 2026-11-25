@@ -101,7 +101,7 @@ func discoverHashes(ctx context.Context, api httprepo.SxbetRepo, want int) []pic
 		out = append(out, pick{
 			Title: t + " type=" + strconv.Itoa(m.Type),
 			Hash:  hash,
-			URL:   "https://sx.bet/sports/soccer/premiership/" + strings.TrimSpace(m.SportXeventID) + "/market/" + hash,
+			URL:   "https://sx.bet/soccer/premiership/event/" + strings.TrimSpace(m.SportXeventID) + "/1X2",
 		})
 		seen[hash] = true
 		if len(out) >= want {
