@@ -74,6 +74,18 @@ func (r *ArbBinaryOrderImpl) UpdateFill(ctx context.Context, id uint, fillQty, f
 	return r.db.WithContext(ctx).Model(&entity.ArbBinaryOrder{}).Where("id = ?", id).Updates(up).Error
 }
 
+func (r *ArbBinaryOrderImpl) ListByArbOppID(ctx context.Context, arbOppID uint) ([]*entity.ArbBinaryOrder, error) {
+	if arbOppID == 0 {
+		return nil, nil
+	}
+	var list []*entity.ArbBinaryOrder
+	err := r.db.WithContext(ctx).Model(&entity.ArbBinaryOrder{}).
+		Where("arb_opp_id = ?", arbOppID).
+		Order("side_no asc, id asc").
+		Find(&list).Error
+	return list, err
+}
+
 // 终态：FAK/IOC 路径下成交完成或明确失败；其余（含空串）视为未终态。
 var orderTerminalStatuses = []string{"FILLED", "PARTIAL", "NO_FILL", "ERROR"}
 

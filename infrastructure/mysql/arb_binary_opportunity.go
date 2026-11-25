@@ -5,6 +5,7 @@ import (
 
 	"github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/entity"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/repository"
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
@@ -42,4 +43,13 @@ func (r *ArbBinaryOpportunityImpl) BatchCreate(ctx context.Context, tx *gorm.DB,
 		return nil
 	}
 	return tx.WithContext(ctx).CreateInBatches(list, 100).Error
+}
+
+func (r *ArbBinaryOpportunityImpl) UpdateArbProfitAmount(ctx context.Context, id uint, amount float64) error {
+	if id == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Model(&entity.ArbBinaryOpportunity{}).
+		Where("id = ?", id).
+		Update("arb_profit_amount", decimal.NewFromFloat(amount).Round(8)).Error
 }

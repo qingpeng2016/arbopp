@@ -30,9 +30,10 @@ type BacktestArbBinaryOpportunity struct {
 	Leg3BestAsk         *decimal.Decimal `gorm:"column:leg_3_best_ask;type:decimal(20,8)"`
 	TotalCost      decimal.Decimal  `gorm:"column:total_cost;type:decimal(20,8);not null"`
 	ProfitSpace    decimal.Decimal  `gorm:"column:profit_space;type:decimal(20,8);not null"`
-	ArbQty         decimal.Decimal  `gorm:"column:arb_qty;type:decimal(20,8);not null;default:0"`
-	ArbProfit      decimal.Decimal  `gorm:"column:arb_profit;type:decimal(20,8);not null;default:0"`
-	ThresholdKey   string           `gorm:"column:threshold_key;type:varchar(64);not null"`
+	ArbQty          decimal.Decimal  `gorm:"column:arb_qty;type:decimal(20,8);not null;default:0"`
+	ArbProfit       decimal.Decimal  `gorm:"column:arb_profit;type:decimal(20,8);not null;default:0"`
+	ArbProfitAmount decimal.Decimal  `gorm:"column:arb_profit_amount;type:decimal(20,8);not null;default:0"`
+	ThresholdKey    string           `gorm:"column:threshold_key;type:varchar(64);not null"`
 	ThresholdValue decimal.Decimal  `gorm:"column:threshold_value;type:decimal(20,8);not null"`
 	BookUpdatedAt  *time.Time       `gorm:"column:book_updated_at;type:datetime"`
 	SnapshotAt     time.Time        `gorm:"column:snapshot_at;type:datetime;not null"`

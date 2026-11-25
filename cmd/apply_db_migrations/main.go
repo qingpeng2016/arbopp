@@ -29,6 +29,7 @@ func main() {
 		{"data_task.ingest_source", ensureDataTaskIngestSource},
 		{"orders.fill_meta", ensureOrdersFillMeta},
 		{"bot order_fill_sync", ensureBotOrderFillSync},
+		{"arb_opp_profit_amount", ensureArbOppProfitAmount},
 	}
 
 	for _, s := range steps {
@@ -294,6 +295,23 @@ func ensureBotOrderFillSync(db *gorm.DB) error {
 	return db.Exec(`
 INSERT INTO bot_schedule_config (module, task_name, interval_seconds, exe_sort, concurrency, description, is_enabled, is_strategy_enabled, is_primary_machine_run)
 VALUES ('less_one', 'order_fill_sync', 30, 45, 1, '回查 Poly/Predict/SX 成交，补全 orders.fill_qty/status/fee', 1, 1, 0)`).Error
+}
+
+func ensureArbOppProfitAmount(db *gorm.DB) error {
+	for _, table := range []string{"arb_binary_opportunity", "backtest_arb_binary_opportunity"} {
+		if !hasTable(db, table) {
+			continue
+		}
+		if hasColumn(db, table, "arb_profit_amount") {
+			continue
+		}
+		q := `ALTER TABLE ` + "`" + table + "`" + `
+  ADD COLUMN arb_profit_amount decimal(20,8) NOT NULL DEFAULT 0 COMMENT '实盘套利利润：min(平台成交量)-总花费' AFTER arb_profit`
+		if err := db.Exec(q).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func ensureOrdersFillMeta(db *gorm.DB) error {
