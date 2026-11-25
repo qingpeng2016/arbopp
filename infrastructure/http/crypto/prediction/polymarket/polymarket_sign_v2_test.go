@@ -152,6 +152,85 @@ func TestPoly1271_RejectsMissingProxy(t *testing.T) {
 	}
 }
 
+// TestPoly1271ClobAuthTypeStrings L1 ClobAuth 包装用的类型字符串形状固定。
+func TestPoly1271ClobAuthTypeStrings(t *testing.T) {
+	wantClob := "ClobAuth(address address,string timestamp,uint256 nonce,string message)"
+	wantDomain := "EIP712Domain(string name,string version,uint256 chainId)"
+	wantSolady := "TypedDataSign(ClobAuth contents,string name,string version,uint256 chainId," +
+		"address verifyingContract,bytes32 salt)" + wantClob
+	if clobAuthTypeString != wantClob {
+		t.Errorf("clobAuthTypeString mismatch\n  got:  %q\n  want: %q", clobAuthTypeString, wantClob)
+	}
+	if l1DomainTypeString != wantDomain {
+		t.Errorf("l1DomainTypeString mismatch\n  got:  %q\n  want: %q", l1DomainTypeString, wantDomain)
+	}
+	if soladyTypeStringClobAuth != wantSolady {
+		t.Errorf("soladyTypeStringClobAuth mismatch\n  got:  %q\n  want: %q", soladyTypeStringClobAuth, wantSolady)
+	}
+}
+
+// TestPoly1271ClobAuthDigest_Derivation 验证 L1 ClobAuth ERC-7739 digest 组装。
+func TestPoly1271ClobAuthDigest_Derivation(t *testing.T) {
+	p := newTestPolymarket()
+	ts := "1700000000"
+	nonce := int64(0)
+	digest, appDomainSep, contentsHash, err := p.poly1271ClobAuthDigest(testFunder, ts, nonce)
+	if err != nil {
+		t.Fatalf("poly1271ClobAuthDigest: %v", err)
+	}
+	if len(digest) != 32 || len(appDomainSep) != 32 || len(contentsHash) != 32 {
+		t.Fatalf("hash 长度异常: digest=%d appDomainSep=%d contentsHash=%d",
+			len(digest), len(appDomainSep), len(contentsHash))
+	}
+
+	chainIDBytes := common.LeftPadBytes(big.NewInt(int64(eip712ChainID)).Bytes(), 32)
+	wantAppDomainSep := crypto.Keccak256(
+		crypto.Keccak256([]byte(l1DomainTypeString)),
+		crypto.Keccak256([]byte("ClobAuthDomain")),
+		crypto.Keccak256([]byte(clobAuthDomainVersion)),
+		chainIDBytes,
+	)
+	if !bytesEqual(appDomainSep, wantAppDomainSep) {
+		t.Errorf("ClobAuth appDomainSep mismatch\n  got:  %x\n  want: %x", appDomainSep, wantAppDomainSep)
+	}
+
+	depositBytes := common.LeftPadBytes(common.HexToAddress(testFunder).Bytes(), 32)
+	tdsHash := crypto.Keccak256(
+		crypto.Keccak256([]byte(soladyTypeStringClobAuth)),
+		contentsHash,
+		crypto.Keccak256([]byte(depositWalletDomainNameV2)),
+		crypto.Keccak256([]byte(depositWalletDomainVersionV2)),
+		chainIDBytes,
+		depositBytes,
+		make([]byte, 32),
+	)
+	wantDigest := crypto.Keccak256([]byte{0x19, 0x01}, appDomainSep, tdsHash)
+	if !bytesEqual(digest, wantDigest) {
+		t.Errorf("ClobAuth digest mismatch\n  got:  %x\n  want: %x", digest, wantDigest)
+	}
+}
+
+// TestBuildPoly1271ClobAuthSignature_PacksTrailer 签名长度 = 65 + 32 + 32 + typeLen + 2。
+func TestBuildPoly1271ClobAuthSignature_PacksTrailer(t *testing.T) {
+	// anvil #0 公开测试私钥
+	const pk = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+	p := newTestPolymarket()
+	sig, err := p.buildPoly1271ClobAuthSignature(pk, testFunder, "1700000000", 0)
+	if err != nil {
+		t.Fatalf("buildPoly1271ClobAuthSignature: %v", err)
+	}
+	raw := common.FromHex(sig)
+	wantLen := 65 + 32 + 32 + len(clobAuthTypeString) + 2
+	if len(raw) != wantLen {
+		t.Fatalf("wrapped sig len=%d, want %d", len(raw), wantLen)
+	}
+	typeStart := 65 + 32 + 32
+	typeEnd := typeStart + len(clobAuthTypeString)
+	if string(raw[typeStart:typeEnd]) != clobAuthTypeString {
+		t.Errorf("contents type string mismatch in trailer")
+	}
+}
+
 // bytesEqual 简单 byte-slice 相等比较，避免引入 reflect.DeepEqual 开销。
 func bytesEqual(a, b []byte) bool {
 	if len(a) != len(b) {

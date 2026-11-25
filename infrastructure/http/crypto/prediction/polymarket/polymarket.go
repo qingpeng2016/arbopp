@@ -1312,46 +1312,70 @@ func (p *Polymarket) hashEIP712L1Auth(domain map[string]interface{}, types map[s
 	return crypto.Keccak256Hash(data), nil
 }
 
-// buildL1AuthHeaders 构建 L1 认证请求头（POLY_ADDRESS, POLY_SIGNATURE, POLY_TIMESTAMP, POLY_NONCE）
-func (p *Polymarket) buildL1AuthHeaders(ctx context.Context, privateKeyHex, signerAddress string, nonce int64) (map[string]string, error) {
+// buildL1AuthHeaders 构建 L1 认证请求头（POLY_ADDRESS, POLY_SIGNATURE, POLY_TIMESTAMP, POLY_NONCE）。
+// poly1271=false：普通 EOA ECDSA，POLY_ADDRESS=EOA。
+// poly1271=true：ERC-7739 包装 ClobAuth，POLY_ADDRESS=deposit wallet（绑 Key 到存款钱包）。
+func (p *Polymarket) buildL1AuthHeaders(ctx context.Context, privateKeyHex, polyAddress string, nonce int64, poly1271 bool) (map[string]string, error) {
 	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
-	signature, err := p.signL1AuthMessage(privateKeyHex, signerAddress, timestamp, nonce)
+	var (
+		signature string
+		err       error
+	)
+	if poly1271 {
+		signature, err = p.buildPoly1271ClobAuthSignature(privateKeyHex, polyAddress, timestamp, nonce)
+	} else {
+		signature, err = p.signL1AuthMessage(privateKeyHex, polyAddress, timestamp, nonce)
+	}
 	if err != nil {
 		return nil, err
 	}
-	headers := map[string]string{
-		"POLY_ADDRESS":   signerAddress,
+	return map[string]string{
+		"POLY_ADDRESS":   polyAddress,
 		"POLY_SIGNATURE": signature,
 		"POLY_TIMESTAMP": timestamp,
 		"POLY_NONCE":     strconv.FormatInt(nonce, 10),
-	}
-	return headers, nil
+	}, nil
 }
 
 // CreateAPIKey 使用私钥创建 L2 API 凭证（L1 认证：POST /auth/api-key）
 func (p *Polymarket) CreateAPIKey(ctx context.Context, privateKeyHex, signerAddress string) (apiKey, secret, passphrase string, err error) {
-	return p.createAPIKeyWithNonce(ctx, privateKeyHex, signerAddress, time.Now().UnixNano())
+	return p.createAPIKeyWithNonce(ctx, privateKeyHex, signerAddress, time.Now().UnixNano(), false)
 }
 
-// CreateOrDeriveAPIKey 官方默认 nonce=0：先 create，失败则 derive 已有凭证。
+// CreateOrDeriveAPIKey 官方默认 nonce=0：先 create，失败则 derive 已有凭证（EOA 绑定）。
 func (p *Polymarket) CreateOrDeriveAPIKey(ctx context.Context, privateKeyHex, signerAddress string) (apiKey, secret, passphrase string, err error) {
-	apiKey, secret, passphrase, err = p.createAPIKeyWithNonce(ctx, privateKeyHex, signerAddress, 0)
+	apiKey, secret, passphrase, err = p.createAPIKeyWithNonce(ctx, privateKeyHex, signerAddress, 0, false)
 	if err == nil && strings.TrimSpace(apiKey) != "" && strings.TrimSpace(secret) != "" {
 		return apiKey, secret, passphrase, nil
 	}
-	return p.deriveAPIKeyWithNonce(ctx, privateKeyHex, signerAddress, 0)
+	return p.deriveAPIKeyWithNonce(ctx, privateKeyHex, signerAddress, 0, false)
 }
 
-func (p *Polymarket) createAPIKeyWithNonce(ctx context.Context, privateKeyHex, signerAddress string, nonce int64) (apiKey, secret, passphrase string, err error) {
+// CreateOrDeriveAPIKeyPoly1271 用 ERC-7739 包装的 ClobAuth 把 L2 凭证绑到 deposit wallet。
+// depositWallet 填主页交易钱包（proxy_address / funder），私钥仍是 EOA 的。
+func (p *Polymarket) CreateOrDeriveAPIKeyPoly1271(ctx context.Context, privateKeyHex, depositWallet string) (apiKey, secret, passphrase string, err error) {
+	depositWallet = strings.TrimSpace(depositWallet)
+	if depositWallet == "" {
+		return "", "", "", fmt.Errorf("CreateOrDeriveAPIKeyPoly1271: deposit wallet address is required")
+	}
+	apiKey, secret, passphrase, err = p.createAPIKeyWithNonce(ctx, privateKeyHex, depositWallet, 0, true)
+	if err == nil && strings.TrimSpace(apiKey) != "" && strings.TrimSpace(secret) != "" {
+		return apiKey, secret, passphrase, nil
+	}
+	return p.deriveAPIKeyWithNonce(ctx, privateKeyHex, depositWallet, 0, true)
+}
+
+func (p *Polymarket) createAPIKeyWithNonce(ctx context.Context, privateKeyHex, polyAddress string, nonce int64, poly1271 bool) (apiKey, secret, passphrase string, err error) {
 	api := clobBaseURL + "/auth/api-key"
 	logger.InfoZ(ctx, "polymarket-CreateAPIKey-Req",
-		zap.String("signerAddress", signerAddress),
+		zap.String("polyAddress", polyAddress),
+		zap.Bool("poly1271", poly1271),
 		zap.Int64("nonce", nonce),
 		zap.String("endpoint", api))
-	headers, err := p.buildL1AuthHeaders(ctx, privateKeyHex, signerAddress, nonce)
+	headers, err := p.buildL1AuthHeaders(ctx, privateKeyHex, polyAddress, nonce, poly1271)
 	if err != nil {
 		notification.SendErrorLog(ctx, "polymarket-CreateAPIKey-Resp",
-			zap.String("signerAddress", signerAddress),
+			zap.String("polyAddress", polyAddress),
 			zap.Error(err))
 		return "", "", "", err
 	}
@@ -1359,29 +1383,30 @@ func (p *Polymarket) createAPIKeyWithNonce(ctx context.Context, privateKeyHex, s
 	resp, err := p.client.Post(ctx, api, nil, headers, bodyStr)
 	if err != nil {
 		notification.SendErrorLog(ctx, "polymarket-CreateAPIKey-Resp",
-			zap.String("signerAddress", signerAddress),
+			zap.String("polyAddress", polyAddress),
 			zap.Error(err))
 		return "", "", "", fmt.Errorf("create api key request failed: %w", err)
 	}
 	result, err := parseClobAPICreds(resp.Body())
 	if err != nil {
 		notification.SendErrorLog(ctx, "polymarket-CreateAPIKey-Resp",
-			zap.String("signerAddress", signerAddress),
+			zap.String("polyAddress", polyAddress),
 			zap.String("rawBody", string(resp.Body())),
 			zap.Error(err))
 		return "", "", "", err
 	}
-	logClobAPICreds(ctx, "polymarket-CreateAPIKey-Resp", signerAddress, result.APIKey, result.Secret, result.Passphrase)
+	logClobAPICreds(ctx, "polymarket-CreateAPIKey-Resp", polyAddress, result.APIKey, result.Secret, result.Passphrase)
 	return result.APIKey, result.Secret, result.Passphrase, nil
 }
 
-func (p *Polymarket) deriveAPIKeyWithNonce(ctx context.Context, privateKeyHex, signerAddress string, nonce int64) (apiKey, secret, passphrase string, err error) {
+func (p *Polymarket) deriveAPIKeyWithNonce(ctx context.Context, privateKeyHex, polyAddress string, nonce int64, poly1271 bool) (apiKey, secret, passphrase string, err error) {
 	api := clobBaseURL + "/auth/derive-api-key"
 	logger.InfoZ(ctx, "polymarket-DeriveAPIKey-Req",
-		zap.String("signerAddress", signerAddress),
+		zap.String("polyAddress", polyAddress),
+		zap.Bool("poly1271", poly1271),
 		zap.Int64("nonce", nonce),
 		zap.String("endpoint", api))
-	headers, err := p.buildL1AuthHeaders(ctx, privateKeyHex, signerAddress, nonce)
+	headers, err := p.buildL1AuthHeaders(ctx, privateKeyHex, polyAddress, nonce, poly1271)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -1393,7 +1418,7 @@ func (p *Polymarket) deriveAPIKeyWithNonce(ctx context.Context, privateKeyHex, s
 	if err != nil {
 		return "", "", "", err
 	}
-	logClobAPICreds(ctx, "polymarket-DeriveAPIKey-Resp", signerAddress, result.APIKey, result.Secret, result.Passphrase)
+	logClobAPICreds(ctx, "polymarket-DeriveAPIKey-Resp", polyAddress, result.APIKey, result.Secret, result.Passphrase)
 	return result.APIKey, result.Secret, result.Passphrase, nil
 }
 
@@ -1911,6 +1936,8 @@ func (p *Polymarket) buildAuthHeaders(ctx context.Context, method, path string, 
 		headers["POLY_PASSPHRASE"] = polymarketAccount.APIPassphrase
 		headers["POLY_TIMESTAMP"] = timestamp
 		headers["POLY_SIGNATURE"] = signature
+		// L2 POLY_ADDRESS = API Key 绑定地址（EOA derive 出来的 Key 必须用 EOA）。
+		// Deposit（proxy）只进订单 maker/signer，不进 L2 头。
 		if polymarketAccount.EOAAddress != "" {
 			headers["POLY_ADDRESS"] = polymarketAccount.EOAAddress
 		} else if polymarketAccount.ProxyAddress != "" {

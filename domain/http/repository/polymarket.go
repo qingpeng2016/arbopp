@@ -69,6 +69,9 @@ type PolymarketRepo interface {
 	// CreateAPIKey 创建私钥
 	CreateAPIKey(ctx context.Context, privateKeyHex, signerAddress string) (apiKey, secret, passphrase string, err error)
 
-	// CreateOrDeriveAPIKey 用私钥换 CLOB L2 三件套（nonce=0：先 create，失败则 derive）。
+	// CreateOrDeriveAPIKey 用私钥换 CLOB L2 三件套（nonce=0：先 create，失败则 derive；EOA 绑定）。
 	CreateOrDeriveAPIKey(ctx context.Context, privateKeyHex, signerAddress string) (apiKey, secret, passphrase string, err error)
+
+	// CreateOrDeriveAPIKeyPoly1271 把 L2 凭证绑到 deposit wallet（ERC-7739 包装 ClobAuth）。
+	CreateOrDeriveAPIKeyPoly1271(ctx context.Context, privateKeyHex, depositWallet string) (apiKey, secret, passphrase string, err error)
 }

@@ -32,6 +32,14 @@ const (
 
 	domainTypeStringV2 = "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
 
+	// L1 ClobAuthDomain 没有 verifyingContract，与下单 Exchange domain 不同。
+	l1DomainTypeString = "EIP712Domain(string name,string version,uint256 chainId)"
+
+	clobAuthTypeString = "ClobAuth(address address,string timestamp,uint256 nonce,string message)"
+
+	soladyTypeStringClobAuth = "TypedDataSign(ClobAuth contents,string name,string version,uint256 chainId," +
+		"address verifyingContract,bytes32 salt)" + clobAuthTypeString
+
 	depositWalletDomainNameV2    = "DepositWallet"
 	depositWalletDomainVersionV2 = "1"
 )
@@ -415,4 +423,98 @@ func concatBytes(parts ...[]byte) []byte {
 		out = append(out, p...)
 	}
 	return out
+}
+
+// buildPoly1271ClobAuthSignature 用 ERC-7739 TypedDataSign 包装 ClobAuth，供 L1 create/derive
+// 把 API Key 绑到 deposit wallet（POLY_ADDRESS=deposit），而不是 EOA。
+//
+// 形状与下单 POLY_1271 一致，只是 contents=ClobAuth、appDomain=ClobAuthDomain（无 verifyingContract）：
+//
+//	innerECDSA(65) || appDomainSep(32) || contentsHash(32) || ClobAuthTypeString || len(2 BE)
+func (p *Polymarket) buildPoly1271ClobAuthSignature(
+	privateKeyHex, depositWallet, timestamp string, nonce int64,
+) (string, error) {
+	depositWallet = strings.TrimSpace(depositWallet)
+	if depositWallet == "" {
+		return "", fmt.Errorf("POLY_1271 L1 auth requires deposit wallet address")
+	}
+	digest, appDomainSep, contentsHash, err := p.poly1271ClobAuthDigest(depositWallet, timestamp, nonce)
+	if err != nil {
+		return "", err
+	}
+	innerSig, err := signLocal(privateKeyHex, digest)
+	if err != nil {
+		return "", fmt.Errorf("ClobAuth inner ECDSA sign: %w", err)
+	}
+	if len(innerSig) != 65 {
+		return "", fmt.Errorf("unexpected ClobAuth inner sig length: %d", len(innerSig))
+	}
+	if innerSig[64] < 27 {
+		innerSig[64] += 27
+	}
+
+	contentsTypeBytes := []byte(clobAuthTypeString)
+	lenBytes := make([]byte, 2)
+	binary.BigEndian.PutUint16(lenBytes, uint16(len(contentsTypeBytes)))
+
+	final := make([]byte, 0, len(innerSig)+32+32+len(contentsTypeBytes)+2)
+	final = append(final, innerSig...)
+	final = append(final, appDomainSep...)
+	final = append(final, contentsHash...)
+	final = append(final, contentsTypeBytes...)
+	final = append(final, lenBytes...)
+	return hexutil.Encode(final), nil
+}
+
+// poly1271ClobAuthDigest 推导 L1 ClobAuth 的 ERC-7739 内层 digest。
+// ClobAuth.address / TypedDataSign.verifyingContract / POLY_ADDRESS 都是 deposit wallet。
+func (p *Polymarket) poly1271ClobAuthDigest(
+	depositWallet, timestamp string, nonce int64,
+) (digest, appDomainSep, contentsHash []byte, err error) {
+	chainIDBytes := common.LeftPadBytes(big.NewInt(int64(eip712ChainID)).Bytes(), 32)
+	depositBytes := common.LeftPadBytes(common.HexToAddress(depositWallet).Bytes(), 32)
+
+	// (1) appDomainSep = ClobAuthDomain separator（无 verifyingContract）
+	appDomainSep = crypto.Keccak256(concatBytes(
+		crypto.Keccak256([]byte(l1DomainTypeString)),
+		crypto.Keccak256([]byte("ClobAuthDomain")),
+		crypto.Keccak256([]byte(clobAuthDomainVersion)),
+		chainIDBytes,
+	))
+
+	// (2) contentsHash = keccak(ClobAuth typeHash || encode fields)，address=deposit
+	clobAuthTypeHash := crypto.Keccak256([]byte(clobAuthTypeString))
+	encoded := make([]byte, 0, 32*5)
+	encoded = append(encoded, clobAuthTypeHash...)
+	for _, f := range []struct {
+		kind string
+		val  interface{}
+	}{
+		{"address", strings.ToLower(depositWallet)},
+		{"string", timestamp},
+		{"uint256", nonce},
+		{"string", clobAuthMessage},
+	} {
+		enc, encErr := p.encodeValue(f.kind, f.val)
+		if encErr != nil {
+			return nil, nil, nil, fmt.Errorf("encode ClobAuth field %s: %w", f.kind, encErr)
+		}
+		encoded = append(encoded, enc...)
+	}
+	contentsHash = crypto.Keccak256(encoded)
+
+	// (3) TypedDataSign struct hash：DepositWallet domain，verifyingContract=deposit
+	tdsHash := crypto.Keccak256(concatBytes(
+		crypto.Keccak256([]byte(soladyTypeStringClobAuth)),
+		contentsHash,
+		crypto.Keccak256([]byte(depositWalletDomainNameV2)),
+		crypto.Keccak256([]byte(depositWalletDomainVersionV2)),
+		chainIDBytes,
+		depositBytes,
+		make([]byte, 32),
+	))
+
+	// (4) digest = keccak(0x1901 || appDomainSep || tdsHash)
+	digest = crypto.Keccak256(concatBytes([]byte{0x19, 0x01}, appDomainSep, tdsHash))
+	return digest, appDomainSep, contentsHash, nil
 }
