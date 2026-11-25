@@ -217,6 +217,20 @@ func TestCanonicalOutcomeNormPolyCode(t *testing.T) {
 	}
 }
 
+func TestCanonicalOutcomeNormSxbetTieIsDraw(t *testing.T) {
+	n := canonicalOutcomeNorm(appcommon.PlatformSxbet, "Tie", "")
+	if n != "draw" {
+		t.Fatalf("sx tie: %q want draw", n)
+	}
+	team, ok := outcomeTeamFromName("Tie vs Not tie [1X2]")
+	if !ok {
+		t.Fatal("parse Tie vs Not tie")
+	}
+	if canonicalOutcomeNorm(appcommon.PlatformSxbet, team, "") != "draw" {
+		t.Fatalf("sx Tie vs Not tie → %q / %q want draw", team, canonicalOutcomeNorm(appcommon.PlatformSxbet, team, ""))
+	}
+}
+
 func TestBuildMapKeyLength(t *testing.T) {
 	key := buildMapKey("英超", "epl-ast-sun-2026-11-21", "arsenal")
 	if key == "" || len(key) > 192 {

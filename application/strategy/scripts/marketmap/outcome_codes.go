@@ -105,8 +105,9 @@ func canonicalOutcomeNorm(platform, team, polySlug string) string {
 		}
 	}
 	n := normalizeTeam(team)
-	if n == "draw" {
-		return n
+	// SX 1X2 平局盘标题为 "Tie vs Not tie"，归一后是 tie；与 Poly/Predict 的 draw 对齐。
+	if n == "draw" || n == "tie" {
+		return "draw"
 	}
 	if a, ok := outcomeNormAliases[n]; ok {
 		return a

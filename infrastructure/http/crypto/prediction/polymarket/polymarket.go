@@ -1289,6 +1289,10 @@ func (p *Polymarket) signL1AuthMessage(privateKeyHex, address, timestamp string,
 	if err != nil {
 		return "", err
 	}
+	// go-ethereum 返回 v∈{0,1}；CLOB L1（create/derive-api-key）按 eth_account 要 27/28，否则 401。
+	if len(sig) == 65 && sig[64] < 27 {
+		sig[64] += 27
+	}
 	return hexutil.Encode(sig), nil
 }
 
@@ -1326,11 +1330,24 @@ func (p *Polymarket) buildL1AuthHeaders(ctx context.Context, privateKeyHex, sign
 
 // CreateAPIKey 使用私钥创建 L2 API 凭证（L1 认证：POST /auth/api-key）
 func (p *Polymarket) CreateAPIKey(ctx context.Context, privateKeyHex, signerAddress string) (apiKey, secret, passphrase string, err error) {
+	return p.createAPIKeyWithNonce(ctx, privateKeyHex, signerAddress, time.Now().UnixNano())
+}
+
+// CreateOrDeriveAPIKey 官方默认 nonce=0：先 create，失败则 derive 已有凭证。
+func (p *Polymarket) CreateOrDeriveAPIKey(ctx context.Context, privateKeyHex, signerAddress string) (apiKey, secret, passphrase string, err error) {
+	apiKey, secret, passphrase, err = p.createAPIKeyWithNonce(ctx, privateKeyHex, signerAddress, 0)
+	if err == nil && strings.TrimSpace(apiKey) != "" && strings.TrimSpace(secret) != "" {
+		return apiKey, secret, passphrase, nil
+	}
+	return p.deriveAPIKeyWithNonce(ctx, privateKeyHex, signerAddress, 0)
+}
+
+func (p *Polymarket) createAPIKeyWithNonce(ctx context.Context, privateKeyHex, signerAddress string, nonce int64) (apiKey, secret, passphrase string, err error) {
 	api := clobBaseURL + "/auth/api-key"
 	logger.InfoZ(ctx, "polymarket-CreateAPIKey-Req",
 		zap.String("signerAddress", signerAddress),
+		zap.Int64("nonce", nonce),
 		zap.String("endpoint", api))
-	nonce := time.Now().UnixNano()
 	headers, err := p.buildL1AuthHeaders(ctx, privateKeyHex, signerAddress, nonce)
 	if err != nil {
 		notification.SendErrorLog(ctx, "polymarket-CreateAPIKey-Resp",
@@ -1346,29 +1363,67 @@ func (p *Polymarket) CreateAPIKey(ctx context.Context, privateKeyHex, signerAddr
 			zap.Error(err))
 		return "", "", "", fmt.Errorf("create api key request failed: %w", err)
 	}
-	var result struct {
-		APIKey     string `json:"apiKey"`
-		Secret     string `json:"secret"`
-		Passphrase string `json:"passphrase"`
-	}
-	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+	result, err := parseClobAPICreds(resp.Body())
+	if err != nil {
 		notification.SendErrorLog(ctx, "polymarket-CreateAPIKey-Resp",
 			zap.String("signerAddress", signerAddress),
 			zap.String("rawBody", string(resp.Body())),
 			zap.Error(err))
-		return "", "", "", fmt.Errorf("parse create api key response: %w", err)
+		return "", "", "", err
 	}
-	// 响应详细打印（脱敏：apiKey 只打前8位，secret/passphrase 只打长度）
-	apiKeyMask := result.APIKey
+	logClobAPICreds(ctx, "polymarket-CreateAPIKey-Resp", signerAddress, result.APIKey, result.Secret, result.Passphrase)
+	return result.APIKey, result.Secret, result.Passphrase, nil
+}
+
+func (p *Polymarket) deriveAPIKeyWithNonce(ctx context.Context, privateKeyHex, signerAddress string, nonce int64) (apiKey, secret, passphrase string, err error) {
+	api := clobBaseURL + "/auth/derive-api-key"
+	logger.InfoZ(ctx, "polymarket-DeriveAPIKey-Req",
+		zap.String("signerAddress", signerAddress),
+		zap.Int64("nonce", nonce),
+		zap.String("endpoint", api))
+	headers, err := p.buildL1AuthHeaders(ctx, privateKeyHex, signerAddress, nonce)
+	if err != nil {
+		return "", "", "", err
+	}
+	resp, err := p.client.Get(ctx, api, nil, headers)
+	if err != nil {
+		return "", "", "", fmt.Errorf("derive api key request failed: %w", err)
+	}
+	result, err := parseClobAPICreds(resp.Body())
+	if err != nil {
+		return "", "", "", err
+	}
+	logClobAPICreds(ctx, "polymarket-DeriveAPIKey-Resp", signerAddress, result.APIKey, result.Secret, result.Passphrase)
+	return result.APIKey, result.Secret, result.Passphrase, nil
+}
+
+type clobAPICreds struct {
+	APIKey     string `json:"apiKey"`
+	Secret     string `json:"secret"`
+	Passphrase string `json:"passphrase"`
+}
+
+func parseClobAPICreds(body []byte) (clobAPICreds, error) {
+	var result clobAPICreds
+	if err := json.Unmarshal(body, &result); err != nil {
+		return result, fmt.Errorf("parse clob api creds: %w", err)
+	}
+	if strings.TrimSpace(result.APIKey) == "" || strings.TrimSpace(result.Secret) == "" {
+		return result, fmt.Errorf("clob api creds empty: body=%s", string(body))
+	}
+	return result, nil
+}
+
+func logClobAPICreds(ctx context.Context, event, signerAddress, apiKey, secret, passphrase string) {
+	apiKeyMask := apiKey
 	if len(apiKeyMask) > 8 {
 		apiKeyMask = apiKeyMask[:8] + "***"
 	}
-	logger.InfoZ(ctx, "polymarket-CreateAPIKey-Resp",
+	logger.InfoZ(ctx, event,
 		zap.String("signerAddress", signerAddress),
 		zap.String("apiKeyMask", apiKeyMask),
-		zap.Int("secretLen", len(result.Secret)),
-		zap.Int("passphraseLen", len(result.Passphrase)))
-	return result.APIKey, result.Secret, result.Passphrase, nil
+		zap.Int("secretLen", len(secret)),
+		zap.Int("passphraseLen", len(passphrase)))
 }
 
 // cancelOrders 批量取消订单（CLOB DELETE /orders）

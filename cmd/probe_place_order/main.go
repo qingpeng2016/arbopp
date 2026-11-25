@@ -1,8 +1,9 @@
-// 实盘下单探针：按 map_key 找多平台 moneyline YES 市场，并发拉盘口，
-// CheckOrderSize 通过后调用 strategy_entry/broker.SendOnOutcome 并发买 YES。
+// 实盘下单探针：只测 broker.SendOnOutcome（不跑策略筛选）。
+// 默认 mode=1x2_yes：平+主+客 各买 YES 一腿，尽量凑满 3 个平台（含 SX）。
 //
-//	RUN_CONF=conf/local.conf.yaml go run ./cmd/probe_place_order -map_key='v1|亚冠|acle-xxx'
-//	RUN_CONF=conf/local.conf.yaml go run ./cmd/probe_place_order -map_key='...' -group=qadsiah -live
+//	RUN_CONF=conf/local.conf.yaml go run ./cmd/probe_place_order -map_key='v1|阿甲|arg-boc-riv1-2026-11-25'
+//	RUN_CONF=conf/local.conf.yaml go run ./cmd/probe_place_order -map_key='...' -live
+//	RUN_CONF=conf/local.conf.yaml go run ./cmd/probe_place_order -map_key='...' -mode=group -group=draw
 package main
 
 import (
@@ -38,14 +39,15 @@ import (
 
 func main() {
 	mapKey := flag.String("map_key", "", "场次 map_key（必填）")
-	groupFilter := flag.String("group", "", "OutcomeGroup 子串过滤（队名/draw 等）；空则自动选首个≥2平台组")
+	mode := flag.String("mode", "1x2_yes", "1x2_yes=平+主+客三腿买YES（默认）；group=同一 OutcomeGroup 多平台")
+	groupFilter := flag.String("group", "", "mode=group 时 OutcomeGroup 子串过滤")
 	live := flag.Bool("live", false, "真正发单；默认只打印检查结果（dry-run）")
 	listOnly := flag.Bool("list", false, "只列出该 map_key 下 moneyline YES 分组后退出")
 	flag.Parse()
 
 	mk := strings.TrimSpace(*mapKey)
 	if mk == "" {
-		fmt.Fprintln(os.Stderr, "usage: -map_key=v1|联赛|fixture [-group=team] [-live] [-list]")
+		fmt.Fprintln(os.Stderr, "usage: -map_key=v1|联赛|fixture [-mode=1x2_yes|group] [-live] [-list]")
 		os.Exit(2)
 	}
 
@@ -83,12 +85,27 @@ func main() {
 		return
 	}
 
-	picked, ok := pickGroup(groups, strings.TrimSpace(*groupFilter))
-	if !ok {
-		fmt.Fprintln(os.Stderr, "未选中可用 OutcomeGroup（需要≥2 个平台）；用 -group= 指定或检查 map_key")
-		os.Exit(1)
+	var picked outcomeGroup
+	var ok bool
+	switch strings.ToLower(strings.TrimSpace(*mode)) {
+	case "group":
+		picked, ok = pickGroup(groups, strings.TrimSpace(*groupFilter))
+		if !ok {
+			fmt.Fprintln(os.Stderr, "未选中可用 OutcomeGroup（需要≥2 个平台）；用 -group= 指定")
+			os.Exit(1)
+		}
+		fmt.Printf("\n选用 group=%s platforms=%d\n", picked.key, len(picked.legs))
+	default: // 1x2_yes
+		picked, ok = pickOneX2YesLegs(groups)
+		if !ok {
+			fmt.Fprintln(os.Stderr, "无法凑齐 1X2 三腿（draw/tie + 两队）；用 -list 看分组")
+			os.Exit(1)
+		}
+		fmt.Printf("\n选用 1x2_yes 三腿（仅测下单，不做策略过滤）:\n")
+		for _, l := range picked.legs {
+			fmt.Printf("  %s role=%s outcome_id=%d\n", l.platform, l.role, l.oc.ID)
+		}
 	}
-	fmt.Printf("\n选用 group=%s platforms=%d\n", picked.key, len(picked.legs))
 
 	store := book.NewStore()
 	wgWatch := &watchgroup.Watch{
@@ -161,8 +178,8 @@ func main() {
 	}
 
 	for _, leg := range picked.legs {
-		if !canTrade(leg.platform, creds, poly, kalshi, predict, sxbet) {
-			fmt.Fprintf(os.Stderr, "platform %s 无可用账号/客户端，中止\n", leg.platform)
+		if why := tradeBlockReason(leg.platform, creds, poly, kalshi, predict, sxbet); why != "" {
+			fmt.Fprintf(os.Stderr, "platform %s 不能发单：%s\n", leg.platform, why)
 			os.Exit(1)
 		}
 	}
@@ -218,6 +235,7 @@ func main() {
 type legRef struct {
 	platform string
 	idx      int
+	role     string // draw / team_a / team_b / ""
 	oc       *persistententity.MarketOutcome
 }
 
@@ -357,6 +375,119 @@ func pickGroup(groups []outcomeGroup, filter string) (outcomeGroup, bool) {
 		return candidates[i].key < candidates[j].key
 	})
 	return candidates[0], true
+}
+
+func outcomeNormSuffix(groupKey string) string {
+	parts := strings.Split(groupKey, "|")
+	if len(parts) == 0 {
+		return ""
+	}
+	return parts[len(parts)-1]
+}
+
+func normsCompatible(a, b string) bool {
+	a, b = strings.ToLower(a), strings.ToLower(b)
+	if a == "" || b == "" {
+		return false
+	}
+	if a == b {
+		return true
+	}
+	return strings.Contains(a, b) || strings.Contains(b, a)
+}
+
+// pickOneX2YesLegs 平+主+客各一腿买 YES；探针专用，不做 SameSettlementScope。
+// 队名模糊合并（ca_boca_juniors ≈ boca_juniors），平台尽量互异并优先带上 SXBET。
+func pickOneX2YesLegs(groups []outcomeGroup) (outcomeGroup, bool) {
+	type bucket struct {
+		norm string
+		legs []legRef
+	}
+	var draw *bucket
+	var teams []bucket
+	for _, g := range groups {
+		norm := outcomeNormSuffix(g.key)
+		if norm == "" {
+			continue
+		}
+		if norm == "draw" || norm == "tie" {
+			if draw == nil {
+				draw = &bucket{norm: "draw"}
+			}
+			draw.legs = append(draw.legs, g.legs...)
+			continue
+		}
+		merged := false
+		for i := range teams {
+			if normsCompatible(teams[i].norm, norm) {
+				teams[i].legs = append(teams[i].legs, g.legs...)
+				if len(norm) > len(teams[i].norm) {
+					teams[i].norm = norm
+				}
+				merged = true
+				break
+			}
+		}
+		if !merged {
+			teams = append(teams, bucket{norm: norm, legs: append([]legRef{}, g.legs...)})
+		}
+	}
+	if draw == nil || len(teams) < 2 {
+		return outcomeGroup{}, false
+	}
+	sort.Slice(teams, func(i, j int) bool { return teams[i].norm < teams[j].norm })
+	roles := []struct {
+		role string
+		legs []legRef
+	}{
+		{"draw", draw.legs},
+		{"team_a", teams[0].legs},
+		{"team_b", teams[1].legs},
+	}
+
+	usedPlat := map[string]bool{}
+	pickFrom := func(legs []legRef, preferSX bool) (legRef, bool) {
+		var cand []legRef
+		for _, l := range legs {
+			if usedPlat[l.platform] {
+				continue
+			}
+			cand = append(cand, l)
+		}
+		if len(cand) == 0 {
+			for _, l := range legs {
+				cand = append(cand, l)
+			}
+		}
+		if len(cand) == 0 {
+			return legRef{}, false
+		}
+		sort.Slice(cand, func(i, j int) bool {
+			if preferSX {
+				iSX := strings.EqualFold(cand[i].platform, appcommon.PlatformSxbet)
+				jSX := strings.EqualFold(cand[j].platform, appcommon.PlatformSxbet)
+				if iSX != jSX {
+					return iSX
+				}
+			}
+			return cand[i].platform < cand[j].platform
+		})
+		return cand[0], true
+	}
+
+	out := outcomeGroup{key: "1x2_yes"}
+	for i, r := range roles {
+		preferSX := i == 0 // 平局腿优先 SX，验证 SX 下单
+		l, ok := pickFrom(r.legs, preferSX)
+		if !ok {
+			return outcomeGroup{}, false
+		}
+		l.role = r.role
+		l.idx = i
+		usedPlat[l.platform] = true
+		out.legs = append(out.legs, l)
+	}
+	return out, true
 }
 
 func fetchBooksConcurrent(
@@ -668,16 +799,41 @@ func loadCreds(ctx context.Context, repo persistentrepo.AccountRepo) activeCreds
 }
 
 func canTrade(platform string, c activeCreds, poly httprepo.PolymarketRepo, kalshi httprepo.KalshiRepo, predict httprepo.PredictRepo, sxbet httprepo.SxbetRepo) bool {
+	return tradeBlockReason(platform, c, poly, kalshi, predict, sxbet) == ""
+}
+
+func tradeBlockReason(platform string, c activeCreds, poly httprepo.PolymarketRepo, kalshi httprepo.KalshiRepo, predict httprepo.PredictRepo, sxbet httprepo.SxbetRepo) string {
 	switch strings.ToUpper(strings.TrimSpace(platform)) {
 	case appcommon.PlatformKalshi:
-		return c.kalshiOK && kalshi != nil
+		if kalshi == nil {
+			return "客户端未加载"
+		}
+		if !c.kalshiOK {
+			return "account 缺 ACTIVE 发单凭证（需 api_key + api_secret_enc）"
+		}
 	case appcommon.PlatformPredict:
-		return c.predictOK && predict != nil
+		if predict == nil {
+			return "客户端未加载"
+		}
+		if !c.predictOK {
+			return "account 缺 ACTIVE 发单凭证（需 api_key + private_key_enc）"
+		}
 	case appcommon.PlatformSxbet:
-		return c.sxbetOK && sxbet != nil
+		if sxbet == nil {
+			return "客户端未加载"
+		}
+		if !c.sxbetOK {
+			return "account 缺 ACTIVE 发单凭证（需 api_key + private_key_enc + proxy_address；仅有 platform.extra api_key 只能拉盘口不能下单）"
+		}
 	default:
-		return c.polyOK && poly != nil
+		if poly == nil {
+			return "客户端未加载"
+		}
+		if !c.polyOK {
+			return "account 缺 ACTIVE 发单凭证（需 api_key/secret/passphrase + private_key_enc + 地址）"
+		}
 	}
+	return ""
 }
 
 func polyAccount(a persistententity.Account) (httpentity.PolymarketAccount, bool) {

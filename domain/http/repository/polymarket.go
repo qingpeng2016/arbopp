@@ -68,4 +68,7 @@ type PolymarketRepo interface {
 
 	// CreateAPIKey 创建私钥
 	CreateAPIKey(ctx context.Context, privateKeyHex, signerAddress string) (apiKey, secret, passphrase string, err error)
+
+	// CreateOrDeriveAPIKey 用私钥换 CLOB L2 三件套（nonce=0：先 create，失败则 derive）。
+	CreateOrDeriveAPIKey(ctx context.Context, privateKeyHex, signerAddress string) (apiKey, secret, passphrase string, err error)
 }
