@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS `account` (
   `login_password_enc` varchar(512) DEFAULT NULL,
   `fg_token_enc` varchar(512) DEFAULT NULL COMMENT 'Foregate 账号 token',
   `order_max_pending_time` int DEFAULT NULL COMMENT '挂单超时分钟',
+  `origin_total_amount` decimal(20,8) DEFAULT NULL COMMENT '总的初始资金',
   `config` text COMMENT '扩展 JSON',
   `remark` varchar(500) NOT NULL DEFAULT '',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,

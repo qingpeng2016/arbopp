@@ -27,6 +27,7 @@ type Account struct {
 	LoginPasswordEnc        *string   `gorm:"column:login_password_enc;type:varchar(512)"`
 	FgTokenEnc              *string   `gorm:"column:fg_token_enc;type:varchar(512)"`
 	OrderMaxPendingTime     *int      `gorm:"column:order_max_pending_time;type:int"`
+	OriginTotalAmount       *float64  `gorm:"column:origin_total_amount;type:decimal(20,8)"` // 账户初始总资金（手工维护，无业务逻辑）
 	Config                  *string   `gorm:"column:config;type:text"`
 	Remark                  string    `gorm:"column:remark;type:varchar(500);not null;default:''"`
 	CreatedAt               time.Time `gorm:"column:created_at;type:datetime;not null;default:CURRENT_TIMESTAMP"`
