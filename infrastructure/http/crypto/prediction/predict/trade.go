@@ -3,6 +3,7 @@ package predict
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/big"
 	"net/url"
 	"strconv"
@@ -147,7 +148,7 @@ func (c *Client) GetOrderByHash(ctx context.Context, acc httpentity.PredictAccou
 	if c == nil {
 		return nil, fmt.Errorf("predict client is nil")
 	}
-	orderHash = strings.TrimSpace(orderHash)
+	orderHash = strings.ToLower(strings.TrimSpace(orderHash))
 	if orderHash == "" {
 		return nil, fmt.Errorf("predict order hash required")
 	}
@@ -176,6 +177,14 @@ func (c *Client) GetOrderByHash(ctx context.Context, acc httpentity.PredictAccou
 	}
 	if out.OrderHash == "" {
 		out.OrderHash = orderHash
+	} else {
+		out.OrderHash = strings.ToLower(out.OrderHash)
+	}
+	// amountFilled 仍为 0 时，用 matches.amountFilled 兜底（已撮合未结算 / 字段空）。
+	if out.AmountFilled <= 0 {
+		if fill, err := c.sumMatchFillShares(ctx, apiKey, jwt, out.OrderHash); err == nil && fill > 0 {
+			out.AmountFilled = fill
+		}
 	}
 	// 手续费从 matches 汇总（可选；失败不挡查单）。
 	if fee, err := c.sumMatchFees(ctx, apiKey, jwt, out.OrderHash); err == nil {
@@ -185,18 +194,12 @@ func (c *Client) GetOrderByHash(ctx context.Context, acc httpentity.PredictAccou
 }
 
 func (c *Client) sumMatchFees(ctx context.Context, apiKey, jwt, orderHash string) (float64, error) {
-	q := url.Values{}
-	q.Set("orderHashes", orderHash)
-	q.Set("first", "50")
-	var resp httpentity.PredictGetMatchesResponse
-	if err := c.doGETAuth(ctx, apiKey, jwt, "/orders/matches", q, &resp); err != nil {
+	matches, err := c.listMatchesByOrderHash(ctx, apiKey, jwt, orderHash)
+	if err != nil {
 		return 0, err
 	}
-	if !resp.Success {
-		return 0, fmt.Errorf("predict matches: %s", apiErr(resp.Message, resp.Error))
-	}
 	var sum float64
-	for _, m := range resp.Data {
+	for _, m := range matches {
 		sum += matchFeeUSDT(m.TakerFee)
 		if m.TakerFee == nil {
 			sum += weiStringToShares(m.TakerFeeAmount) // 兼容旧字段，按 COLLATERAL 口径
@@ -209,6 +212,32 @@ func (c *Client) sumMatchFees(ctx context.Context, apiKey, jwt, orderHash string
 		}
 	}
 	return sum, nil
+}
+
+func (c *Client) sumMatchFillShares(ctx context.Context, apiKey, jwt, orderHash string) (float64, error) {
+	matches, err := c.listMatchesByOrderHash(ctx, apiKey, jwt, orderHash)
+	if err != nil {
+		return 0, err
+	}
+	var sum float64
+	for _, m := range matches {
+		sum += weiStringToShares(m.AmountFilled)
+	}
+	return sum, nil
+}
+
+func (c *Client) listMatchesByOrderHash(ctx context.Context, apiKey, jwt, orderHash string) ([]httpentity.PredictMatchEvent, error) {
+	q := url.Values{}
+	q.Set("orderHashes", orderHash)
+	q.Set("first", "50")
+	var resp httpentity.PredictGetMatchesResponse
+	if err := c.doGETAuth(ctx, apiKey, jwt, "/orders/matches", q, &resp); err != nil {
+		return nil, err
+	}
+	if !resp.Success {
+		return nil, fmt.Errorf("predict matches: %s", apiErr(resp.Message, resp.Error))
+	}
+	return resp.Data, nil
 }
 
 func matchFeeUSDT(f *httpentity.PredictMatchFee) float64 {
@@ -228,8 +257,18 @@ func weiStringToShares(s string) float64 {
 		return 0
 	}
 	n := new(big.Int)
-	if _, ok := n.SetString(s, 10); !ok {
+	if _, ok := n.SetString(s, 10); ok {
+		return weiToFloatShares(n)
+	}
+	// 兼容十进制字符串（非纯整型 wei）
+	f, _, err := big.ParseFloat(s, 10, 256, big.ToNearestEven)
+	if err != nil {
 		return 0
 	}
-	return weiToFloatShares(n)
+	f.Quo(f, big.NewFloat(weiPrecision))
+	out, _ := f.Float64()
+	if out < 0 || math.IsNaN(out) || math.IsInf(out, 0) {
+		return 0
+	}
+	return out
 }

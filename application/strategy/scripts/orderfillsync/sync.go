@@ -260,8 +260,17 @@ func (s *Sync) queryFill(ctx context.Context, row *persistententity.ArbBinaryOrd
 			return 0, 0, "", err
 		}
 		fill = book.ParseNum(detail.Order.SizeMatched)
+		// size_matched 为空/0 时用 trades 按 taker_order_id 汇总（官方也建议如此兜底）
+		if fill <= 0 {
+			fill = s.polyFillFromTrades(ctx, creds.poly, oid, row.TokenID)
+		}
 		fee = s.polyFee(ctx, creds.poly, oid, row.TokenID)
-		return fill, fee, string(detail.Order.Status), nil
+		st := strings.TrimSpace(string(detail.Order.Status))
+		logger.InfoZ(ctx, "order_fill_sync-poly-query",
+			zap.Uint("id", row.ID), zap.String("oid", oid),
+			zap.String("exch_status", st), zap.Float64("size_matched", book.ParseNum(detail.Order.SizeMatched)),
+			zap.Float64("fill", fill))
+		return fill, fee, st, nil
 
 	case appcommon.PlatformPredict:
 		if s.predict == nil || !creds.predOK {
@@ -271,6 +280,10 @@ func (s *Sync) queryFill(ctx context.Context, row *persistententity.ArbBinaryOrd
 		if err != nil {
 			return 0, 0, "", err
 		}
+		logger.InfoZ(ctx, "order_fill_sync-predict-query",
+			zap.Uint("id", row.ID), zap.String("oid", oid),
+			zap.String("exch_status", d.Status), zap.Float64("amount_filled", d.AmountFilled),
+			zap.Float64("amount", d.Amount))
 		return d.AmountFilled, d.FeeUSDT, d.Status, nil
 
 	case appcommon.PlatformSxbet:
@@ -294,15 +307,9 @@ func (s *Sync) queryFill(ctx context.Context, row *persistententity.ArbBinaryOrd
 }
 
 func (s *Sync) polyFee(ctx context.Context, acc httpentity.PolymarketAccount, orderID, tokenID string) float64 {
-	tr, err := s.poly.GetTrades(ctx, httpentity.GetTradesReq{TokenID: tokenID, Limit: 50}, acc)
-	if err != nil || tr == nil {
-		return 0
-	}
+	tr := s.polyTradesForOrder(ctx, acc, orderID, tokenID)
 	var fee float64
-	for _, t := range tr.Trades {
-		if !strings.EqualFold(t.TakerOrderID, orderID) {
-			continue
-		}
+	for _, t := range tr {
 		sz := book.ParseNum(t.Size)
 		px := book.ParseNum(t.Price)
 		bps := book.ParseNum(t.FeeRateBps)
@@ -314,6 +321,38 @@ func (s *Sync) polyFee(ctx context.Context, acc httpentity.PolymarketAccount, or
 		return 0
 	}
 	return fee
+}
+
+func (s *Sync) polyFillFromTrades(ctx context.Context, acc httpentity.PolymarketAccount, orderID, tokenID string) float64 {
+	var fill float64
+	for _, t := range s.polyTradesForOrder(ctx, acc, orderID, tokenID) {
+		fill += book.ParseNum(t.Size)
+	}
+	if math.IsNaN(fill) || math.IsInf(fill, 0) || fill < 0 {
+		return 0
+	}
+	return fill
+}
+
+func (s *Sync) polyTradesForOrder(ctx context.Context, acc httpentity.PolymarketAccount, orderID, tokenID string) []httpentity.Trade {
+	if s.poly == nil || strings.TrimSpace(orderID) == "" {
+		return nil
+	}
+	req := httpentity.GetTradesReq{Limit: 100}
+	if strings.TrimSpace(tokenID) != "" {
+		req.TokenID = tokenID
+	}
+	tr, err := s.poly.GetTrades(ctx, req, acc)
+	if err != nil || tr == nil {
+		return nil
+	}
+	out := make([]httpentity.Trade, 0)
+	for _, t := range tr.Trades {
+		if strings.EqualFold(t.TakerOrderID, orderID) {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 func statusFromFill(fill, qty float64) string {
@@ -346,10 +385,10 @@ func resolveFillUpdate(prevFill, fill, qty float64, exchangeStatus string) (outF
 			return 0, "PENDING", false
 		}
 		return fill, statusFromFill(fill, qty), true
-	case "CANCELLED", "CANCELED", "EXPIRED", "INVALIDATED":
+	case "CANCELLED", "CANCELED", "CANCELED_MARKET_RESOLVED", "EXPIRED", "INVALIDATED":
 		// 市价单未成交取消 → NO_FILL；有成交再取消剩余 → PARTIAL/FILLED。
 		return fill, statusFromFill(fill, qty), true
-	case "FAILED", "CREATE_FAILED", "REJECTED":
+	case "FAILED", "CREATE_FAILED", "REJECTED", "INVALID":
 		if fill > 0 {
 			return fill, statusFromFill(fill, qty), true
 		}

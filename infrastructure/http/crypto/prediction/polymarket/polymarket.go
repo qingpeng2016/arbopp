@@ -369,14 +369,14 @@ func (p *Polymarket) GetOrderById(ctx context.Context, req entity.GetOrderReq, p
 			zap.Error(err))
 		return nil, err
 	}
-	// CLOB /data/order/{id} 直接返回订单对象（不是 {order:{...}} 包装）
-	var order entity.OpenOrder
-	if err = json.Unmarshal(resp.Body(), &order); err != nil {
+	// CLOB 多为扁平 OpenOrder；旧实现/部分环境可能仍包一层 {"order":{...}}
+	order, err := parseOpenOrderBody(resp.Body())
+	if err != nil {
 		notification.SendErrorLog(ctx, "polymarket-GetOrderById-Resp",
 			zap.String("orderID", req.OrderID),
 			zap.String("rawBody", string(resp.Body())),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, err
 	}
 	out := &entity.GetOrderResp{Order: order}
 	outJSON, _ := json.Marshal(out)
@@ -384,6 +384,24 @@ func (p *Polymarket) GetOrderById(ctx context.Context, req entity.GetOrderReq, p
 		zap.String("orderID", req.OrderID),
 		zap.String("response", string(outJSON)))
 	return out, nil
+}
+
+func parseOpenOrderBody(body []byte) (entity.OpenOrder, error) {
+	var flat entity.OpenOrder
+	if err := json.Unmarshal(body, &flat); err != nil {
+		return entity.OpenOrder{}, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if strings.TrimSpace(flat.ID) != "" || strings.TrimSpace(flat.SizeMatched) != "" || strings.TrimSpace(string(flat.Status)) != "" {
+		return flat, nil
+	}
+	var wrapped entity.GetOrderResp
+	if err := json.Unmarshal(body, &wrapped); err != nil {
+		return flat, nil
+	}
+	if strings.TrimSpace(wrapped.Order.ID) != "" || strings.TrimSpace(wrapped.Order.SizeMatched) != "" {
+		return wrapped.Order, nil
+	}
+	return flat, nil
 }
 
 // GetTrades 查询成交记录（CLOB Go HTTP）

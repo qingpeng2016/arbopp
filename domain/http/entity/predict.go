@@ -166,8 +166,9 @@ type PredictGetMatchesResponse struct {
 
 // PredictMatchEvent 撮合事件（手续费字段做宽松解析）。
 type PredictMatchEvent struct {
-	TakerFeeAmount  string   `json:"takerFeeAmount"`
-	MakerFeeAmounts []string `json:"makerFeeAmounts"`
+	AmountFilled    string           `json:"amountFilled"` // 本笔撮合份额 wei
+	TakerFeeAmount  string           `json:"takerFeeAmount"`
+	MakerFeeAmounts []string         `json:"makerFeeAmounts"`
 	TakerFee        *PredictMatchFee `json:"takerFee"`
 	Makers          []struct {
 		Fee *PredictMatchFee `json:"fee"`
