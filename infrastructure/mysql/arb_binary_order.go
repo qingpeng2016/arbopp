@@ -111,3 +111,16 @@ func (r *ArbBinaryOrderImpl) HasNonTerminalByMapKey(ctx context.Context, mapKey 
 	}
 	return n > 0, nil
 }
+
+func (r *ArbBinaryOrderImpl) ListNonTerminalMapKeys(ctx context.Context) ([]string, error) {
+	var keys []string
+	err := r.db.WithContext(ctx).Model(&entity.ArbBinaryOrder{}).
+		Select("DISTINCT map_key").
+		Where("map_key <> ''").
+		Where("UPPER(TRIM(status)) NOT IN ?", orderTerminalStatuses).
+		Pluck("map_key", &keys).Error
+	if err != nil {
+		return nil, err
+	}
+	return keys, nil
+}

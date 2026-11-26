@@ -98,9 +98,9 @@ func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
 	ctx := r.grabContext()
 	mapKey := r.w.MapKey
 	persist := r.grabPersist()
-	openBlocked := r.blockingOpenOrders(ctx, mapKey)
+	openBlocked := r.blockingOpenOrders(mapKey)
 
-	// 选一份可下单的最优（成本最低且份额检查通过、账号可用）
+	// 选一份可下单的最优（成本最低、份额检查通过、账号可用、Predict 费后份额盖得住内存簿）
 	var tradePick FilledPick
 	var tradeOK bool
 	for _, fp := range all {
@@ -108,6 +108,12 @@ func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
 			continue
 		}
 		if !r.canTrade(fp.Yes.Platform) || !r.canTrade(fp.No.Platform) {
+			continue
+		}
+		if yesOK, _, _ := fp.Yes.PredictFeeSharesFitBook(fp.YesBuyYes, fp.Qty); !yesOK {
+			continue
+		}
+		if noOK, _, _ := fp.No.PredictFeeSharesFitBook(fp.NoBuyYes, fp.Qty); !noOK {
 			continue
 		}
 		if !tradeOK || fp.Per < tradePick.Per {
@@ -137,12 +143,20 @@ func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
 			fp.YesBuyYes == tradePick.YesBuyYes && fp.NoBuyYes == tradePick.NoBuyYes
 
 		hit := r.buildGrabHit(fp, lim)
+		yesFit, yesNeed, yesHave := fp.Yes.PredictFeeSharesFitBook(fp.YesBuyYes, fp.Qty)
+		noFit, noNeed, noHave := fp.No.PredictFeeSharesFitBook(fp.NoBuyYes, fp.Qty)
+		predBookSnap := map[string]any{
+			"predict_fee_shares": map[string]any{
+				"yes": map[string]any{"platform": fp.Yes.Platform, "need": yesNeed, "book": yesHave, "ok": yesFit},
+				"no":  map[string]any{"platform": fp.No.Platform, "need": noNeed, "book": noHave, "ok": noFit},
+			},
+		}
 		if isTradeLeg {
 			hit.DryRun = false
 			hit.YesFill, hit.NoFill, hit.YesErr, hit.NoErr = yesFill, noFill, yesErr, noErr
 			hit.YesSend, hit.NoSend = yesRes, noRes
 			hit.SkipOrderReason = ""
-			hit.ExtData = ExtDataJSON(fp.SizeCheck.Snapshot, map[string]any{
+			hit.ExtData = ExtDataJSON(fp.SizeCheck.Snapshot, predBookSnap, map[string]any{
 				"ordered": true, "order_qty": fp.Qty, "fill_yes": yesFill, "fill_no": noFill,
 			})
 		} else if !fp.SizeCheckOK {
@@ -153,6 +167,12 @@ func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
 			hit.ExtData = ExtDataJSON(fp.SizeCheck.Snapshot, map[string]any{
 				"skip_order_reason": "account_unavailable",
 				"platforms":         []string{fp.Yes.Platform, fp.No.Platform},
+			})
+		} else if !yesFit || !noFit {
+			hit.DryRun = true
+			hit.SkipOrderReason = "predict_fee_shares_gt_book"
+			hit.ExtData = ExtDataJSON(fp.SizeCheck.Snapshot, predBookSnap, map[string]any{
+				"skip_order_reason": "predict_fee_shares_gt_book",
 			})
 		} else if openBlocked {
 			hit.DryRun = true

@@ -202,13 +202,20 @@ func main() {
 			px, _, _ := es.TopAskSz(true)
 			orderQty := es.OrderShares(true, chk.Qty)
 			neg := broker.ReadNegRisk(leg.oc.Config)
+			slip := broker.PredictSlippage{
+				Bps:            int64(params.PredictSlippageBps),
+				IsMinAmountOut: params.PredictIsMinAmountOut,
+			}
+			if slip.Bps <= 0 {
+				slip.Bps = 200
+			}
 			res, err := broker.SendOnOutcome(
 				poly, kalshi, predict, sxbet,
 				broker.PolyCreds{Account: creds.poly, OK: creds.polyOK},
 				broker.KalshiCreds{Account: creds.kalshi, OK: creds.kalshiOK},
 				broker.PredictCreds{Account: creds.predict, OK: creds.predictOK},
 				broker.SxbetCreds{Account: creds.sxbet, OK: creds.sxbetOK},
-				leg.oc, true, px, orderQty, neg,
+				leg.oc, true, px, orderQty, neg, slip,
 			)
 			if err == nil {
 				res.Fill = es.FillToNet(true, res.Fill)

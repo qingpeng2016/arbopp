@@ -143,9 +143,15 @@ func SendKalshi(kalshi httprepo.KalshiRepo, cred KalshiCreds, oc *persistententi
 	return out, nil
 }
 
+// PredictSlippage MARKET 滑点（来自 config_strategy_threshold）。
+type PredictSlippage struct {
+	Bps            int64
+	IsMinAmountOut bool
+}
+
 // SendPredict Predict.fun MARKET（未成交取消≈FAK）；price=限价，qty=平台份额。
 // 深度由策略内存簿 SizeCheck 保证；此处把 outcome.config 里的签名参数带上，避免发单再 REST 拉盘口/市场。
-func SendPredict(predict httprepo.PredictRepo, cred PredictCreds, oc *persistententity.MarketOutcome, yes bool, price, qty float64, sell bool) (watchgroup.SendResult, error) {
+func SendPredict(predict httprepo.PredictRepo, cred PredictCreds, oc *persistententity.MarketOutcome, yes bool, price, qty float64, sell bool, slip PredictSlippage) (watchgroup.SendResult, error) {
 	out := watchgroup.SendResult{ClientOrderID: newClientOrderID()}
 	if predict == nil || oc == nil || qty <= 0 || !cred.OK {
 		return out, nil
@@ -157,13 +163,15 @@ func SendPredict(predict httprepo.PredictRepo, cred PredictCreds, oc *persistent
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	resp, err := predict.PlaceMarketOrder(ctx, cred.Account, httprepo.PredictMarketOrderReq{
-		MarketID:   strings.TrimSpace(oc.PlatformMarketOutcomeID),
-		TokenID:    token,
-		BuyYes:     yes,
-		Sell:       sell,
-		PriceLimit: price,
-		Quantity:   qty,
-		Market:     predictMarketMeta(oc),
+		MarketID:       strings.TrimSpace(oc.PlatformMarketOutcomeID),
+		TokenID:        token,
+		BuyYes:         yes,
+		Sell:           sell,
+		PriceLimit:     price,
+		Quantity:       qty,
+		SlippageBps:    slip.Bps,
+		IsMinAmountOut: slip.IsMinAmountOut,
+		Market:         predictMarketMeta(oc),
 	})
 	if err != nil || resp == nil {
 		if err == nil {
@@ -286,7 +294,7 @@ func SendSxbet(sxbet httprepo.SxbetRepo, cred SxbetCreds, oc *persistententity.M
 func SendOnOutcome(
 	poly httprepo.PolymarketRepo, kalshi httprepo.KalshiRepo, predict httprepo.PredictRepo, sxbet httprepo.SxbetRepo,
 	polyCred PolyCreds, kalshiCred KalshiCreds, predictCred PredictCreds, sxbetCred SxbetCreds,
-	oc *persistententity.MarketOutcome, yes bool, price, qty float64, negRisk bool,
+	oc *persistententity.MarketOutcome, yes bool, price, qty float64, negRisk bool, predictSlip PredictSlippage,
 ) (watchgroup.SendResult, error) {
 	if oc == nil {
 		return watchgroup.SendResult{}, nil
@@ -295,7 +303,7 @@ func SendOnOutcome(
 		return SendKalshi(kalshi, kalshiCred, oc, yes, price, qty, false)
 	}
 	if strings.EqualFold(oc.Platform, appcommon.PlatformPredict) {
-		return SendPredict(predict, predictCred, oc, yes, price, qty, false)
+		return SendPredict(predict, predictCred, oc, yes, price, qty, false, predictSlip)
 	}
 	if strings.EqualFold(oc.Platform, appcommon.PlatformSxbet) {
 		return SendSxbet(sxbet, sxbetCred, oc, yes, price, qty)
@@ -311,7 +319,7 @@ func SendOnOutcome(
 func FlattenOnOutcome(
 	poly httprepo.PolymarketRepo, kalshi httprepo.KalshiRepo, predict httprepo.PredictRepo, sxbet httprepo.SxbetRepo,
 	polyCred PolyCreds, kalshiCred KalshiCreds, predictCred PredictCreds, sxbetCred SxbetCreds,
-	oc *persistententity.MarketOutcome, boughtYes bool, mine, other float64, negRisk bool,
+	oc *persistententity.MarketOutcome, boughtYes bool, mine, other float64, negRisk bool, predictSlip PredictSlippage,
 ) {
 	if oc == nil || mine <= 0 || other > 0 {
 		return
@@ -321,7 +329,7 @@ func FlattenOnOutcome(
 		return
 	}
 	if strings.EqualFold(oc.Platform, appcommon.PlatformPredict) {
-		_, _ = SendPredict(predict, predictCred, oc, boughtYes, 0.01, mine, true)
+		_, _ = SendPredict(predict, predictCred, oc, boughtYes, 0.01, mine, true, predictSlip)
 		return
 	}
 	if strings.EqualFold(oc.Platform, appcommon.PlatformSxbet) {

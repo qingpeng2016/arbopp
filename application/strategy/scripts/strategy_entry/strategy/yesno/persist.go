@@ -27,11 +27,11 @@ type PersistGrab struct {
 	ScopeForOutcomeIDs func(yesMoID, noMoID uint) watchgroup.FixtureScope
 	OppRepo            persistentrepo.ArbBinaryOpportunityRepo
 	OrderRepo          persistentrepo.ArbBinaryOrderRepo
-	BookRepo           persistentrepo.OrderBookRepo
 	YesLegInfo         func(outcomeIndex int, buyYes bool) string
 	NoLegInfo          func(outcomeIndex int, buyYes bool) string
 	LegOrderBooks      func(outcomeIndex int, buyYes bool) string
-	BookRows           func(FilledPick) []*persistententity.OrderBook
+	// OnOrdersWritten 实盘写 orders 成功后回调（刷新内存未终态集合）。
+	OnOrdersWritten func(mapKey string)
 
 	BacktestTaskID    uint
 	BacktestOppRepo   persistentrepo.BacktestArbBinaryOpportunityRepo
@@ -177,13 +177,8 @@ func SaveGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit GrabHit)
 		}
 		if err := d.OrderRepo.BatchCreate(runCtx, nil, orders); err != nil {
 			notification.SendErrorLog(runCtx, "strategy_entry-OrderCreateFailed", zap.Error(err))
-		}
-	}
-	if d.BookRepo != nil && d.BookRows != nil {
-		if rows := d.BookRows(hit.Pick); len(rows) > 0 {
-			if err := d.BookRepo.BatchCreate(runCtx, nil, rows); err != nil {
-				notification.SendErrorLog(runCtx, "strategy_entry-BookCreateFailed", zap.Error(err), zap.Int("rows", len(rows)))
-			}
+		} else if d.OnOrdersWritten != nil {
+			d.OnOrdersWritten(mapKey)
 		}
 	}
 	return true

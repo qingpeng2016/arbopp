@@ -16,27 +16,29 @@ import (
 )
 
 type persistDeps struct {
-	scope       func(yesMoID, noMoID uint) watchgroup.FixtureScope
-	drawLegInfo func(outcomeIndex int, buyYes bool) string
-	yesLegInfo  func(outcomeIndex int, buyYes bool) string
-	noLegInfo   func(outcomeIndex int, buyYes bool) string
-	legBooks    func(outcomeIndex int, buyYes bool) string
-	opp         persistentrepo.ArbBinaryOpportunityRepo
-	order       persistentrepo.ArbBinaryOrderRepo
-	btOpp       persistentrepo.BacktestArbBinaryOpportunityRepo
-	btOrd       persistentrepo.BacktestOrderRepo
-	task        uint
-	snap        func() time.Time
-	snapMs      func() int64
+	scope           func(yesMoID, noMoID uint) watchgroup.FixtureScope
+	drawLegInfo     func(outcomeIndex int, buyYes bool) string
+	yesLegInfo      func(outcomeIndex int, buyYes bool) string
+	noLegInfo       func(outcomeIndex int, buyYes bool) string
+	legBooks        func(outcomeIndex int, buyYes bool) string
+	opp             persistentrepo.ArbBinaryOpportunityRepo
+	order           persistentrepo.ArbBinaryOrderRepo
+	btOpp           persistentrepo.BacktestArbBinaryOpportunityRepo
+	btOrd           persistentrepo.BacktestOrderRepo
+	task            uint
+	snap            func() time.Time
+	snapMs          func() int64
+	onOrdersWritten func(mapKey string)
 }
 
 func (r *Runner) persistDeps() persistDeps {
 	ops := &r.w.Ops
 	d := persistDeps{
 		task: ops.BacktestTaskID, scope: r.w.ScopeForOutcomeIDs, snap: ops.SnapshotNow, snapMs: ops.SnapshotAtMs,
-		drawLegInfo: func(i int, buy bool) string { return r.w.DrawLegInfoJSON(i, buy) },
-		yesLegInfo:  func(i int, buy bool) string { return r.w.YesLegInfoJSON(i, buy) },
-		noLegInfo:   func(i int, buy bool) string { return r.w.NoLegInfoJSON(i, buy) },
+		drawLegInfo:     func(i int, buy bool) string { return r.w.DrawLegInfoJSON(i, buy) },
+		yesLegInfo:      func(i int, buy bool) string { return r.w.YesLegInfoJSON(i, buy) },
+		noLegInfo:       func(i int, buy bool) string { return r.w.NoLegInfoJSON(i, buy) },
+		onOrdersWritten: ops.NoteOpenOrdersWritten,
 	}
 	if ops.BacktestOppRepo != nil {
 		d.btOpp = ops.BacktestOppRepo()
@@ -274,6 +276,8 @@ func saveLive(ctx context.Context, d persistDeps, mapKey string, hit GrabHit) bo
 		orders := liveOrdersForHit(strat, mapKey, live.ID, hit, live.SnapshotAt)
 		if err := d.order.BatchCreate(runCtx, nil, orders); err != nil {
 			notification.SendErrorLog(runCtx, "onextwo-OrderCreateFailed", zap.Error(err))
+		} else if d.onOrdersWritten != nil {
+			d.onOrdersWritten(mapKey)
 		}
 	}
 	return true

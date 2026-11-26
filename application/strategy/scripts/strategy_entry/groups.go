@@ -41,11 +41,15 @@ const (
 	thresholdMaxAmount           = "max_amount"
 	threshold1X2YesMax           = "1x2_yes_triple_max_cost"
 	threshold1X2NoMax            = "1x2_no_triple_max_cost"
+	thresholdPredictSlippageBps  = "predict_slippage_bps"
+	thresholdPredictIsMinOut     = "predict_is_min_amount_out"
 	defaultMaxCost               = 0.95
 	default1X2YesMax             = 0.95
 	default1X2NoMax              = 1.90
 	defaultMinAmount             = 5.0
 	defaultMaxAmount             = 5.0
+	defaultPredictSlippageBps    = 200.0
+	defaultPredictIsMinAmountOut = true
 	defaultPolySports            = 0.05
 	defaultKalshiSports          = 0.07
 	defaultPredictSports         = 0.02
@@ -58,22 +62,26 @@ const (
 
 // Params 5.2 的可配置门槛。手续费按平台和运动放在 fees 里，比较时只读。
 type Params struct {
-	MaxCost     float64
-	MinAmount   float64
-	MaxAmount   float64
-	OneX2YesMax float64
-	OneX2NoMax  float64
-	fees        map[string]float64
+	MaxCost              float64
+	MinAmount            float64
+	MaxAmount            float64
+	OneX2YesMax          float64
+	OneX2NoMax           float64
+	PredictSlippageBps   float64 // Predict MARKET slippageBps（100=1%）
+	PredictIsMinAmountOut bool   // Predict 买：固定 USDT、少收份额
+	fees                 map[string]float64
 }
 
 // defaultParams 库里没有门槛时用的默认值。体育吃单系数按两家现行价目。
 func defaultParams() Params {
 	return Params{
-		MaxCost:     defaultMaxCost,
-		MinAmount:   defaultMinAmount,
-		MaxAmount:   defaultMaxAmount,
-		OneX2YesMax: default1X2YesMax,
-		OneX2NoMax:  default1X2NoMax,
+		MaxCost:               defaultMaxCost,
+		MinAmount:             defaultMinAmount,
+		MaxAmount:             defaultMaxAmount,
+		OneX2YesMax:           default1X2YesMax,
+		OneX2NoMax:            default1X2NoMax,
+		PredictSlippageBps:    defaultPredictSlippageBps,
+		PredictIsMinAmountOut: defaultPredictIsMinAmountOut,
 		fees: map[string]float64{
 			feeKey(appcommon.PlatformPolymarket, "Sports", ""): defaultPolySports,
 			feeKey(appcommon.PlatformKalshi, "Sports", ""):     defaultKalshiSports,
@@ -127,6 +135,15 @@ func (e *Entry) loadParams(ctx context.Context) Params {
 	p.MaxAmount = e.threshold(ctx, thresholdMaxAmount)
 	p.OneX2YesMax = e.threshold(ctx, threshold1X2YesMax)
 	p.OneX2NoMax = e.threshold(ctx, threshold1X2NoMax)
+	if v := e.threshold(ctx, thresholdPredictSlippageBps); v > 0 {
+		if v > 10_000 {
+			v = 10_000
+		}
+		p.PredictSlippageBps = v
+	}
+	if row, ok := e.thresholdRow(ctx, thresholdPredictIsMinOut); ok {
+		p.PredictIsMinAmountOut = row.ConfigValue.InexactFloat64() >= 0.5
+	}
 	p.fees = e.loadFees(ctx, p.fees)
 	return p
 }
@@ -156,17 +173,25 @@ func (e *Entry) loadFees(ctx context.Context, base map[string]float64) map[strin
 
 // threshold 读 config_strategy_threshold；无行/禁用/负值 → 0（TEST，不用代码默认）。
 func (e *Entry) threshold(ctx context.Context, key string) float64 {
-	if e.thresholdRepo == nil {
+	row, ok := e.thresholdRow(ctx, key)
+	if !ok {
 		return 0
+	}
+	return thresholdNonNegative(row.ConfigValue)
+}
+
+func (e *Entry) thresholdRow(ctx context.Context, key string) (persistententity.ConfigStrategyThreshold, bool) {
+	if e.thresholdRepo == nil {
+		return persistententity.ConfigStrategyThreshold{}, false
 	}
 	row, err := e.thresholdRepo.FindOne(ctx, nil, map[string]interface{}{
 		"config_key = ?": key,
 		"status = ?":     1,
 	}, "")
 	if err != nil {
-		return 0
+		return persistententity.ConfigStrategyThreshold{}, false
 	}
-	return thresholdNonNegative(row.ConfigValue)
+	return row, true
 }
 
 func thresholdNonNegative(v decimal.Decimal) float64 {

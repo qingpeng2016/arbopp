@@ -26,13 +26,15 @@ type PredictMarketMeta struct {
 // PredictMarketOrderReq 市价买入指定 outcome token（FAK 语义由 MARKET 策略承担）。
 // Predict 的 LIMIT 会挂单；套利路径用 MARKET + PriceLimit，金额按限价直接签名，不再 REST 拉盘口。
 type PredictMarketOrderReq struct {
-	MarketID   string  // numeric market id
-	TokenID    string  // outcome onChainId
-	BuyYes     bool    // YES 视角盘口换算（保留字段；金额按限价计算后不再换算盘口）
-	Sell       bool    // false=市价买入 token，true=市价卖出
-	PriceLimit float64 // 策略侧卖一价：买单 USDC 上限 / 卖单 USDC 下限；有值时 slippage=0
-	Quantity   float64 // 份额
-	Market     *PredictMarketMeta
+	MarketID       string  // numeric market id
+	TokenID        string  // outcome onChainId
+	BuyYes         bool    // YES 视角盘口换算（保留字段；金额按限价计算后不再换算盘口）
+	Sell           bool    // false=市价买入 token，true=市价卖出
+	PriceLimit     float64 // 策略侧卖一价 → pricePerShare
+	Quantity       float64 // 份额
+	SlippageBps    int64   // 滑点 bps（100=1%）；≤0 时客户端用默认
+	IsMinAmountOut bool    // true：买方向固定 USDT、少收份额（官方推荐）
+	Market         *PredictMarketMeta
 }
 
 // PredictPlaceOrderResult 发单结果。

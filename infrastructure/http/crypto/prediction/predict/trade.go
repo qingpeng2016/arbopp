@@ -64,9 +64,15 @@ func (c *Client) PlaceMarketOrder(ctx context.Context, acc httpentity.PredictAcc
 	if err != nil {
 		return nil, err
 	}
-	// 有限价：不再加滑点，金额按限价封顶（与策略 FAK 口径一致）。
-	slippage := int64(0)
-	amounts, ok := marketAmountsAtLimit(req.Quantity, req.PriceLimit, req.Sell, slippage)
+	slippage := req.SlippageBps
+	if slippage <= 0 {
+		slippage = defaultSlippageBps
+	}
+	if slippage > 10_000 {
+		slippage = 10_000
+	}
+	isMinOut := req.IsMinAmountOut
+	amounts, ok := marketAmountsAtLimit(req.Quantity, req.PriceLimit, req.Sell, slippage, isMinOut)
 	if !ok {
 		return nil, fmt.Errorf("predict order: invalid qty/price_limit")
 	}
@@ -107,10 +113,11 @@ func (c *Client) PlaceMarketOrder(ctx context.Context, acc httpentity.PredictAcc
 	}
 	body := httpentity.PredictCreateOrderBody{
 		Data: httpentity.PredictCreateOrderData{
-			Order:         order,
-			PricePerShare: pricePerShare,
-			Strategy:      "MARKET",
-			SlippageBps:   strconv.FormatInt(slippage, 10),
+			Order:          order,
+			PricePerShare:  pricePerShare,
+			Strategy:       "MARKET",
+			SlippageBps:    strconv.FormatInt(amounts.slippageBps, 10),
+			IsMinAmountOut: amounts.isMinAmountOut,
 		},
 	}
 	apiKey := strings.TrimSpace(acc.APIKey)

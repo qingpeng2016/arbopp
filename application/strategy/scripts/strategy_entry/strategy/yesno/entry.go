@@ -120,18 +120,17 @@ func (r *Runner) canTrade(platform string) bool {
 	return r.w.Ops.CanTrade(platform)
 }
 
-// blockingOpenOrders 该 map_key 在 orders 表仍有未终态单则阻塞新下单。
-func (r *Runner) blockingOpenOrders(ctx context.Context, mapKey string) bool {
-	return HasBlockingOpenOrders(ctx, safeOrderRepo(&r.w.Ops), mapKey)
+// blockingOpenOrders 该 map_key 仍有未终态单则阻塞新下单（只读内存，不查 DB）。
+func (r *Runner) blockingOpenOrders(mapKey string) bool {
+	return HasBlockingOpenOrders(&r.w.Ops, mapKey)
 }
 
-// HasBlockingOpenOrders 共享给 1X2：map_key 存在未终态订单。
-func HasBlockingOpenOrders(ctx context.Context, repo persistentrepo.ArbBinaryOrderRepo, mapKey string) bool {
-	if repo == nil || strings.TrimSpace(mapKey) == "" {
+// HasBlockingOpenOrders 共享给 1X2：map_key 未终态订单阻塞（Ops 内存缓存）。
+func HasBlockingOpenOrders(ops *watchgroup.Ops, mapKey string) bool {
+	if ops == nil || ops.MapKeyHasOpenOrders == nil || strings.TrimSpace(mapKey) == "" {
 		return false
 	}
-	ok, err := repo.HasNonTerminalByMapKey(ctx, mapKey)
-	return err == nil && ok
+	return ops.MapKeyHasOpenOrders(mapKey)
 }
 
 func (r *Runner) grabContext() context.Context {
@@ -188,11 +187,9 @@ func (r *Runner) grabPersist() PersistGrab {
 		ScopeForOutcomeIDs: r.w.ScopeForOutcomeIDs,
 		OppRepo:            safeOppRepo(ops),
 		OrderRepo:          safeOrderRepo(ops),
-		BookRepo:           safeBookRepo(ops),
 		YesLegInfo:         func(i int, buyYes bool) string { return r.w.YesLegInfoJSON(i, buyYes) },
 		NoLegInfo:          func(i int, buyYes bool) string { return r.w.NoLegInfoJSON(i, buyYes) },
-
-		BookRows: r.bookRowsForPick,
+		OnOrdersWritten:    ops.NoteOpenOrdersWritten,
 	}
 	if ops.BacktestTaskID > 0 {
 		pg.BacktestTaskID = ops.BacktestTaskID
@@ -226,23 +223,3 @@ func safeOrderRepo(ops *watchgroup.Ops) persistentrepo.ArbBinaryOrderRepo {
 	return ops.OrderRepo()
 }
 
-func safeBookRepo(ops *watchgroup.Ops) persistentrepo.OrderBookRepo {
-	if ops.BookRepo == nil {
-		return nil
-	}
-	return ops.BookRepo()
-}
-
-func (r *Runner) booksJSONForPick(a, b ExecSide) string {
-	if r.w.Ops.BooksJSONForPair == nil {
-		return ""
-	}
-	return r.w.Ops.BooksJSONForPair(a.Index, b.Index)
-}
-
-func (r *Runner) bookRowsForPick(pick FilledPick) []*persistententity.OrderBook {
-	if r.w.Ops.BookRowsForPair == nil {
-		return nil
-	}
-	return r.w.Ops.BookRowsForPair(pick.view, pick.Yes.Index, pick.No.Index)
-}

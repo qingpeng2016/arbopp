@@ -6,7 +6,7 @@ import (
 )
 
 func TestMarketAmountsAtLimitBuy(t *testing.T) {
-	got, ok := marketAmountsAtLimit(10, 0.45, false, 0)
+	got, ok := marketAmountsAtLimit(10, 0.45, false, 0, false)
 	if !ok {
 		t.Fatal("expected ok")
 	}
@@ -27,11 +27,34 @@ func TestMarketAmountsAtLimitBuy(t *testing.T) {
 	}
 }
 
+func TestMarketAmountsAtLimitBuyMinAmountOut(t *testing.T) {
+	// 10 份 @0.53，slippage 200bps=2%：maker 固定，taker 下调到 9.8
+	got, ok := marketAmountsAtLimit(10, 0.53, false, 200, true)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	if !got.isMinAmountOut || got.slippageBps != 200 {
+		t.Fatalf("flags %+v", got)
+	}
+	wantTakerBase := retainSignificantDigits(floatSharesToWei(10), 5)
+	wantTaker := new(big.Int).Mul(wantTakerBase, big.NewInt(9800))
+	wantTaker.Div(wantTaker, big.NewInt(10_000))
+	if got.takerAmount.Cmp(wantTaker) != 0 {
+		t.Fatalf("taker=%s want %s", got.takerAmount, wantTaker)
+	}
+	prec := big.NewInt(int64(weiPrecision))
+	wantMaker := new(big.Int).Mul(etherFloatToWei(0.53), wantTakerBase)
+	wantMaker.Div(wantMaker, prec)
+	if got.makerAmount.Cmp(wantMaker) != 0 {
+		t.Fatalf("maker=%s want %s", got.makerAmount, wantMaker)
+	}
+}
+
 func TestMarketAmountsAtLimitRejects(t *testing.T) {
-	if _, ok := marketAmountsAtLimit(10, 0, false, 0); ok {
+	if _, ok := marketAmountsAtLimit(10, 0, false, 0, false); ok {
 		t.Fatal("zero limit should fail")
 	}
-	if _, ok := marketAmountsAtLimit(0, 0.4, false, 0); ok {
+	if _, ok := marketAmountsAtLimit(0, 0.4, false, 0, false); ok {
 		t.Fatal("zero qty should fail")
 	}
 }

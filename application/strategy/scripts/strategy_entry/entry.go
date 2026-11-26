@@ -51,6 +51,8 @@ type Entry struct {
 	paramBox     atomic.Value
 	credBox      atomic.Value
 	wsStaggerBox atomic.Value
+	// openOrderKeysBox：仍有未终态订单的 map_key 集合（reconcile 刷库；WS 热路径只读内存）。
+	openOrderKeysBox atomic.Value
 	// warnKalshiKey 没有 Kalshi 签名账户时只打一次日志。
 	warnKalshiKey    atomic.Bool
 	detectLatYesno   *DetectLatency
@@ -152,13 +154,66 @@ func (e *Entry) canTrade(platform string) bool {
 	return c.polyOK && e.poly != nil
 }
 
-// Params 读当前阈值。比较卖一时直接拿这份，不再查库。
+// Params 读当前门槛。比较卖一时直接拿这份，不再查库。
 func (e *Entry) Params() Params {
 	v := e.paramBox.Load()
 	if v == nil {
 		return defaultParams()
 	}
 	return v.(Params)
+}
+
+// refreshOpenOrderKeys reconcile 刷未终态 map_key 到内存（WS 热路径禁止查 orders 表）。
+func (e *Entry) refreshOpenOrderKeys(ctx context.Context) {
+	out := map[string]struct{}{}
+	if e.orderRepo != nil {
+		keys, err := e.orderRepo.ListNonTerminalMapKeys(ctx)
+		if err != nil {
+			notification.SendErrorLog(ctx, "strategy_entry-ListNonTerminalMapKeysFailed", zap.Error(err))
+			// 失败时保留旧缓存，避免误放开重复下单。
+			if v := e.openOrderKeysBox.Load(); v != nil {
+				return
+			}
+		} else {
+			for _, k := range keys {
+				k = strings.TrimSpace(k)
+				if k != "" {
+					out[k] = struct{}{}
+				}
+			}
+		}
+	}
+	e.openOrderKeysBox.Store(out)
+}
+
+// MapKeyHasOpenOrders 内存判断：该 map_key 是否仍有未终态单（阻塞新开仓）。
+func (e *Entry) MapKeyHasOpenOrders(mapKey string) bool {
+	mapKey = strings.TrimSpace(mapKey)
+	if e == nil || mapKey == "" {
+		return false
+	}
+	v := e.openOrderKeysBox.Load()
+	if v == nil {
+		return false
+	}
+	_, ok := v.(map[string]struct{})[mapKey]
+	return ok
+}
+
+// MarkMapKeyOpenOrders 实盘落单后立刻记入内存，等下次 reconcile / fill sync 清掉。
+func (e *Entry) MarkMapKeyOpenOrders(mapKey string) {
+	mapKey = strings.TrimSpace(mapKey)
+	if e == nil || mapKey == "" {
+		return
+	}
+	cur := map[string]struct{}{}
+	if v := e.openOrderKeysBox.Load(); v != nil {
+		for k := range v.(map[string]struct{}) {
+			cur[k] = struct{}{}
+		}
+	}
+	cur[mapKey] = struct{}{}
+	e.openOrderKeysBox.Store(cur)
 }
 
 // Run 启动监控循环。已经在跑时直接返回。
@@ -241,6 +296,7 @@ func (e *Entry) reconcile(ctx context.Context) {
 	e.paramBox.Store(params)
 	e.wsStaggerBox.Store(e.loadWsStagger(ctx))
 	e.refreshCreds(ctx)
+	e.refreshOpenOrderKeys(ctx)
 
 	// 取比赛信息（同一个比赛多平台分为一组）
 	groups, _, err := e.loadGroups(ctx)

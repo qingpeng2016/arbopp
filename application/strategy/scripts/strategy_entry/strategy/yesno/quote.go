@@ -75,6 +75,26 @@ func (s ExecSide) TopAskSz(buyYes bool) (px, sz float64, ok bool) {
 	return s.quote(buyYes).Top()
 }
 
+// PredictFeeSharesFitBook 仅对 Predict：OrderShares 放大后核对内存卖一是否够量。
+// 不够则整笔套利不应发单（所有平台都不发）。非 Predict 腿直接通过。
+func (s ExecSide) PredictFeeSharesFitBook(buyYes bool, netQty float64) (ok bool, need, have float64) {
+	if !strings.EqualFold(strings.TrimSpace(s.Platform), appcommon.PlatformPredict) {
+		return true, 0, 0
+	}
+	need = s.OrderShares(buyYes, netQty)
+	if _, sz, topOK := s.TopAskSz(buyYes); topOK {
+		have = sz
+	} else if buyYes {
+		have = s.YesSz
+	} else {
+		have = s.NoSz
+	}
+	if !(have > 0) {
+		return false, need, have
+	}
+	return need <= have+1e-12, need, have
+}
+
 // OrderShares 将策略净兑付目标换成平台下单量。
 // Predict：扣费前份额；SX：USDC stake（totalBetSize）；其余：份额原样。
 func (s ExecSide) OrderShares(buyYes bool, netQty float64) float64 {

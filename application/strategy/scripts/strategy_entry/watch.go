@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"go.uber.org/zap"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 
 	appcommon "github.com/gph-tech/fgmm-strategy-bitfinex/application/common"
 	obcommon "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/orderbook/common"
@@ -150,6 +152,18 @@ func newWatch(ctx context.Context, e *Entry, g group) *watch {
 				return false
 			}
 			return w.entry.canTrade(platform)
+		},
+		MapKeyHasOpenOrders: func(mapKey string) bool {
+			if w.entry == nil {
+				return false
+			}
+			return w.entry.MapKeyHasOpenOrders(mapKey)
+		},
+		NoteOpenOrdersWritten: func(mapKey string) {
+			if w.entry == nil {
+				return
+			}
+			w.entry.MarkMapKeyOpenOrders(mapKey)
 		},
 		SendOnOutcome:    w.sendOnOutcome,
 		FlattenOnOutcome: w.flattenOnOutcome,
@@ -1114,6 +1128,18 @@ func (w *watch) bookRowsForHit(view book.Snapshot, aIndex, bIndex int) []*persis
 	return rows
 }
 
+func (w *watch) predictSlippage() broker.PredictSlippage {
+	if w.entry == nil {
+		return broker.PredictSlippage{Bps: 200, IsMinAmountOut: true}
+	}
+	p := w.entry.Params()
+	bps := int64(math.Round(p.PredictSlippageBps))
+	if bps <= 0 {
+		bps = 200
+	}
+	return broker.PredictSlippage{Bps: bps, IsMinAmountOut: p.PredictIsMinAmountOut}
+}
+
 func (w *watch) sendOnOutcome(outcomeIndex int, buyYes bool, px, qty float64) (watchgroup.SendResult, error) {
 	if outcomeIndex < 0 || outcomeIndex >= len(w.Outcomes) || w.entry == nil {
 		return watchgroup.SendResult{}, nil
@@ -1134,6 +1160,7 @@ func (w *watch) sendOnOutcome(outcomeIndex int, buyYes bool, px, qty float64) (w
 		broker.SxbetCreds{Account: c.sxbet, OK: c.sxbetOK},
 		oc, buyYes, px, orderQty,
 		outcomeIndex < len(w.negRisk) && w.negRisk[outcomeIndex],
+		w.predictSlippage(),
 	)
 	if esOK {
 		res.Fill = es.FillToNet(buyYes, res.Fill)
@@ -1160,6 +1187,7 @@ func (w *watch) flattenOnOutcome(outcomeIndex int, boughtYes bool, mine, other f
 		broker.SxbetCreds{Account: c.sxbet, OK: c.sxbetOK},
 		oc, boughtYes, qty, 0,
 		outcomeIndex < len(w.negRisk) && w.negRisk[outcomeIndex],
+		w.predictSlippage(),
 	)
 }
 

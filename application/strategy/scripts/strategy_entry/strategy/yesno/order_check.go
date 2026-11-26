@@ -9,7 +9,7 @@ import (
 //
 // 口径：
 //   - BestAsks[i]：平台 i 下单限价（= 该腿 best_ask）
-//   - AskSizes[i]：该限价档挂单份额
+//   - AskSizes[i]：该限价档挂单份额（平台原始份额）
 //   - MinAmount / MaxAmount：config_strategy_threshold.min_amount / max_amount（金额）
 type OrderSizeCheckInput struct {
 	Platforms []string
@@ -42,6 +42,8 @@ type OrderSizeCheckResult struct {
 //  4. platform_min_qty < min_qty → 不下单
 //     min_qty ≤ platform_min_qty ≤ max_qty → 下单份额 = platform_min_qty
 //     platform_min_qty > max_qty → 下单份额 = max_qty
+//
+// Predict 费后放大是否盖得住卖一，在发单前另做 PredictFeeSharesFitBook 门禁（不够则全平台都不发）。
 func CheckOrderSize(in OrderSizeCheckInput) OrderSizeCheckResult {
 	n := len(in.BestAsks)
 	legs := make([]map[string]any, 0, n)
@@ -58,10 +60,10 @@ func CheckOrderSize(in OrderSizeCheckInput) OrderSizeCheckResult {
 			sz = in.AskSizes[i]
 		}
 		legs = append(legs, map[string]any{
-			"platform":  plat,
-			"best_ask":  ask,
-			"ask_size":  sz,
-			"limit_px":  ask,
+			"platform": plat,
+			"best_ask": ask,
+			"ask_size": sz,
+			"limit_px": ask,
 		})
 	}
 	base := map[string]any{

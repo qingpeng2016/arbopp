@@ -17,4 +17,6 @@ type ArbBinaryOrderRepo interface {
 	ListByArbOppID(ctx context.Context, arbOppID uint) ([]*entity.ArbBinaryOrder, error)
 	// HasNonTerminalByMapKey 该 map_key 是否仍有未终态订单（阻塞新开仓）。
 	HasNonTerminalByMapKey(ctx context.Context, mapKey string) (bool, error)
+	// ListNonTerminalMapKeys 所有仍有未终态订单的 map_key（reconcile 刷入内存，WS 热路径只读内存）。
+	ListNonTerminalMapKeys(ctx context.Context) ([]string, error)
 }

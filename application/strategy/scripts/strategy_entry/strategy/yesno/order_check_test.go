@@ -42,3 +42,36 @@ func TestCheckOrderSizeRejectBelowMinQty(t *testing.T) {
 		t.Fatalf("snapshot missing thresholds: %+v", r.Snapshot)
 	}
 }
+
+func TestPredictFeeSharesFitBook(t *testing.T) {
+	// Predict 卖一 10 @0.40、费率 2%；净 qty=10 放大后 >10 → 应拒绝。
+	fee := 0.02
+	px := 0.40
+	bookSz := 10.0
+	pred := ExecSide{
+		Side:     Side{Fee: fee, YesPx: px, YesSz: bookSz},
+		Platform: "PREDICT",
+	}
+
+	ok, need, have := pred.PredictFeeSharesFitBook(true, bookSz)
+	if ok {
+		t.Fatalf("expected reject: need=%v have=%v", need, have)
+	}
+	if !(need > have) {
+		t.Fatalf("need=%v should exceed have=%v", need, have)
+	}
+
+	// 缩小净 qty 使放大后刚好 ≤ book
+	ratio := PredictNetRatio(px, fee)
+	netOK := bookSz * ratio
+	ok2, need2, have2 := pred.PredictFeeSharesFitBook(true, netOK)
+	if !ok2 {
+		t.Fatalf("expected fit: need=%v have=%v", need2, have2)
+	}
+
+	// 非 Predict 直接通过
+	poly := ExecSide{Platform: "POLYMARKET", Side: Side{YesPx: px, YesSz: bookSz}}
+	if ok3, _, _ := poly.PredictFeeSharesFitBook(true, bookSz); !ok3 {
+		t.Fatal("non-predict should pass")
+	}
+}

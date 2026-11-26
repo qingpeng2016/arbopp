@@ -12,10 +12,11 @@ type depthLevel struct {
 }
 
 type marketAmounts struct {
-	pricePerShare *big.Int
-	makerAmount   *big.Int
-	takerAmount   *big.Int
-	slippageBps   int64
+	pricePerShare  *big.Int
+	makerAmount    *big.Int
+	takerAmount    *big.Int
+	slippageBps    int64
+	isMinAmountOut bool
 }
 
 func floatSharesToWei(qty float64) *big.Int {
@@ -205,9 +206,16 @@ func processBook(levels []depthLevel, qtyWei *big.Int) (priceWei, quantityWei, l
 
 // marketAmountsAtLimit 用策略限价+数量直接算签名金额，不再 REST 拉盘口。
 // 套利路径：内存簿 SizeCheck 已通过后并发发单；此处按限价封顶/托底授权成交。
-func marketAmountsAtLimit(qty, priceLimit float64, sell bool, slippageBps int64) (marketAmounts, bool) {
+// isMinAmountOut（买）：maker 固定为限价×数量，taker 按 slippage 下调（少收份额）；卖始终下调 taker USDT。
+func marketAmountsAtLimit(qty, priceLimit float64, sell bool, slippageBps int64, isMinAmountOut bool) (marketAmounts, bool) {
 	if !(qty > 0) || !(priceLimit > 0 && priceLimit < 1) {
 		return marketAmounts{}, false
+	}
+	if slippageBps < 0 {
+		slippageBps = 0
+	}
+	if slippageBps > 10_000 {
+		slippageBps = 10_000
 	}
 	qtyWei := floatSharesToWei(qty)
 	if qtyWei.Cmp(big.NewInt(int64(1e16))) < 0 {
@@ -233,6 +241,20 @@ func marketAmountsAtLimit(qty, priceLimit float64, sell bool, slippageBps int64)
 	}
 	baseMaker := new(big.Int).Mul(priceWei, qtyWei)
 	baseMaker.Div(baseMaker, prec)
+	if isMinAmountOut {
+		takerAmount := new(big.Int).Set(qtyWei)
+		if slippageBps > 0 {
+			takerAmount.Mul(qtyWei, big.NewInt(10_000-slippageBps))
+			takerAmount.Div(takerAmount, big.NewInt(10_000))
+		}
+		return marketAmounts{
+			pricePerShare:  priceWei,
+			makerAmount:    new(big.Int).Set(baseMaker),
+			takerAmount:    takerAmount,
+			slippageBps:    slippageBps,
+			isMinAmountOut: true,
+		}, true
+	}
 	makerAmount := new(big.Int).Set(baseMaker)
 	if slippageBps > 0 {
 		num := new(big.Int).Mul(baseMaker, big.NewInt(10_000+slippageBps))

@@ -47,7 +47,7 @@ func (r *Runner) grabOneAttempt(_ uint, retried bool) {
 	ctx := r.w.Context()
 	mapKey := r.w.MapKey
 	deps := r.persistDeps()
-	openBlocked := yesno.HasBlockingOpenOrders(ctx, deps.order, mapKey)
+	openBlocked := yesno.HasBlockingOpenOrders(&r.w.Ops, mapKey)
 
 	var tradePick TriplePick
 	var tradeOK bool
@@ -63,6 +63,9 @@ func (r *Runner) grabOneAttempt(_ uint, retried bool) {
 			}
 		}
 		if !okTrade {
+			continue
+		}
+		if !predictTripleBookOK(p) {
 			continue
 		}
 		if !tradeOK || p.Per < tradePick.Per {
@@ -96,6 +99,7 @@ func (r *Runner) grabOneAttempt(_ uint, retried bool) {
 				break
 			}
 		}
+		predOK, predSnap := predictTripleBookDetail(p)
 		if !p.SizeCheckOK {
 			hit.SkipOrderReason = "size_check_failed"
 			hit.ExtData = yesno.ExtDataJSON(p.SizeCheck.Snapshot, map[string]any{"skip_order_reason": "size_check_failed"})
@@ -104,6 +108,11 @@ func (r *Runner) grabOneAttempt(_ uint, retried bool) {
 			hit.ExtData = yesno.ExtDataJSON(p.SizeCheck.Snapshot, map[string]any{
 				"skip_order_reason": "account_unavailable",
 				"platforms":         []string{p.Legs[0].Platform, p.Legs[1].Platform, p.Legs[2].Platform},
+			})
+		} else if !predOK {
+			hit.SkipOrderReason = "predict_fee_shares_gt_book"
+			hit.ExtData = yesno.ExtDataJSON(p.SizeCheck.Snapshot, predSnap, map[string]any{
+				"skip_order_reason": "predict_fee_shares_gt_book",
 			})
 		} else if openBlocked {
 			hit.SkipOrderReason = "non_terminal_orders"
@@ -114,7 +123,7 @@ func (r *Runner) grabOneAttempt(_ uint, retried bool) {
 		} else if isTrade {
 			hit.DryRun = false
 			hit.Fills, hit.FillErrs, hit.Sends = fills, fillErrs, sends
-			hit.ExtData = yesno.ExtDataJSON(p.SizeCheck.Snapshot, map[string]any{"ordered": true, "order_qty": p.Qty, "fills": fills})
+			hit.ExtData = yesno.ExtDataJSON(p.SizeCheck.Snapshot, predSnap, map[string]any{"ordered": true, "order_qty": p.Qty, "fills": fills})
 		} else {
 			hit.SkipOrderReason = "not_selected_for_order"
 			hit.ExtData = yesno.ExtDataJSON(p.SizeCheck.Snapshot, map[string]any{"skip_order_reason": hit.SkipOrderReason})
@@ -155,6 +164,27 @@ func sameTriple(a, b TriplePick) bool {
 		}
 	}
 	return true
+}
+
+func predictTripleBookOK(p TriplePick) bool {
+	ok, _ := predictTripleBookDetail(p)
+	return ok
+}
+
+func predictTripleBookDetail(p TriplePick) (ok bool, snap map[string]any) {
+	legs := make([]map[string]any, 0, 3)
+	ok = true
+	for i := range p.Legs {
+		fit, need, have := p.Legs[i].PredictFeeSharesFitBook(p.BuyYes, p.Qty)
+		legs = append(legs, map[string]any{
+			"platform": p.Legs[i].Platform, "need": need, "book": have, "ok": fit,
+		})
+		if !fit {
+			ok = false
+		}
+	}
+	snap = map[string]any{"predict_fee_shares": legs}
+	return ok, snap
 }
 
 func fireTriple(r *Runner, pick TriplePick) (fills [3]float64, errs [3]error, sends [3]watchgroup.SendResult) {

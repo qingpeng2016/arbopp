@@ -12,18 +12,23 @@ import (
 )
 
 // Ops 本组 watch 上由 strategy_entry 注入的行情以外能力（参数、发单、落库）。
+// 约定：WS 热路径（盘口→选腿→发单）只读内存；唯一允许的 DB 是命中后写机会/订单。
 type Ops struct {
 	StrategyParams   func() (maxCost, minAmount, maxAmount float64)
 	OneX2Limits      func() (yesTripleMax, noTripleMax float64)
 	TradeFee         func(platform, category, sub string) float64
 	CanTrade         func(platform string) bool
-	SendOnOutcome    func(outcomeIndex int, buyYes bool, px, qty float64) (SendResult, error)
-	FlattenOnOutcome func(outcomeIndex int, boughtYes bool, mine, other float64)
-	OppRepo          func() persistentrepo.ArbBinaryOpportunityRepo
-	OrderRepo        func() persistentrepo.ArbBinaryOrderRepo
-	BookRepo         func() persistentrepo.OrderBookRepo
-	BooksJSONForPair func(outcomeIndexA, outcomeIndexB int) string
-	BookRowsForPair  func(view book.Snapshot, outcomeIndexA, outcomeIndexB int) []*persistententity.OrderBook
+	// MapKeyHasOpenOrders 未终态订单阻塞（内存，reconcile 刷库）。
+	MapKeyHasOpenOrders func(mapKey string) bool
+	// NoteOpenOrdersWritten 实盘落单后立刻记入内存。
+	NoteOpenOrdersWritten func(mapKey string)
+	SendOnOutcome         func(outcomeIndex int, buyYes bool, px, qty float64) (SendResult, error)
+	FlattenOnOutcome      func(outcomeIndex int, boughtYes bool, mine, other float64)
+	OppRepo               func() persistentrepo.ArbBinaryOpportunityRepo
+	OrderRepo             func() persistentrepo.ArbBinaryOrderRepo
+	BookRepo              func() persistentrepo.OrderBookRepo
+	BooksJSONForPair      func(outcomeIndexA, outcomeIndexB int) string
+	BookRowsForPair       func(view book.Snapshot, outcomeIndexA, outcomeIndexB int) []*persistententity.OrderBook
 
 	BacktestMode      bool
 	BacktestTaskID    uint
