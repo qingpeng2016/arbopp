@@ -77,14 +77,14 @@ func (r *Runner) grabOne(outcomeID uint) {
 
 func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
 	if !r.orderMu.TryLock() {
+		// Lock held (usually Fire in flight). Do not write map_key_lock_missed:
+		// every book tick would otherwise flood dry-run rows; the holder already persists.
 		if !retried {
 			go func(id uint) {
 				time.Sleep(25 * time.Millisecond)
 				r.grabOneAttempt(id, true)
 			}(outcomeID)
-			return
 		}
-		r.persistMissedLock(outcomeID)
 		return
 	}
 	defer r.orderMu.Unlock()
@@ -203,27 +203,6 @@ type snapPair struct{ l1, l2 watchgroup.LegPersistSnap }
 func (r *Runner) mustSnap(fp FilledPick) snapPair {
 	a, b := r.snapPickLegs(fp)
 	return snapPair{a, b}
-}
-
-func (r *Runner) persistMissedLock(outcomeID uint) {
-	lim := r.limits()
-	all, _, ok := r.tryAllPicksForGrab(outcomeID, lim)
-	if !ok {
-		return
-	}
-	ctx := r.grabContext()
-	mapKey := r.w.MapKey
-	persist := r.grabPersist()
-	for _, fp := range all {
-		hit := r.buildGrabHit(fp, lim)
-		hit.DryRun = true
-		hit.SkipOrderReason = "map_key_lock_missed"
-		hit.ExtData = ExtDataJSON(fp.SizeCheck.Snapshot, map[string]any{
-			"skip_order_reason": "map_key_lock_missed",
-			"map_key":           mapKey,
-		})
-		SaveGrabHit(ctx, persist, mapKey, hit)
-	}
 }
 
 func (r *Runner) buildGrabHit(fp FilledPick, lim Limits) GrabHit {

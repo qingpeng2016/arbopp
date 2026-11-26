@@ -27,14 +27,14 @@ func (r *Runner) grabOne(outcomeID uint) {
 
 func (r *Runner) grabOneAttempt(_ uint, retried bool) {
 	if !r.orderMu.TryLock() {
+		// Lock held (usually Fire in flight). Do not write map_key_lock_missed:
+		// every book tick would otherwise flood dry-run rows; the holder already persists.
 		if !retried {
 			go func() {
 				time.Sleep(25 * time.Millisecond)
 				r.grabOneAttempt(0, true)
 			}()
-			return
 		}
-		r.persistMissedLock()
 		return
 	}
 	defer r.orderMu.Unlock()
@@ -189,27 +189,6 @@ func fireTriple(r *Runner, pick TriplePick) (fills [3]float64, errs [3]error, se
 		}
 	}
 	return fills, errs, sends
-}
-
-func (r *Runner) persistMissedLock() {
-	lim := r.limits()
-	all := r.allTriplePicks(lim)
-	if len(all) == 0 {
-		return
-	}
-	ctx := r.w.Context()
-	mapKey := r.w.MapKey
-	deps := r.persistDeps()
-	for _, p := range all {
-		hit := GrabHit{
-			Pick: p, Legs: r.snapTripleLegs(p), Limits: lim, DryRun: true,
-			SkipOrderReason: "map_key_lock_missed",
-			ExtData: yesno.ExtDataJSON(p.SizeCheck.Snapshot, map[string]any{
-				"skip_order_reason": "map_key_lock_missed", "map_key": mapKey,
-			}),
-		}
-		SaveGrabHit(ctx, deps, mapKey, hit)
-	}
 }
 
 // OnBookUpdateAfterReplay 回测：本 snapshot 全部盘口写入后试一次 1X2（避免同一毫秒重复落库）。
