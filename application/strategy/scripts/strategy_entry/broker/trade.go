@@ -306,7 +306,8 @@ func SendOnOutcome(
 		return SendPredict(predict, predictCred, oc, yes, price, qty, false, predictSlip)
 	}
 	if strings.EqualFold(oc.Platform, appcommon.PlatformSxbet) {
-		return SendSxbet(sxbet, sxbetCred, oc, yes, price, qty)
+		// SX IOC：percentageOdds = 最差可接受价；文档明确可按更优价成交。
+		return SendSxbet(sxbet, sxbetCred, oc, yes, limitPriceWithSlippageBps(price, predictSlip.Bps), qty)
 	}
 	token := strings.TrimSpace(oc.YesTokenID)
 	if !yes {
@@ -316,7 +317,7 @@ func SendOnOutcome(
 	return SendPoly(poly, polyCred, token, limitPriceWithSlippageBps(price, predictSlip.Bps), qty, true, negRisk)
 }
 
-// limitPriceWithSlippageBps 买入限价放宽：price×(1+bps/10000)，封顶 0.99。
+// limitPriceWithSlippageBps 买入限价放宽：price×(1+bps/10000)，封顶 0.99（Poly/SX 共用）。
 func limitPriceWithSlippageBps(price float64, bps int64) float64 {
 	if !(price > 0) || bps <= 0 {
 		return price
