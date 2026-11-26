@@ -312,7 +312,23 @@ func SendOnOutcome(
 	if !yes {
 		token = strings.TrimSpace(oc.NoTokenID)
 	}
-	return SendPoly(poly, polyCred, token, price, qty, true, negRisk)
+	// Poly 限价 FAK：LimitPrice = 卖一×(1+bps/10000)，作最差可接受价；实际成交仍吃簿上更优卖档。
+	return SendPoly(poly, polyCred, token, limitPriceWithSlippageBps(price, predictSlip.Bps), qty, true, negRisk)
+}
+
+// limitPriceWithSlippageBps 买入限价放宽：price×(1+bps/10000)，封顶 0.99。
+func limitPriceWithSlippageBps(price float64, bps int64) float64 {
+	if !(price > 0) || bps <= 0 {
+		return price
+	}
+	if bps > 10_000 {
+		bps = 10_000
+	}
+	out := price * (1 + float64(bps)/10_000)
+	if out >= 1 {
+		return 0.99
+	}
+	return out
 }
 
 // FlattenOnOutcome 单边成交后在该 outcome 上反向平仓。

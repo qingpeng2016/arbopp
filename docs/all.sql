@@ -293,7 +293,7 @@ INSERT INTO `config_strategy_threshold` (`config_key`, `config_value`, `value_ty
   ('max_amount', 5.00000000, 'DECIMAL', '最大下单份额金额（÷各平台最低 best_ask → max_qty）'),
   ('1x2_yes_triple_max_cost', 0.95000000, 'DECIMAL', '1X2 三路 YES'),
   ('1x2_no_triple_max_cost', 1.90000000, 'DECIMAL', '1X2 三路 NO'),
-  ('predict_slippage_bps', 200.00000000, 'DECIMAL', 'Predict MARKET slippageBps（基点，100=1%，默认 200=2%）'),
+  ('predict_polymarket_slippage_bps', 200.00000000, 'DECIMAL', 'Predict+Polymarket 共用滑点 bps（100=1%；Predict→slippageBps，Poly→LimitPrice×(1+bps/10000)）'),
   ('predict_is_min_amount_out', 1.00000000, 'DECIMAL', 'Predict MARKET isMinAmountOut（1=true 花固定 USDT、少收份额；0=false 多付钱拿满份额）'),
   ('certain_min_return_pct', 0.10000000, 'DECIMAL', '必然事件最低收益率'),
   ('stochastic_min_expected_return_pct', 0.10000000, 'DECIMAL', '偶然事件期望收益率'),

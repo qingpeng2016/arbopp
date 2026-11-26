@@ -7,7 +7,7 @@ const (
 	weiPrecision      = 1e18
 	maxSalt           = 2147483648
 	fiveMinutesSec    = 5 * 60
-	defaultSlippageBps = 200 // 与 config_strategy_threshold.predict_slippage_bps 默认一致
+	defaultSlippageBps = 200 // 与 config_strategy_threshold.predict_polymarket_slippage_bps 默认一致
 
 	ecdsaValidator = "0x845ADb2C711129d4f3966735eD98a9F09fC4cE57"
 	zeroAddress    = "0x0000000000000000000000000000000000000000"

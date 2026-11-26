@@ -41,7 +41,7 @@ const (
 	thresholdMaxAmount           = "max_amount"
 	threshold1X2YesMax           = "1x2_yes_triple_max_cost"
 	threshold1X2NoMax            = "1x2_no_triple_max_cost"
-	thresholdPredictSlippageBps  = "predict_slippage_bps"
+	thresholdPredictSlippageBps  = "predict_polymarket_slippage_bps"
 	thresholdPredictIsMinOut     = "predict_is_min_amount_out"
 	defaultMaxCost               = 0.95
 	default1X2YesMax             = 0.95
@@ -67,7 +67,7 @@ type Params struct {
 	MaxAmount            float64
 	OneX2YesMax          float64
 	OneX2NoMax           float64
-	PredictSlippageBps   float64 // Predict MARKET slippageBps（100=1%）
+	PredictSlippageBps   float64 // Predict+Poly 共用滑点 bps（100=1%）：Predict→slippageBps；Poly→LimitPrice×(1+bps/10000)
 	PredictIsMinAmountOut bool   // Predict 买：固定 USDT、少收份额
 	fees                 map[string]float64
 }
