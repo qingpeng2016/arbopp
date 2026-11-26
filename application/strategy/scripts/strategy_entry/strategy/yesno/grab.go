@@ -34,15 +34,16 @@ func Fire(snd Sender, a, b Side, aBuyYes, bBuyYes bool, qty float64) (ra, rb wat
 
 // GrabHit 一次抢单结果。
 type GrabHit struct {
-	Pick            FilledPick
-	Leg1, Leg2      watchgroup.LegPersistSnap
-	MaxCost         float64
-	YesFill, NoFill float64
-	YesErr, NoErr   error
-	YesSend, NoSend watchgroup.SendResult
-	DryRun          bool   // true：只记机会表，不发单、不写 orders
-	ExtData         string // arb_binary_opportunity.ext_data
-	SkipOrderReason string
+	Pick                 FilledPick
+	Leg1, Leg2           watchgroup.LegPersistSnap
+	MaxCost              float64
+	FillShareMismatchPct float64
+	YesFill, NoFill      float64
+	YesErr, NoErr        error
+	YesSend, NoSend      watchgroup.SendResult
+	DryRun               bool   // true：只记机会表，不发单、不写 orders
+	ExtData              string // arb_binary_opportunity.ext_data
+	SkipOrderReason      string
 }
 
 // TryPickForOutcome 盘口更新后试算最优组合（回测扫描等只读路径，不落库）。
@@ -210,7 +211,7 @@ func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
 	}
 	if ordered {
 		go NotifyOrderResult(ctx, mapKey, GrabHit{
-			Pick: tradePick, MaxCost: lim.MaxCost,
+			Pick: tradePick, MaxCost: lim.MaxCost, FillShareMismatchPct: lim.FillShareMismatchPct,
 			YesFill: yesFill, NoFill: noFill, YesErr: yesErr, NoErr: noErr,
 			YesSend: yesRes, NoSend: noRes, DryRun: false,
 			Leg1: r.mustSnap(tradePick).l1, Leg2: r.mustSnap(tradePick).l2,

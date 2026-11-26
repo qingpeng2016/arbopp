@@ -26,7 +26,7 @@ var terminalStatuses = map[string]struct{}{
 	"FILLED": {}, "PARTIAL": {}, "NO_FILL": {}, "ERROR": {},
 }
 
-// Sync 按 orders.platform_order_id 回查各平台成交，补全 fill_qty / status / fee；
+// Sync 按 orders.platform_order_id 回查各平台成交，补全 trade_qty / trade_price / trade_amount / status / fee；
 // 同一 arb_opp_id 全部终态后回写 arb_binary_opportunity.arb_profit_amount。
 type Sync struct {
 	orderRepo   persistentrepo.ArbBinaryOrderRepo
@@ -80,7 +80,7 @@ func (s *Sync) Run(ctx context.Context) {
 				continue
 			}
 		}
-		fill, fee, exchStatus, qerr := s.queryFill(ctx, row, creds)
+		fill, fee, tradePx, exchStatus, qerr := s.queryFill(ctx, row, creds)
 		if qerr != nil {
 			errN++
 			logger.InfoZ(ctx, "order_fill_sync-query-fail",
@@ -89,22 +89,63 @@ func (s *Sync) Run(ctx context.Context) {
 			continue
 		}
 		qty := row.Qty.InexactFloat64()
-		prev := row.FillQty.InexactFloat64()
+		prev := row.TradeQty.InexactFloat64()
+		prevFee := row.Fee.InexactFloat64()
+		prevPx := row.TradePrice.InexactFloat64()
+		// 本轮查不到 fee/均价时保留库内已有值，避免把已回补的 fee 冲成 0。
+		if !(fee > 0) {
+			fee = prevFee
+		}
+		if !(tradePx > 0) {
+			tradePx = prevPx
+		}
 		fill, status, apply := resolveFillUpdate(prev, fill, qty, exchStatus)
 		if !apply {
+			// 成交状态未定稿时，仍允许补写 fee / trade_price（常见：FILLED 但 amountFilled 尚在结算）。
+			if prev > 0 && (fee > prevFee+1e-12 || (tradePx > 0 && !(prevPx > 0))) {
+				st := strings.TrimSpace(row.Status)
+				if st == "" {
+					st = statusFromFill(prev, qty)
+				}
+				if !(tradePx > 0) {
+					tradePx = row.Price.InexactFloat64()
+				}
+				if err := s.orderRepo.UpdateFill(ctx, row.ID, prev, fee, tradePx, st, ""); err != nil {
+					errN++
+					notification.SendErrorLog(ctx, "order_fill_sync-update-meta",
+						zap.Uint("id", row.ID), zap.Error(err))
+				} else {
+					okN++
+					if row.ArbOppID > 0 {
+						touchedOpp[row.ArbOppID] = struct{}{}
+					}
+				}
+				continue
+			}
 			skipN++
 			logger.InfoZ(ctx, "order_fill_sync-pending",
 				zap.Uint("id", row.ID), zap.String("platform", row.Platform),
 				zap.String("oid", row.PlatformOrderID), zap.String("exch_status", exchStatus),
-				zap.Float64("fill", fill), zap.Float64("prev_fill", prev))
+				zap.Float64("fill", fill), zap.Float64("prev_fill", prev),
+				zap.Float64("fee", fee))
 			continue
 		}
-		if err := s.orderRepo.UpdateFill(ctx, row.ID, fill, fee, status, ""); err != nil {
+		if fill > 0 && !(tradePx > 0) {
+			tradePx = row.Price.InexactFloat64() // 无平台均价时回退下单限价
+		}
+		if fill <= 0 {
+			tradePx = 0
+		}
+		if err := s.orderRepo.UpdateFill(ctx, row.ID, fill, fee, tradePx, status, ""); err != nil {
 			errN++
 			notification.SendErrorLog(ctx, "order_fill_sync-update",
 				zap.Uint("id", row.ID), zap.Error(err))
 			continue
 		}
+		logger.InfoZ(ctx, "order_fill_sync-updated",
+			zap.Uint("id", row.ID), zap.String("platform", row.Platform),
+			zap.Float64("trade_qty", fill), zap.Float64("trade_price", tradePx),
+			zap.Float64("fee", fee), zap.String("status", status))
 		okN++
 		if row.ArbOppID > 0 {
 			touchedOpp[row.ArbOppID] = struct{}{}
@@ -157,8 +198,8 @@ func allOrdersTerminal(orders []*persistententity.ArbBinaryOrder) bool {
 	return true
 }
 
-// calcArbProfitAmount：total_sum_amount = Σ(price*fill_qty)；
-// total_sum_min_qty = min(各平台 Σfill_qty)；利润 = min_qty - amount。
+// calcArbProfitAmount：total_sum_amount = Σ(trade_amount 或 trade_price*trade_qty 或 price*trade_qty)；
+// total_sum_min_qty = min(各平台 Σtrade_qty)；利润 = min_qty - amount。
 func calcArbProfitAmount(orders []*persistententity.ArbBinaryOrder) (float64, bool) {
 	if len(orders) == 0 {
 		return 0, false
@@ -166,15 +207,24 @@ func calcArbProfitAmount(orders []*persistententity.ArbBinaryOrder) (float64, bo
 	var totalSumAmount float64
 	byPlatform := make(map[string]float64)
 	for _, o := range orders {
-		fill := o.FillQty.InexactFloat64()
+		fill := o.TradeQty.InexactFloat64()
 		if fill < 0 {
 			fill = 0
 		}
-		px := o.Price.InexactFloat64()
-		if px < 0 {
-			px = 0
+		amount := o.TradeAmount.InexactFloat64()
+		if amount <= 0 {
+			tp := o.TradePrice.InexactFloat64()
+			if tp > 0 && fill > 0 {
+				amount = tp * fill
+			} else {
+				px := o.Price.InexactFloat64()
+				if px < 0 {
+					px = 0
+				}
+				amount = px * fill
+			}
 		}
-		totalSumAmount += px * fill
+		totalSumAmount += amount
 		plat := strings.ToUpper(strings.TrimSpace(o.Platform))
 		if plat == "" {
 			plat = "_"
@@ -244,7 +294,7 @@ func (s *Sync) loadCreds(ctx context.Context) activeCreds {
 	return c
 }
 
-func (s *Sync) queryFill(ctx context.Context, row *persistententity.ArbBinaryOrder, creds activeCreds) (fill, fee float64, status string, err error) {
+func (s *Sync) queryFill(ctx context.Context, row *persistententity.ArbBinaryOrder, creds activeCreds) (fill, fee, tradePrice float64, status string, err error) {
 	oid := strings.TrimSpace(row.PlatformOrderID)
 	platform := strings.ToUpper(strings.TrimSpace(row.Platform))
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
@@ -253,61 +303,77 @@ func (s *Sync) queryFill(ctx context.Context, row *persistententity.ArbBinaryOrd
 	switch platform {
 	case appcommon.PlatformPolymarket:
 		if s.poly == nil || !creds.polyOK {
-			return 0, 0, "", errUnavailable("polymarket")
+			return 0, 0, 0, "", errUnavailable("polymarket")
 		}
 		detail, err := s.poly.GetOrderById(ctx, httpentity.GetOrderReq{OrderID: oid}, creds.poly)
 		if err != nil {
-			return 0, 0, "", err
+			return 0, 0, 0, "", err
 		}
 		fill = book.ParseNum(detail.Order.SizeMatched)
+		trades := s.polyTradesForOrder(ctx, creds.poly, oid, row.TokenID)
 		// size_matched 为空/0 时用 trades 按 taker_order_id 汇总（官方也建议如此兜底）
 		if fill <= 0 {
-			fill = s.polyFillFromTrades(ctx, creds.poly, oid, row.TokenID)
+			for _, t := range trades {
+				fill += book.ParseNum(t.Size)
+			}
+			if math.IsNaN(fill) || math.IsInf(fill, 0) || fill < 0 {
+				fill = 0
+			}
 		}
-		fee = s.polyFee(ctx, creds.poly, oid, row.TokenID)
+		fee = s.polyFeeFromTrades(trades)
+		tradePrice = polyVWAP(trades)
+		if !(tradePrice > 0) {
+			tradePrice = book.ParseNum(detail.Order.Price)
+		}
 		st := strings.TrimSpace(string(detail.Order.Status))
 		logger.InfoZ(ctx, "order_fill_sync-poly-query",
 			zap.Uint("id", row.ID), zap.String("oid", oid),
 			zap.String("exch_status", st), zap.Float64("size_matched", book.ParseNum(detail.Order.SizeMatched)),
-			zap.Float64("fill", fill))
-		return fill, fee, st, nil
+			zap.Float64("fill", fill), zap.Float64("trade_price", tradePrice),
+			zap.Float64("fee", fee), zap.Int("trades", len(trades)))
+		return fill, fee, tradePrice, st, nil
 
 	case appcommon.PlatformPredict:
 		if s.predict == nil || !creds.predOK {
-			return 0, 0, "", errUnavailable("predict")
+			return 0, 0, 0, "", errUnavailable("predict")
 		}
 		d, err := s.predict.GetOrderByHash(ctx, creds.predict, oid)
 		if err != nil {
-			return 0, 0, "", err
+			return 0, 0, 0, "", err
 		}
 		logger.InfoZ(ctx, "order_fill_sync-predict-query",
 			zap.Uint("id", row.ID), zap.String("oid", oid),
 			zap.String("exch_status", d.Status), zap.Float64("amount_filled", d.AmountFilled),
-			zap.Float64("amount", d.Amount))
-		return d.AmountFilled, d.FeeUSDT, d.Status, nil
+			zap.Float64("amount", d.Amount), zap.Float64("avg_price", d.AvgPrice),
+			zap.Float64("fee", d.FeeUSDT))
+		return d.AmountFilled, d.FeeUSDT, d.AvgPrice, d.Status, nil
 
 	case appcommon.PlatformSxbet:
 		if s.sxbet == nil || !creds.sxOK {
-			return 0, 0, "", errUnavailable("sxbet")
+			return 0, 0, 0, "", errUnavailable("sxbet")
 		}
+		// fills-v3 当前无成交价字段；均价由上层回退下单限价。
 		if f, err := s.sxbet.GetFillsByOrderID(ctx, creds.sxbet, oid); err == nil && f != nil {
 			if f.FillQty > 0 || f.FeeUSDT > 0 {
-				return f.FillQty, f.FeeUSDT, f.Status, nil
+				return f.FillQty, f.FeeUSDT, 0, f.Status, nil
 			}
 		}
 		o, err := s.sxbet.GetOrderByID(ctx, creds.sxbet, oid)
 		if err != nil {
-			return 0, 0, "", err
+			return 0, 0, 0, "", err
 		}
-		return o.FillQty, o.FeeUSDT, o.Status, nil
+		return o.FillQty, o.FeeUSDT, 0, o.Status, nil
 
 	default:
-		return 0, 0, "", errUnavailable(platform)
+		return 0, 0, 0, "", errUnavailable(platform)
 	}
 }
 
 func (s *Sync) polyFee(ctx context.Context, acc httpentity.PolymarketAccount, orderID, tokenID string) float64 {
-	tr := s.polyTradesForOrder(ctx, acc, orderID, tokenID)
+	return s.polyFeeFromTrades(s.polyTradesForOrder(ctx, acc, orderID, tokenID))
+}
+
+func (s *Sync) polyFeeFromTrades(tr []httpentity.Trade) float64 {
 	var fee float64
 	for _, t := range tr {
 		sz := book.ParseNum(t.Size)
@@ -323,15 +389,24 @@ func (s *Sync) polyFee(ctx context.Context, acc httpentity.PolymarketAccount, or
 	return fee
 }
 
-func (s *Sync) polyFillFromTrades(ctx context.Context, acc httpentity.PolymarketAccount, orderID, tokenID string) float64 {
-	var fill float64
-	for _, t := range s.polyTradesForOrder(ctx, acc, orderID, tokenID) {
-		fill += book.ParseNum(t.Size)
+func polyVWAP(tr []httpentity.Trade) float64 {
+	var notional, qty float64
+	for _, t := range tr {
+		sz := book.ParseNum(t.Size)
+		px := book.ParseNum(t.Price)
+		if sz > 0 && px > 0 {
+			notional += sz * px
+			qty += sz
+		}
 	}
-	if math.IsNaN(fill) || math.IsInf(fill, 0) || fill < 0 {
+	if qty <= 0 {
 		return 0
 	}
-	return fill
+	avg := notional / qty
+	if avg <= 0 || avg >= 1 || math.IsNaN(avg) || math.IsInf(avg, 0) {
+		return 0
+	}
+	return avg
 }
 
 func (s *Sync) polyTradesForOrder(ctx context.Context, acc httpentity.PolymarketAccount, orderID, tokenID string) []httpentity.Trade {

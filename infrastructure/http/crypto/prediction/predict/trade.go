@@ -181,6 +181,7 @@ func (c *Client) GetOrderByHash(ctx context.Context, acc httpentity.PredictAccou
 		Status:       strings.TrimSpace(d.Status),
 		Amount:       weiStringToShares(d.Amount),
 		AmountFilled: weiStringToShares(d.AmountFilled),
+		AvgPrice:     predictOrderAvgPrice(d.Order),
 	}
 	if out.OrderHash == "" {
 		out.OrderHash = orderHash
@@ -256,6 +257,25 @@ func matchFeeUSDT(f *httpentity.PredictMatchFee) float64 {
 		return 0
 	}
 	return weiStringToShares(f.Amount)
+}
+
+// predictOrderAvgPrice 从签名 maker/taker 推均价：买=USDT/份额，卖=USDT/份额。
+func predictOrderAvgPrice(o httpentity.PredictSignedOrder) float64 {
+	maker := weiStringToShares(o.MakerAmount)
+	taker := weiStringToShares(o.TakerAmount)
+	if maker <= 0 || taker <= 0 {
+		return 0
+	}
+	var px float64
+	if o.Side == 0 { // BUY
+		px = maker / taker
+	} else {
+		px = taker / maker
+	}
+	if px <= 0 || px >= 1 || math.IsNaN(px) || math.IsInf(px, 0) {
+		return 0
+	}
+	return px
 }
 
 func weiStringToShares(s string) float64 {

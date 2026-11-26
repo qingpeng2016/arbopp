@@ -96,17 +96,12 @@ func NotifyOrderResult(ctx context.Context, mapKey string, hit GrabHit) {
 		{Key: "strategy", Value: pick.Kind},
 		{Key: "order_qty", Value: strconv.FormatFloat(pick.Qty, 'f', -1, 64)},
 	}
-	const eps = 1e-6
-	same := true
 	var costSum float64
 	for i := 0; i < 3; i++ {
 		fields = append(fields,
 			notification.FieldPair{Key: "fill_" + strconv.Itoa(i+1), Value: strconv.FormatFloat(hit.Fills[i], 'f', -1, 64)},
 			notification.FieldPair{Key: "limit_" + strconv.Itoa(i+1), Value: strconv.FormatFloat(pick.Prices[i], 'f', -1, 64)},
 		)
-		if hit.Fills[i] <= eps || abs(hit.Fills[i]-pick.Qty) > eps {
-			same = false
-		}
 		costSum += pick.Prices[i] * hit.Fills[i]
 	}
 	// YES 三腿结算恒 1；NO 三腿任意一结果成立时另两腿 NO 各兑付 1 → 结算恒 2。
@@ -114,26 +109,33 @@ func NotifyOrderResult(ctx context.Context, mapKey string, hit GrabHit) {
 	if !pick.BuyYes {
 		settle = 2.0
 	}
+	matched, ok := yesno.FillsAligned(hit.Fills[:], hit.Limits.FillShareMismatchPct)
 	title := "strategy_entry 1X2 下单结果：未套利成功"
-	if same {
-		profit := settle*pick.Qty - costSum
+	if ok {
+		profit := settle*matched - costSum
 		title = "strategy_entry 1X2 下单结果：套利成功"
 		fields = append(fields,
+			notification.FieldPair{Key: "matched_qty", Value: strconv.FormatFloat(matched, 'f', -1, 64)},
 			notification.FieldPair{Key: "settle_per_share", Value: strconv.FormatFloat(settle, 'f', -1, 64)},
 			notification.FieldPair{Key: "cost_sum", Value: strconv.FormatFloat(costSum, 'f', -1, 64)},
 			notification.FieldPair{Key: "arb_profit", Value: strconv.FormatFloat(profit, 'f', -1, 64)},
 		)
 	} else {
-		fields = append(fields, notification.FieldPair{Key: "note", Value: "三腿成交份额不一致或未足额，未形成完整套利"})
+		amts := make([]float64, 3)
+		fees := make([]float64, 3)
+		for i := 0; i < 3; i++ {
+			amts[i] = pick.Prices[i] * hit.Fills[i]
+			if i < len(hit.Sends) {
+				fees[i] = hit.Sends[i].Fee
+			}
+		}
+		est := yesno.EstProfitMaxQtyMinusCost(hit.Fills[:], amts, fees)
+		fields = append(fields,
+			notification.FieldPair{Key: "note", Value: "三腿成交份额差异超出容忍或未成交，未形成完整套利"},
+			notification.FieldPair{Key: "预计利润", Value: strconv.FormatFloat(est, 'f', -1, 64)},
+		)
 	}
 	_ = notification.GetGlobalNotificationManager().SendOrderAlert(ctx, title, fields)
-}
-
-func abs(v float64) float64 {
-	if v < 0 {
-		return -v
-	}
-	return v
 }
 
 func SaveGrabHit(ctx context.Context, d persistDeps, mapKey string, hit GrabHit) bool {

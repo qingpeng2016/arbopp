@@ -43,6 +43,7 @@ const (
 	threshold1X2NoMax            = "1x2_no_triple_max_cost"
 	thresholdPredictSlippageBps  = "predict_polymarket_sxbet_slippage_bps"
 	thresholdPredictIsMinOut     = "predict_is_min_amount_out"
+	thresholdFillShareMismatchPct = "fill_share_mismatch_pct"
 	defaultMaxCost               = 0.95
 	default1X2YesMax             = 0.95
 	default1X2NoMax              = 1.90
@@ -50,6 +51,7 @@ const (
 	defaultMaxAmount             = 5.0
 	defaultPredictSlippageBps    = 200.0
 	defaultPredictIsMinAmountOut = true
+	defaultFillShareMismatchPct  = 0.01
 	defaultPolySports            = 0.05
 	defaultKalshiSports          = 0.07
 	defaultPredictSports         = 0.02
@@ -67,9 +69,10 @@ type Params struct {
 	MaxAmount            float64
 	OneX2YesMax          float64
 	OneX2NoMax           float64
-	PredictSlippageBps   float64 // Predict/Poly/SX 共用滑点 bps（100=1%）：Predict→slippageBps；Poly/SX→限价×(1+bps/10000)
-	PredictIsMinAmountOut bool   // Predict 买：固定 USDT、少收份额
-	fees                 map[string]float64
+	PredictSlippageBps    float64 // Predict/Poly/SX 共用滑点 bps（100=1%）：Predict→slippageBps；Poly/SX→限价×(1+bps/10000)
+	PredictIsMinAmountOut bool    // Predict 买：固定 USDT、少收份额
+	FillShareMismatchPct  float64 // 下单结果：各平台成交 (max-min)/max 上限（0.01=1%）
+	fees                  map[string]float64
 }
 
 // defaultParams 库里没有门槛时用的默认值。体育吃单系数按两家现行价目。
@@ -82,6 +85,7 @@ func defaultParams() Params {
 		OneX2NoMax:            default1X2NoMax,
 		PredictSlippageBps:    defaultPredictSlippageBps,
 		PredictIsMinAmountOut: defaultPredictIsMinAmountOut,
+		FillShareMismatchPct:  defaultFillShareMismatchPct,
 		fees: map[string]float64{
 			feeKey(appcommon.PlatformPolymarket, "Sports", ""): defaultPolySports,
 			feeKey(appcommon.PlatformKalshi, "Sports", ""):     defaultKalshiSports,
@@ -143,6 +147,9 @@ func (e *Entry) loadParams(ctx context.Context) Params {
 	}
 	if row, ok := e.thresholdRow(ctx, thresholdPredictIsMinOut); ok {
 		p.PredictIsMinAmountOut = row.ConfigValue.InexactFloat64() >= 0.5
+	}
+	if row, ok := e.thresholdRow(ctx, thresholdFillShareMismatchPct); ok {
+		p.FillShareMismatchPct = thresholdNonNegative(row.ConfigValue)
 	}
 	p.fees = e.loadFees(ctx, p.fees)
 	return p

@@ -9,8 +9,8 @@ import (
 
 func TestCalcArbProfitAmount(t *testing.T) {
 	orders := []*persistententity.ArbBinaryOrder{
-		{Platform: "POLYMARKET", Price: decimal.RequireFromString("0.40"), FillQty: decimal.RequireFromString("10"), Status: "FILLED"},
-		{Platform: "PREDICT", Price: decimal.RequireFromString("0.50"), FillQty: decimal.RequireFromString("10"), Status: "FILLED"},
+		{Platform: "POLYMARKET", Price: decimal.RequireFromString("0.40"), TradeQty: decimal.RequireFromString("10"), Status: "FILLED"},
+		{Platform: "PREDICT", Price: decimal.RequireFromString("0.50"), TradeQty: decimal.RequireFromString("10"), Status: "FILLED"},
 	}
 	// amount=0.4*10+0.5*10=9; min_qty=min(10,10)=10; profit=1
 	got, ok := calcArbProfitAmount(orders)
@@ -24,9 +24,9 @@ func TestCalcArbProfitAmount(t *testing.T) {
 
 func TestCalcArbProfitAmountSamePlatformLegs(t *testing.T) {
 	orders := []*persistententity.ArbBinaryOrder{
-		{Platform: "POLYMARKET", Price: decimal.RequireFromString("0.13"), FillQty: decimal.RequireFromString("27.27"), Status: "FILLED"},
-		{Platform: "POLYMARKET", Price: decimal.RequireFromString("0.71"), FillQty: decimal.RequireFromString("10"), Status: "PARTIAL"},
-		{Platform: "PREDICT", Price: decimal.RequireFromString("0.09"), FillQty: decimal.RequireFromString("10"), Status: "FILLED"},
+		{Platform: "POLYMARKET", Price: decimal.RequireFromString("0.13"), TradeQty: decimal.RequireFromString("27.27"), Status: "FILLED"},
+		{Platform: "POLYMARKET", Price: decimal.RequireFromString("0.71"), TradeQty: decimal.RequireFromString("10"), Status: "PARTIAL"},
+		{Platform: "PREDICT", Price: decimal.RequireFromString("0.09"), TradeQty: decimal.RequireFromString("10"), Status: "FILLED"},
 	}
 	// poly qty=37.27, predict=10 → min=10
 	// amount=0.13*27.27 + 0.71*10 + 0.09*10 = 3.5451+7.1+0.9=11.5451

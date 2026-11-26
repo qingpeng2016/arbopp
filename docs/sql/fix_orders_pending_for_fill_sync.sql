@@ -11,11 +11,11 @@ UPDATE `orders`
 SET `status` = 'PENDING',
     `updated_at` = NOW()
 WHERE `platform_order_id` <> ''
-  AND `fill_qty` = 0
+  AND `trade_qty` = 0
   AND UPPER(TRIM(`status`)) IN ('NO_FILL', 'ERROR', '', 'PENDING');
 
 -- 3) 查询待回查
-SELECT `id`, `platform`, `platform_order_id`, `status`, `fill_qty`, `fee`, `err_msg`, `updated_at`
+SELECT `id`, `platform`, `platform_order_id`, `status`, `trade_qty`, `trade_price`, `trade_amount`, `fee`, `err_msg`, `updated_at`
 FROM `orders`
 WHERE `platform_order_id` <> ''
   AND UPPER(TRIM(`status`)) = 'PENDING'

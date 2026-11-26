@@ -28,6 +28,7 @@ func main() {
 		{"bot stat_collect", ensureBotStatCollect},
 		{"data_task.ingest_source", ensureDataTaskIngestSource},
 		{"orders.fill_meta", ensureOrdersFillMeta},
+		{"orders.trade_qty_amount", ensureOrdersTradeQtyAmount},
 		{"bot order_fill_sync", ensureBotOrderFillSync},
 		{"arb_opp_profit_amount", ensureArbOppProfitAmount},
 	}
@@ -294,7 +295,7 @@ func ensureBotOrderFillSync(db *gorm.DB) error {
 	}
 	return db.Exec(`
 INSERT INTO bot_schedule_config (module, task_name, interval_seconds, exe_sort, concurrency, description, is_enabled, is_strategy_enabled, is_primary_machine_run)
-VALUES ('less_one', 'order_fill_sync', 30, 45, 1, '回查 Poly/Predict/SX 成交，补全 orders.fill_qty/status/fee', 1, 1, 0)`).Error
+VALUES ('less_one', 'order_fill_sync', 30, 45, 1, '回查 Poly/Predict/SX 成交，补全 orders.trade_qty/trade_price/trade_amount/status/fee', 1, 1, 0)`).Error
 }
 
 func ensureArbOppProfitAmount(db *gorm.DB) error {
@@ -331,9 +332,13 @@ func ensureOrdersFillMeta(db *gorm.DB) error {
 				return err
 			}
 		}
+		afterQty := "fill_qty"
+		if table == "orders" && hasColumn(db, table, "trade_qty") {
+			afterQty = "trade_qty"
+		}
 		if !hasColumn(db, table, "fee") {
 			if err := db.Exec(`ALTER TABLE ` + "`" + table + "`" + `
-  ADD COLUMN fee decimal(20,8) NOT NULL DEFAULT 0 COMMENT '手续费（结算币）' AFTER fill_qty`).Error; err != nil {
+  ADD COLUMN fee decimal(20,8) NOT NULL DEFAULT 0 COMMENT '手续费（结算币）' AFTER ` + afterQty).Error; err != nil {
 				return err
 			}
 		}
@@ -346,5 +351,37 @@ func ensureOrdersFillMeta(db *gorm.DB) error {
 			}
 		}
 	}
+	return nil
+}
+
+// ensureOrdersTradeQtyAmount：fill_qty→trade_qty；补 trade_price / trade_amount。
+func ensureOrdersTradeQtyAmount(db *gorm.DB) error {
+	if !hasTable(db, "orders") {
+		return nil
+	}
+	if hasColumn(db, "orders", "fill_qty") && !hasColumn(db, "orders", "trade_qty") {
+		if err := db.Exec(`ALTER TABLE orders
+  CHANGE COLUMN fill_qty trade_qty decimal(20,8) NOT NULL DEFAULT 0 COMMENT '实际成交份额（回补；无成交为 0）'`).Error; err != nil {
+			return err
+		}
+	}
+	if !hasColumn(db, "orders", "trade_price") {
+		after := "trade_qty"
+		if !hasColumn(db, "orders", "trade_qty") {
+			after = "qty"
+		}
+		if err := db.Exec(`ALTER TABLE orders
+  ADD COLUMN trade_price decimal(20,8) NOT NULL DEFAULT 0 COMMENT '实际成交均价（回补；无成交为 0）' AFTER ` + after).Error; err != nil {
+			return err
+		}
+	}
+	if !hasColumn(db, "orders", "trade_amount") {
+		if err := db.Exec(`ALTER TABLE orders
+  ADD COLUMN trade_amount decimal(20,8) NOT NULL DEFAULT 0 COMMENT '实际成交金额=trade_price*trade_qty' AFTER trade_price`).Error; err != nil {
+			return err
+		}
+	}
+	_ = db.Exec(`UPDATE orders SET trade_amount = ROUND(trade_price * trade_qty, 8)
+WHERE trade_qty > 0 AND trade_price > 0 AND trade_amount = 0`).Error
 	return nil
 }

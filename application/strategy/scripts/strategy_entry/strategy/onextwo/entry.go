@@ -70,6 +70,9 @@ func (r *Runner) limits() Limits {
 	if r.w.Ops.StrategyParams != nil {
 		_, lim.MinAmount, lim.MaxAmount = r.w.Ops.StrategyParams()
 	}
+	if r.w.Ops.FillShareMismatchPct != nil {
+		lim.FillShareMismatchPct = r.w.Ops.FillShareMismatchPct()
+	}
 	return lim
 }
 

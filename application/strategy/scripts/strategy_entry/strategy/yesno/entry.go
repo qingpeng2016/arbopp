@@ -142,7 +142,11 @@ func (r *Runner) limits() Limits {
 		return Limits{}
 	}
 	maxCost, minAmount, maxAmount := r.w.Ops.StrategyParams()
-	return Limits{MaxCost: maxCost, MinAmount: minAmount, MaxAmount: maxAmount}
+	lim := Limits{MaxCost: maxCost, MinAmount: minAmount, MaxAmount: maxAmount}
+	if r.w.Ops.FillShareMismatchPct != nil {
+		lim.FillShareMismatchPct = r.w.Ops.FillShareMismatchPct()
+	}
+	return lim
 }
 
 func (r *Runner) execSide(outcomeIndex int) (ExecSide, bool) {

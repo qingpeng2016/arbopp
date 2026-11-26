@@ -11,8 +11,9 @@ const (
 
 // Limits 1X2 三路全覆盖阈值与下单量（与 yesno 共用 min_amount / max_amount）。
 type Limits struct {
-	YesTripleMax float64
-	NoTripleMax  float64
-	MinAmount    float64
-	MaxAmount    float64
+	YesTripleMax         float64
+	NoTripleMax          float64
+	MinAmount            float64
+	MaxAmount            float64
+	FillShareMismatchPct float64
 }

@@ -46,12 +46,13 @@ type PredictPlaceOrderResult struct {
 
 // PredictOrderFill 查单回补结果。
 type PredictOrderFill struct {
-	OrderID     string
-	OrderHash   string
-	Status      string  // OPEN / FILLED / …
-	Amount      float64 // 下单份额
+	OrderID      string
+	OrderHash    string
+	Status       string  // OPEN / FILLED / …
+	Amount       float64 // 下单份额
 	AmountFilled float64
-	FeeUSDT     float64
+	FeeUSDT      float64
+	AvgPrice     float64 // 签名金额推算均价（买=maker/taker）；0=未知
 }
 
 // PredictRepo Predict.fun REST（x-api-key）。

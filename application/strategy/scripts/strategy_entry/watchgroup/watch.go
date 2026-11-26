@@ -16,8 +16,10 @@ import (
 type Ops struct {
 	StrategyParams   func() (maxCost, minAmount, maxAmount float64)
 	OneX2Limits      func() (yesTripleMax, noTripleMax float64)
-	TradeFee         func(platform, category, sub string) float64
-	CanTrade         func(platform string) bool
+	// FillShareMismatchPct 下单结果判定：各平台成交份额 (max-min)/max 上限。
+	FillShareMismatchPct func() float64
+	TradeFee             func(platform, category, sub string) float64
+	CanTrade             func(platform string) bool
 	// MapKeyHasOpenOrders 未终态订单阻塞（内存，reconcile 刷库）。
 	MapKeyHasOpenOrders func(mapKey string) bool
 	// NoteOpenOrdersWritten 实盘落单后立刻记入内存。

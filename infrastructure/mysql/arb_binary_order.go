@@ -48,9 +48,9 @@ func (r *ArbBinaryOrderImpl) ListForFillSync(ctx context.Context, limit int, onl
 		Where("(platform_order_id <> '' OR (platform_order_id = '' AND err_msg LIKE ?))", "%orderID%").
 		Order("id asc")
 	if onlyMissing {
-		// 未成交/部分/错误/挂起需回查；FILLED 且 fill>0 仅在 fee 仍为 0 时补手续费。
+		// 未成交/部分/错误/挂起需回查；FILLED 且 trade_qty>0 仅在 fee 仍为 0 时补手续费。
 		q = q.Where(`(
-			fill_qty = 0
+			trade_qty = 0
 			OR fee = 0
 			OR UPPER(TRIM(status)) IN ?
 		)`, []string{"NO_FILL", "PARTIAL", "ERROR", "PENDING", "OPEN", "LIVE", ""})
@@ -65,11 +65,19 @@ func (r *ArbBinaryOrderImpl) ListForFillSync(ctx context.Context, limit int, onl
 	return list, nil
 }
 
-func (r *ArbBinaryOrderImpl) UpdateFill(ctx context.Context, id uint, fillQty, fee float64, status, errMsg string) error {
+func (r *ArbBinaryOrderImpl) UpdateFill(ctx context.Context, id uint, tradeQty, fee, tradePrice float64, status, errMsg string) error {
+	tq := decimal.NewFromFloat(tradeQty).Round(8)
+	tp := decimal.NewFromFloat(tradePrice).Round(8)
+	var ta decimal.Decimal
+	if tradeQty > 0 && tradePrice > 0 {
+		ta = decimal.NewFromFloat(tradePrice * tradeQty).Round(8)
+	}
 	up := map[string]interface{}{
-		"fill_qty": decimal.NewFromFloat(fillQty).Round(8),
-		"fee":      decimal.NewFromFloat(fee).Round(8),
-		"status":   strings.TrimSpace(status),
+		"trade_qty":    tq,
+		"trade_price":  tp,
+		"trade_amount": ta,
+		"fee":          decimal.NewFromFloat(fee).Round(8),
+		"status":       strings.TrimSpace(status),
 	}
 	if msg := strings.TrimSpace(errMsg); msg != "" {
 		if len(msg) > 1000 {

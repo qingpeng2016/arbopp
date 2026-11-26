@@ -23,7 +23,9 @@ type ArbBinaryOrder struct {
 	Action                  string          `gorm:"column:action;type:varchar(16);not null;default:BUY"`
 	Price                   decimal.Decimal `gorm:"column:price;type:decimal(20,8);not null"`
 	Qty                     decimal.Decimal `gorm:"column:qty;type:decimal(20,8);not null"`
-	FillQty                 decimal.Decimal `gorm:"column:fill_qty;type:decimal(20,8);not null;default:0"`
+	TradeQty                decimal.Decimal `gorm:"column:trade_qty;type:decimal(20,8);not null;default:0"`     // 实际成交份额（fill sync 回填）
+	TradePrice              decimal.Decimal `gorm:"column:trade_price;type:decimal(20,8);not null;default:0"`   // 实际成交均价
+	TradeAmount             decimal.Decimal `gorm:"column:trade_amount;type:decimal(20,8);not null;default:0"` // trade_price*trade_qty
 	Fee                     decimal.Decimal `gorm:"column:fee;type:decimal(20,8);not null;default:0"`
 	Status                  string          `gorm:"column:status;type:varchar(32);not null"`
 	ErrMsg                  string          `gorm:"column:err_msg;type:varchar(1024);not null;default:''"`

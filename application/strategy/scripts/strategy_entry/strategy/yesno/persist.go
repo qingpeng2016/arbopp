@@ -73,7 +73,7 @@ func NotifyGrab(ctx context.Context, mapKey string, hit GrabHit) {
 }
 
 // NotifyOrderResult 下单结果专用通知（order_webhook_url）。
-// 两边成交份额一致 → 利润 = qty - Σ(price_i * qty)；否则提示未套利成功。
+// 各平台成交份额 (max-min)/max ≤ FillShareMismatchPct → 套利成功；否则未套利成功。
 func NotifyOrderResult(ctx context.Context, mapKey string, hit GrabHit) {
 	a, b := hit.Pick.Yes, hit.Pick.No
 	aPx, bPx := SidePx(a.Side, hit.Pick.YesBuyYes), SidePx(b.Side, hit.Pick.NoBuyYes)
@@ -96,24 +96,91 @@ func NotifyOrderResult(ctx context.Context, mapKey string, hit GrabHit) {
 		{Key: "err_a", Value: errA},
 		{Key: "err_b", Value: errB},
 	}
-	const eps = 1e-6
-	sameFill := hit.YesFill > eps && math.Abs(hit.YesFill-hit.NoFill) <= eps &&
-		math.Abs(hit.YesFill-hit.Pick.Qty) <= eps
+	matched, ok := FillsAligned([]float64{hit.YesFill, hit.NoFill}, hit.FillShareMismatchPct)
 	title := "strategy_entry 下单结果：未套利成功"
-	if sameFill {
+	if ok {
 		costSum := aPx*hit.YesFill + bPx*hit.NoFill
-		profit := hit.YesFill - costSum
+		profit := matched - costSum
 		title = "strategy_entry 下单结果：套利成功"
 		fields = append(fields,
+			notification.FieldPair{Key: "matched_qty", Value: strconv.FormatFloat(matched, 'f', -1, 64)},
 			notification.FieldPair{Key: "cost_sum", Value: strconv.FormatFloat(costSum, 'f', -1, 64)},
 			notification.FieldPair{Key: "arb_profit", Value: strconv.FormatFloat(profit, 'f', -1, 64)},
 		)
 	} else {
-		fields = append(fields, notification.FieldPair{
-			Key: "note", Value: "各平台成交份额不一致或未足额成交，未形成完整套利",
-		})
+		// 下单瞬间尚无 trade_price 回补：trade_amount ≈ limit*fill
+		est := EstProfitMaxQtyMinusCost(
+			[]float64{hit.YesFill, hit.NoFill},
+			[]float64{aPx * hit.YesFill, bPx * hit.NoFill},
+			[]float64{hit.YesSend.Fee, hit.NoSend.Fee},
+		)
+		fields = append(fields,
+			notification.FieldPair{Key: "note", Value: "各平台成交份额差异超出容忍或未成交，未形成完整套利"},
+			notification.FieldPair{Key: "预计利润", Value: strconv.FormatFloat(est, 'f', -1, 64)},
+		)
 	}
 	_ = notification.GetGlobalNotificationManager().SendOrderAlert(ctx, title, fields)
+}
+
+// EstProfitMaxQtyMinusCost 预计利润 = max(trade_qty) - Σtrade_amount - Σfee。
+func EstProfitMaxQtyMinusCost(tradeQtys, tradeAmounts, fees []float64) float64 {
+	var maxQ, sumAmt, sumFee float64
+	for i, q := range tradeQtys {
+		if q < 0 {
+			q = 0
+		}
+		if q > maxQ {
+			maxQ = q
+		}
+		a := 0.0
+		if i < len(tradeAmounts) {
+			a = tradeAmounts[i]
+		}
+		if a < 0 {
+			a = 0
+		}
+		sumAmt += a
+		f := 0.0
+		if i < len(fees) {
+			f = fees[i]
+		}
+		if f < 0 {
+			f = 0
+		}
+		sumFee += f
+	}
+	return maxQ - sumAmt - sumFee
+}
+
+// FillsAligned 各腿成交份额是否对齐：均 >0 且 (max-min)/max ≤ mismatchPct。
+// mismatchPct≤0 时要求严格相等（eps）。返回匹配份额 = min(fills)。
+func FillsAligned(fills []float64, mismatchPct float64) (matched float64, ok bool) {
+	const eps = 1e-6
+	if len(fills) == 0 {
+		return 0, false
+	}
+	minF, maxF := fills[0], fills[0]
+	for _, f := range fills {
+		if f <= eps {
+			return 0, false
+		}
+		if f < minF {
+			minF = f
+		}
+		if f > maxF {
+			maxF = f
+		}
+	}
+	if mismatchPct <= 0 {
+		if maxF-minF > eps {
+			return 0, false
+		}
+		return minF, true
+	}
+	if (maxF-minF)/maxF > mismatchPct+1e-12 {
+		return 0, false
+	}
+	return minF, true
 }
 
 func SaveGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit GrabHit) bool {
@@ -225,7 +292,7 @@ func orderForSide(strategyType string, backtestTaskID uint, mapKey string, oppID
 		ClientOrderID: send.ClientOrderID, PlatformOrderID: send.PlatformOrderID,
 		Side: side, Action: "BUY",
 		Price: decimal.NewFromFloat(px).Round(8), Qty: decimal.NewFromFloat(qty).Round(8),
-		FillQty: decimal.NewFromFloat(fill).Round(8), Fee: decimal.NewFromFloat(send.Fee).Round(8),
+		TradeQty: decimal.NewFromFloat(fill).Round(8), Fee: decimal.NewFromFloat(send.Fee).Round(8),
 		Status: status, ErrMsg: errMsg, SentAt: sentAt,
 	}
 }

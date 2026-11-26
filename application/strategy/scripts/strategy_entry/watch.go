@@ -141,6 +141,12 @@ func newWatch(ctx context.Context, e *Entry, g group) *watch {
 			p := w.entry.Params()
 			return p.OneX2YesMax, p.OneX2NoMax
 		},
+		FillShareMismatchPct: func() float64 {
+			if w.entry == nil {
+				return 0.01
+			}
+			return w.entry.Params().FillShareMismatchPct
+		},
 		TradeFee: func(platform, category, sub string) float64 {
 			if w.entry == nil {
 				return 0

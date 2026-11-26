@@ -9,9 +9,10 @@ import (
 
 // Limits 门槛（与 strategy_entry.Params 同源）。
 type Limits struct {
-	MaxCost   float64
-	MinAmount float64 // config min_amount（金额）
-	MaxAmount float64 // config max_amount（金额）
+	MaxCost              float64
+	MinAmount            float64 // config min_amount（金额）
+	MaxAmount            float64 // config max_amount（金额）
+	FillShareMismatchPct float64 // 下单结果：成交份额 (max-min)/max 上限
 }
 
 // Quote 单所深度摊薄 YES+NO 的成本（Cover 返回值；线上 5.2 只做跨所卖一 TopHit，不用本结构做发现）。

@@ -12,7 +12,7 @@ type ArbBinaryOrderRepo interface {
 	DeleteWhere(ctx context.Context, tx *gorm.DB, where map[string]interface{}) error
 	// ListForFillSync 待回补成交的实盘单（有 platform_order_id）。
 	ListForFillSync(ctx context.Context, limit int, onlyMissing bool) ([]*entity.ArbBinaryOrder, error)
-	UpdateFill(ctx context.Context, id uint, fillQty, fee float64, status, errMsg string) error
+	UpdateFill(ctx context.Context, id uint, tradeQty, fee, tradePrice float64, status, errMsg string) error
 	// ListByArbOppID 某机会下全部实盘单。
 	ListByArbOppID(ctx context.Context, arbOppID uint) ([]*entity.ArbBinaryOrder, error)
 	// HasNonTerminalByMapKey 该 map_key 是否仍有未终态订单（阻塞新开仓）。
