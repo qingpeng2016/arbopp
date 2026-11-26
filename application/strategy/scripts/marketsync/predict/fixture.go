@@ -101,8 +101,14 @@ func predictOutcomeFromMarket(
 		descPtr = common.StrPtr(common.Truncate(desc, 2000))
 	}
 	config, _ := json.Marshal(struct {
-		FeeRateBps int `json:"feeRateBps"`
-	}{FeeRateBps: m.FeeRateBps})
+		FeeRateBps     int  `json:"feeRateBps"`
+		IsNegRisk      bool `json:"isNegRisk"`
+		IsYieldBearing bool `json:"isYieldBearing"`
+	}{
+		FeeRateBps:     m.FeeRateBps,
+		IsNegRisk:      m.IsNegRisk,
+		IsYieldBearing: m.IsYieldBearing,
+	})
 	return &persistententity.MarketOutcome{
 		Platform:                platform,
 		PlatformMarketID:        fixtureID,

@@ -39,11 +39,12 @@ func newPooledTransport() *http.Transport {
 
 // Client Predict.fun REST。
 type Client struct {
-	baseURL    string
-	apiKey     string
-	httpClient *http.Client
-	jwtMu      sync.Mutex
-	jwtByKey   map[string]jwtSlot
+	baseURL     string
+	apiKey      string
+	httpClient  *http.Client
+	jwtMu       sync.Mutex
+	jwtByKey    map[string]jwtSlot
+	marketCache sync.Map // marketID -> *entity.PredictMarket
 }
 
 var _ repo.PredictRepo = (*Client)(nil)

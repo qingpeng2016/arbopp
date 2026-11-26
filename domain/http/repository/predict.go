@@ -15,15 +15,24 @@ type PredictListCategoriesParams struct {
 	MarketVariants []string // 如 SPORTS_MATCH
 }
 
+// PredictMarketMeta 本地缓存的市场签名参数（来自 market_outcome.config / 同步写入）。
+// 齐全时 PlaceMarketOrder 不再 GET /markets/{id}。
+type PredictMarketMeta struct {
+	FeeRateBps     int
+	IsNegRisk      bool
+	IsYieldBearing bool
+}
+
 // PredictMarketOrderReq 市价买入指定 outcome token（FAK 语义由 MARKET 策略承担）。
-// Predict 的 LIMIT 会挂单；套利路径用 MARKET + PriceLimit 裁剪盘口，未成交部分立即取消。
+// Predict 的 LIMIT 会挂单；套利路径用 MARKET + PriceLimit，金额按限价直接签名，不再 REST 拉盘口。
 type PredictMarketOrderReq struct {
 	MarketID   string  // numeric market id
 	TokenID    string  // outcome onChainId
-	BuyYes     bool    // YES 视角盘口换算
+	BuyYes     bool    // YES 视角盘口换算（保留字段；金额按限价计算后不再换算盘口）
 	Sell       bool    // false=市价买入 token，true=市价卖出
-	PriceLimit float64 // 策略侧卖一价：买单只吃 ≤limit 档；有值时 slippage=0
+	PriceLimit float64 // 策略侧卖一价：买单 USDC 上限 / 卖单 USDC 下限；有值时 slippage=0
 	Quantity   float64 // 份额
+	Market     *PredictMarketMeta
 }
 
 // PredictPlaceOrderResult 发单结果。

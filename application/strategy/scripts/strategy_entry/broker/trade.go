@@ -140,6 +140,7 @@ func SendKalshi(kalshi httprepo.KalshiRepo, cred KalshiCreds, oc *persistententi
 }
 
 // SendPredict Predict.fun MARKET（未成交取消≈FAK）；price=限价，qty=平台份额。
+// 深度由策略内存簿 SizeCheck 保证；此处把 outcome.config 里的签名参数带上，避免发单再 REST 拉盘口/市场。
 func SendPredict(predict httprepo.PredictRepo, cred PredictCreds, oc *persistententity.MarketOutcome, yes bool, price, qty float64, sell bool) (watchgroup.SendResult, error) {
 	out := watchgroup.SendResult{ClientOrderID: newClientOrderID()}
 	if predict == nil || oc == nil || qty <= 0 || !cred.OK {
@@ -158,6 +159,7 @@ func SendPredict(predict httprepo.PredictRepo, cred PredictCreds, oc *persistent
 		Sell:       sell,
 		PriceLimit: price,
 		Quantity:   qty,
+		Market:     predictMarketMeta(oc),
 	})
 	if err != nil || resp == nil {
 		if err == nil {
@@ -273,4 +275,39 @@ func ReadNegRisk(cfg *string) bool {
 		return false
 	}
 	return body.NegRisk
+}
+
+// predictMarketMeta 从 market_outcome.config 读签名参数；字段不全则返回 nil，由客户端走缓存 GetMarket。
+func predictMarketMeta(oc *persistententity.MarketOutcome) *httprepo.PredictMarketMeta {
+	if oc == nil || oc.Config == nil || strings.TrimSpace(*oc.Config) == "" {
+		return nil
+	}
+	var cfg struct {
+		FeeRateBps     *int  `json:"feeRateBps"`
+		IsNegRisk      *bool `json:"isNegRisk"`
+		IsYieldBearing *bool `json:"isYieldBearing"`
+		NegRisk        *bool `json:"negRisk"`
+	}
+	if err := json.Unmarshal([]byte(*oc.Config), &cfg); err != nil || cfg.FeeRateBps == nil {
+		return nil
+	}
+	neg := false
+	if cfg.IsNegRisk != nil {
+		neg = *cfg.IsNegRisk
+	} else if cfg.NegRisk != nil {
+		neg = *cfg.NegRisk
+	} else {
+		return nil
+	}
+	yield := false
+	if cfg.IsYieldBearing != nil {
+		yield = *cfg.IsYieldBearing
+	} else {
+		return nil
+	}
+	return &httprepo.PredictMarketMeta{
+		FeeRateBps:     *cfg.FeeRateBps,
+		IsNegRisk:      neg,
+		IsYieldBearing: yield,
+	}
 }

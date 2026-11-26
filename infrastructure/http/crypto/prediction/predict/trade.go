@@ -12,11 +12,19 @@ import (
 	"github.com/gph-tech/fgmm-strategy-bitfinex/domain/http/repository"
 )
 
-// GetMarket GET /markets/{id}。
+// GetMarket GET /markets/{id}（带进程内缓存，避免发单路径重复拉）。
 func (c *Client) GetMarket(ctx context.Context, marketID string) (*httpentity.PredictMarket, error) {
 	marketID = strings.TrimSpace(marketID)
 	if marketID == "" {
 		return nil, fmt.Errorf("predict market id required")
+	}
+	if c != nil {
+		if v, ok := c.marketCache.Load(marketID); ok {
+			if m, ok := v.(*httpentity.PredictMarket); ok && m != nil {
+				cp := *m
+				return &cp, nil
+			}
+		}
 	}
 	var resp httpentity.PredictGetMarketResponse
 	if err := c.doGET(ctx, "/markets/"+marketID, nil, &resp); err != nil {
@@ -26,10 +34,15 @@ func (c *Client) GetMarket(ctx context.Context, marketID string) (*httpentity.Pr
 		return nil, fmt.Errorf("predict market %s: %s", marketID, apiErr(resp.Message, resp.Error))
 	}
 	m := resp.Data
+	if c != nil {
+		cp := m
+		c.marketCache.Store(marketID, &cp)
+	}
 	return &m, nil
 }
 
-// PlaceMarketOrder MARKET 买入 outcome token。
+// PlaceMarketOrder MARKET 买入/卖出 outcome token。
+// 深度由策略侧内存订单簿 SizeCheck 保证；此处按 PriceLimit+Quantity 签名后直接 POST /orders，不再 REST 拉盘口。
 func (c *Client) PlaceMarketOrder(ctx context.Context, acc httpentity.PredictAccount, req repository.PredictMarketOrderReq) (*repository.PredictPlaceOrderResult, error) {
 	if c == nil {
 		return nil, fmt.Errorf("predict client is nil")
@@ -39,54 +52,26 @@ func (c *Client) PlaceMarketOrder(ctx context.Context, acc httpentity.PredictAcc
 	if marketID == "" || tokenID == "" || req.Quantity <= 0 {
 		return nil, fmt.Errorf("predict order: invalid market/token/qty")
 	}
+	if !(req.PriceLimit > 0 && req.PriceLimit < 1) {
+		return nil, fmt.Errorf("predict order: price_limit required (memory book check already done upstream)")
+	}
 	jwt, err := c.ensureJWT(ctx, acc)
 	if err != nil {
 		return nil, err
 	}
-	mkt, err := c.GetMarket(ctx, marketID)
+	feeBpsInt, negRisk, yield, err := c.resolveMarketMeta(ctx, marketID, req.Market)
 	if err != nil {
 		return nil, err
 	}
-	var bookResp httpentity.PredictGetMarketOrderbookResponse
-	if err := c.doGET(ctx, "/markets/"+marketID+"/orderbook", nil, &bookResp); err != nil {
-		return nil, err
+	// 有限价：不再加滑点，金额按限价封顶（与策略 FAK 口径一致）。
+	slippage := int64(0)
+	amounts, ok := marketAmountsAtLimit(req.Quantity, req.PriceLimit, req.Sell, slippage)
+	if !ok {
+		return nil, fmt.Errorf("predict order: invalid qty/price_limit")
 	}
-	if !bookResp.Success {
-		return nil, fmt.Errorf("predict orderbook %s: %s", marketID, apiErr(bookResp.Message, bookResp.Error))
-	}
-	book := bookResp.Data
-	qtyWei := floatSharesToWei(req.Quantity)
-	// 有 PriceLimit 时按限价裁剪盘口，且不再加滑点，避免市价穿透 best_ask。
-	slippage := int64(defaultSlippageBps)
-	if req.PriceLimit > 0 && req.PriceLimit < 1 {
-		slippage = 0
-	}
-	var amounts marketAmounts
-	var ok bool
-	var side int64
+	side := int64(0)
 	if req.Sell {
 		side = 1
-		var bids []depthLevel
-		if req.BuyYes {
-			bids = bidsFromBook(book.Bids)
-		} else {
-			bids = bidsFromYesAsks(book.Asks)
-		}
-		bids = filterBidsAtOrAbove(bids, req.PriceLimit)
-		amounts, ok = marketSellByQuantity(bids, qtyWei, slippage)
-	} else {
-		side = 0
-		var asks []depthLevel
-		if req.BuyYes {
-			asks = levelsFromBook(book.Asks)
-		} else {
-			asks = asksFromYesBids(book.Bids)
-		}
-		asks = filterAsksAtOrBelow(asks, req.PriceLimit)
-		amounts, ok = marketBuyByQuantity(asks, qtyWei, slippage)
-	}
-	if !ok {
-		return nil, fmt.Errorf("predict order: insufficient book depth")
 	}
 	_, priv, addr, predictAcct, err := resolveSigner(acc)
 	if err != nil {
@@ -96,9 +81,9 @@ func (c *Client) PlaceMarketOrder(ctx context.Context, acc httpentity.PredictAcc
 	if predictAcct != "" {
 		maker = predictAcct
 	}
-	feeBps := strconv.Itoa(mkt.FeeRateBps)
+	feeBps := strconv.Itoa(feeBpsInt)
 	signed, pricePerShare, expUnix, err := buildSignedMarketOrder(
-		maker, tokenID, feeBps, amounts, side, predictAcct, mkt.IsNegRisk, mkt.IsYieldBearing, priv,
+		maker, tokenID, feeBps, amounts, side, predictAcct, negRisk, yield, priv,
 	)
 	if err != nil {
 		return nil, err
@@ -139,6 +124,9 @@ func (c *Client) PlaceMarketOrder(ctx context.Context, acc httpentity.PredictAcc
 		return nil, fmt.Errorf("predict place order: %s", apiErr(resp.Message, resp.Error))
 	}
 	fill := weiToFloatShares(amounts.takerAmount)
+	if req.Sell {
+		fill = weiToFloatShares(amounts.makerAmount)
+	}
 	if req.Quantity < fill {
 		fill = req.Quantity
 	}
@@ -147,6 +135,17 @@ func (c *Client) PlaceMarketOrder(ctx context.Context, acc httpentity.PredictAcc
 		OrderHash: resp.Data.OrderHash,
 		FillQty:   fill,
 	}, nil
+}
+
+func (c *Client) resolveMarketMeta(ctx context.Context, marketID string, meta *repository.PredictMarketMeta) (feeBps int, negRisk, yield bool, err error) {
+	if meta != nil {
+		return meta.FeeRateBps, meta.IsNegRisk, meta.IsYieldBearing, nil
+	}
+	mkt, err := c.GetMarket(ctx, marketID)
+	if err != nil {
+		return 0, false, false, err
+	}
+	return mkt.FeeRateBps, mkt.IsNegRisk, mkt.IsYieldBearing, nil
 }
 
 // GetOrderByHash GET /orders/{hash}（JWT）；amountFilled 为份额 wei。

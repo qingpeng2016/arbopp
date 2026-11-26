@@ -203,6 +203,54 @@ func processBook(levels []depthLevel, qtyWei *big.Int) (priceWei, quantityWei, l
 	return avg, qtyAcc, last
 }
 
+// marketAmountsAtLimit 用策略限价+数量直接算签名金额，不再 REST 拉盘口。
+// 套利路径：内存簿 SizeCheck 已通过后并发发单；此处按限价封顶/托底授权成交。
+func marketAmountsAtLimit(qty, priceLimit float64, sell bool, slippageBps int64) (marketAmounts, bool) {
+	if !(qty > 0) || !(priceLimit > 0 && priceLimit < 1) {
+		return marketAmounts{}, false
+	}
+	qtyWei := floatSharesToWei(qty)
+	if qtyWei.Cmp(big.NewInt(int64(1e16))) < 0 {
+		return marketAmounts{}, false
+	}
+	qtyWei = retainSignificantDigits(qtyWei, 5)
+	priceWei := etherFloatToWei(priceLimit)
+	prec := big.NewInt(int64(weiPrecision))
+	if sell {
+		baseTaker := new(big.Int).Mul(priceWei, qtyWei)
+		baseTaker.Div(baseTaker, prec)
+		takerAmount := new(big.Int).Set(baseTaker)
+		if slippageBps > 0 {
+			takerAmount.Mul(baseTaker, big.NewInt(10_000-slippageBps))
+			takerAmount.Div(takerAmount, big.NewInt(10_000))
+		}
+		return marketAmounts{
+			pricePerShare: priceWei,
+			makerAmount:   new(big.Int).Set(qtyWei),
+			takerAmount:   takerAmount,
+			slippageBps:   slippageBps,
+		}, true
+	}
+	baseMaker := new(big.Int).Mul(priceWei, qtyWei)
+	baseMaker.Div(baseMaker, prec)
+	makerAmount := new(big.Int).Set(baseMaker)
+	if slippageBps > 0 {
+		num := new(big.Int).Mul(baseMaker, big.NewInt(10_000+slippageBps))
+		num.Div(num, big.NewInt(10_000))
+		if num.Cmp(qtyWei) < 0 {
+			makerAmount = num
+		} else {
+			makerAmount = new(big.Int).Set(qtyWei)
+		}
+	}
+	return marketAmounts{
+		pricePerShare: priceWei,
+		makerAmount:   makerAmount,
+		takerAmount:   new(big.Int).Set(qtyWei),
+		slippageBps:   slippageBps,
+	}, true
+}
+
 // marketBuyByQuantity 对齐 SDK 默认 MARKET BUY（非 isMinAmountOut）。
 func marketBuyByQuantity(asks []depthLevel, qtyWei *big.Int, slippageBps int64) (marketAmounts, bool) {
 	if qtyWei == nil || qtyWei.Cmp(big.NewInt(int64(1e16))) < 0 || len(asks) == 0 {
