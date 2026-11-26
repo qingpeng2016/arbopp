@@ -41,7 +41,7 @@ const (
 	thresholdMaxAmount           = "max_amount"
 	threshold1X2YesMax           = "1x2_yes_triple_max_cost"
 	threshold1X2NoMax            = "1x2_no_triple_max_cost"
-	thresholdPredictSlippageBps  = "predict_polymarket_sxbet_slippage_bps"
+	thresholdPredictSlippage     = "predict_polymarket_sxbet_slippage"
 	thresholdPredictIsMinOut     = "predict_is_min_amount_out"
 	thresholdFillShareMismatchPct = "fill_share_mismatch_pct"
 	defaultMaxCost               = 0.95
@@ -49,7 +49,7 @@ const (
 	default1X2NoMax              = 1.90
 	defaultMinAmount             = 5.0
 	defaultMaxAmount             = 5.0
-	defaultPredictSlippageBps    = 200.0
+	defaultPredictSlippage       = 0.05 // 绝对价格上浮（0.20→0.25）
 	defaultPredictIsMinAmountOut = true
 	defaultFillShareMismatchPct  = 0.01
 	defaultPolySports            = 0.05
@@ -69,7 +69,7 @@ type Params struct {
 	MaxAmount            float64
 	OneX2YesMax          float64
 	OneX2NoMax           float64
-	PredictSlippageBps    float64 // Predict/Poly/SX 共用滑点 bps（100=1%）：Predict→slippageBps；Poly/SX→限价×(1+bps/10000)
+	PredictSlippage       float64 // Predict/Poly/SX 共用绝对价格滑点（0.05→限价+0.05；Predict 反算 slippageBps）
 	PredictIsMinAmountOut bool    // Predict 买：固定 USDT、少收份额
 	FillShareMismatchPct  float64 // 下单结果：各平台成交 (max-min)/max 上限（0.01=1%）
 	fees                  map[string]float64
@@ -83,7 +83,7 @@ func defaultParams() Params {
 		MaxAmount:             defaultMaxAmount,
 		OneX2YesMax:           default1X2YesMax,
 		OneX2NoMax:            default1X2NoMax,
-		PredictSlippageBps:    defaultPredictSlippageBps,
+		PredictSlippage:       defaultPredictSlippage,
 		PredictIsMinAmountOut: defaultPredictIsMinAmountOut,
 		FillShareMismatchPct:  defaultFillShareMismatchPct,
 		fees: map[string]float64{
@@ -139,11 +139,11 @@ func (e *Entry) loadParams(ctx context.Context) Params {
 	p.MaxAmount = e.threshold(ctx, thresholdMaxAmount)
 	p.OneX2YesMax = e.threshold(ctx, threshold1X2YesMax)
 	p.OneX2NoMax = e.threshold(ctx, threshold1X2NoMax)
-	if v := e.threshold(ctx, thresholdPredictSlippageBps); v > 0 {
-		if v > 10_000 {
-			v = 10_000
+	if v := e.threshold(ctx, thresholdPredictSlippage); v > 0 {
+		if v >= 1 {
+			v = 0.99
 		}
-		p.PredictSlippageBps = v
+		p.PredictSlippage = v
 	}
 	if row, ok := e.thresholdRow(ctx, thresholdPredictIsMinOut); ok {
 		p.PredictIsMinAmountOut = row.ConfigValue.InexactFloat64() >= 0.5

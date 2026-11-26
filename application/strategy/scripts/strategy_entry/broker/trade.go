@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -143,9 +144,10 @@ func SendKalshi(kalshi httprepo.KalshiRepo, cred KalshiCreds, oc *persistententi
 	return out, nil
 }
 
-// PredictSlippage MARKET 滑点（来自 config_strategy_threshold）。
+// PredictSlippage 共用绝对价格滑点（来自 config_strategy_threshold.predict_polymarket_sxbet_slippage）。
+// Abs=0.05 表示限价可上浮到 price+0.05（例：0.20→0.25，0.90→0.95）。
 type PredictSlippage struct {
-	Bps            int64
+	Abs            float64 // 绝对价格上浮（非 bps）
 	IsMinAmountOut bool
 }
 
@@ -169,7 +171,7 @@ func SendPredict(predict httprepo.PredictRepo, cred PredictCreds, oc *persistent
 		Sell:           sell,
 		PriceLimit:     price,
 		Quantity:       qty,
-		SlippageBps:    slip.Bps,
+		SlippageBps:    AbsoluteSlipToPredictBps(price, slip.Abs, sell, slip.IsMinAmountOut),
 		IsMinAmountOut: slip.IsMinAmountOut,
 		Market:         predictMarketMeta(oc),
 	})
@@ -307,29 +309,58 @@ func SendOnOutcome(
 	}
 	if strings.EqualFold(oc.Platform, appcommon.PlatformSxbet) {
 		// SX IOC：percentageOdds = 最差可接受价；文档明确可按更优价成交。
-		return SendSxbet(sxbet, sxbetCred, oc, yes, limitPriceWithSlippageBps(price, predictSlip.Bps), qty)
+		return SendSxbet(sxbet, sxbetCred, oc, yes, limitPriceWithAbsSlip(price, predictSlip.Abs), qty)
 	}
 	token := strings.TrimSpace(oc.YesTokenID)
 	if !yes {
 		token = strings.TrimSpace(oc.NoTokenID)
 	}
-	// Poly 限价 FAK：LimitPrice = 卖一×(1+bps/10000)，作最差可接受价；实际成交仍吃簿上更优卖档。
-	return SendPoly(poly, polyCred, token, limitPriceWithSlippageBps(price, predictSlip.Bps), qty, true, negRisk)
+	// Poly 限价 FAK：LimitPrice = 卖一 + Abs，作最差可接受价；实际成交仍吃簿上更优卖档。
+	return SendPoly(poly, polyCred, token, limitPriceWithAbsSlip(price, predictSlip.Abs), qty, true, negRisk)
 }
 
-// limitPriceWithSlippageBps 买入限价放宽：price×(1+bps/10000)，封顶 0.99（Poly/SX 共用）。
-func limitPriceWithSlippageBps(price float64, bps int64) float64 {
-	if !(price > 0) || bps <= 0 {
+// limitPriceWithAbsSlip 买入限价绝对上浮：price+abs，封顶 0.99（Poly/SX）。
+func limitPriceWithAbsSlip(price, abs float64) float64 {
+	if !(price > 0) {
 		return price
 	}
-	if bps > 10_000 {
-		bps = 10_000
+	if !(abs > 0) {
+		return price
 	}
-	out := price * (1 + float64(bps)/10_000)
+	out := price + abs
 	if out >= 1 {
 		return 0.99
 	}
 	return out
+}
+
+// AbsoluteSlipToPredictBps 把绝对价格滑点反算成 Predict API 的 slippageBps。
+// 买+isMinAmountOut：最差均价 = price/(1-s) = price+abs → s = abs/(price+abs)
+// 买+!isMinAmountOut / 卖：最差均价 = price*(1±s) → s = abs/price
+func AbsoluteSlipToPredictBps(price, abs float64, sell, isMinAmountOut bool) int64 {
+	if !(price > 0) || !(abs > 0) {
+		return 0
+	}
+	var s float64
+	if sell || !isMinAmountOut {
+		s = abs / price
+	} else {
+		s = abs / (price + abs)
+	}
+	if s <= 0 {
+		return 0
+	}
+	if s >= 1 {
+		return 10_000
+	}
+	bps := int64(math.Round(s * 10_000))
+	if bps > 10_000 {
+		bps = 10_000
+	}
+	if bps < 0 {
+		return 0
+	}
+	return bps
 }
 
 // FlattenOnOutcome 单边成交后在该 outcome 上反向平仓。

@@ -88,24 +88,22 @@ func main() {
 	}
 
 	slip := broker.PredictSlippage{
-		Bps:            int64(params.PredictSlippageBps),
+		Abs:            params.PredictSlippage,
 		IsMinAmountOut: params.PredictIsMinAmountOut,
 	}
 	negRisk := broker.ReadNegRisk(oc.Config)
-	limitPx := bestAsk
-	if plat == appcommon.PlatformPolymarket || plat == appcommon.PlatformSxbet {
-		limitPx = bestAsk * (1 + float64(slip.Bps)/10_000)
-		if limitPx >= 1 {
-			limitPx = 0.99
-		}
+	limitPx := bestAsk + slip.Abs
+	if limitPx >= 1 {
+		limitPx = 0.99
 	}
+	predictBps := broker.AbsoluteSlipToPredictBps(bestAsk, slip.Abs, false, slip.IsMinAmountOut)
 
 	fmt.Printf("outcome_id=%d platform=%s side=%s\n", oc.ID, plat, sideLabel(buyYes))
 	fmt.Printf("  name=%s\n", trunc(deref(oc.OutcomeName), 80))
 	fmt.Printf("  platform_market_outcome_id=%s\n", trunc(oc.PlatformMarketOutcomeID, 64))
 	fmt.Printf("  best_ask=%.6f ask_size=%.6f qty=%.4f\n", bestAsk, bestSz, qty)
-	fmt.Printf("  slippage_bps=%.0f is_min_out=%v → limit/price_cap=%.6f\n",
-		params.PredictSlippageBps, slip.IsMinAmountOut, limitPx)
+	fmt.Printf("  slippage_abs=%.4f is_min_out=%v → worst=%.6f (predict_bps=%d)\n",
+		slip.Abs, slip.IsMinAmountOut, limitPx, predictBps)
 	fmt.Printf("  neg_risk=%v\n", negRisk)
 
 	if reason := tradeBlockReason(plat, creds, poly, predict, sxbet); reason != "" {

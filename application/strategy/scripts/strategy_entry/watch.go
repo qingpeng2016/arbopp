@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -1136,14 +1135,14 @@ func (w *watch) bookRowsForHit(view book.Snapshot, aIndex, bIndex int) []*persis
 
 func (w *watch) predictSlippage() broker.PredictSlippage {
 	if w.entry == nil {
-		return broker.PredictSlippage{Bps: 200, IsMinAmountOut: true}
+		return broker.PredictSlippage{Abs: 0.05, IsMinAmountOut: true}
 	}
 	p := w.entry.Params()
-	bps := int64(math.Round(p.PredictSlippageBps))
-	if bps <= 0 {
-		bps = 200
+	abs := p.PredictSlippage
+	if !(abs > 0) {
+		abs = 0.05
 	}
-	return broker.PredictSlippage{Bps: bps, IsMinAmountOut: p.PredictIsMinAmountOut}
+	return broker.PredictSlippage{Abs: abs, IsMinAmountOut: p.PredictIsMinAmountOut}
 }
 
 func (w *watch) sendOnOutcome(outcomeIndex int, buyYes bool, px, qty float64) (watchgroup.SendResult, error) {

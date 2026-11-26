@@ -203,11 +203,11 @@ func main() {
 			orderQty := es.OrderShares(true, chk.Qty)
 			neg := broker.ReadNegRisk(leg.oc.Config)
 			slip := broker.PredictSlippage{
-				Bps:            int64(params.PredictSlippageBps),
+				Abs:            params.PredictSlippage,
 				IsMinAmountOut: params.PredictIsMinAmountOut,
 			}
-			if slip.Bps <= 0 {
-				slip.Bps = 200
+			if !(slip.Abs > 0) {
+				slip.Abs = 0.05
 			}
 			res, err := broker.SendOnOutcome(
 				poly, kalshi, predict, sxbet,

@@ -571,7 +571,7 @@ INSERT INTO `config_strategy_threshold` (`config_key`, `config_value`, `value_ty
   ('max_amount', 5.00000000, 'DECIMAL', '最大下单份额金额（÷各平台最低 best_ask → max_qty）'),
   ('1x2_yes_triple_max_cost', 0.95000000, 'DECIMAL', '1X2 三路 YES'),
   ('1x2_no_triple_max_cost', 1.90000000, 'DECIMAL', '1X2 三路 NO'),
-  ('predict_polymarket_sxbet_slippage_bps', 200.00000000, 'DECIMAL', 'Predict+Polymarket+SX 共用滑点 bps（100=1%；Predict→slippageBps，Poly/SX→限价×(1+bps/10000)）'),
+  ('predict_polymarket_sxbet_slippage', 0.05000000, 'DECIMAL', 'Predict+Polymarket+SX 共用绝对价格滑点（0.05=限价+0.05；Predict 按价反算 slippageBps）'),
   ('predict_is_min_amount_out', 1.00000000, 'DECIMAL', 'Predict MARKET isMinAmountOut（1=true 花固定 USDT、少收份额；0=false 多付钱拿满份额）'),
   ('fill_share_mismatch_pct', 0.01000000, 'DECIMAL', '下单结果判定套利成功：各平台成交份额 (max-min)/max 上限（0.01=1%）'),
   ('certain_min_return_pct', 0.10000000, 'DECIMAL', '必然事件最低收益率'),
