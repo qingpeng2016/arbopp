@@ -19,6 +19,7 @@ import (
 	strategyentry "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/book"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/broker"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/strategy/yesno"
 	predictws "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/ws/predict"
 	sxbetws "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/ws/sxbet"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/boot"
@@ -98,12 +99,28 @@ func main() {
 	}
 	predictBps := broker.AbsoluteSlipToPredictBps(bestAsk, slip.Abs, false, slip.IsMinAmountOut)
 
+	// 与 strategy_entry 一致：-qty 是净兑付份额；SX→USDC stake，Predict→扣费前份额。
+	fee := params.Fee(plat, deref(oc.Category), deref(oc.SubCategory))
+	es := yesno.ExecSide{
+		Side:     yesno.Side{YesPx: bestAsk, NoPx: bestAsk, Fee: fee},
+		Platform: plat,
+	}
+	orderQty := es.OrderShares(buyYes, qty)
+
 	fmt.Printf("outcome_id=%d platform=%s side=%s\n", oc.ID, plat, sideLabel(buyYes))
 	fmt.Printf("  name=%s\n", trunc(deref(oc.OutcomeName), 80))
 	fmt.Printf("  platform_market_outcome_id=%s\n", trunc(oc.PlatformMarketOutcomeID, 64))
-	fmt.Printf("  best_ask=%.6f ask_size=%.6f qty=%.4f\n", bestAsk, bestSz, qty)
-	fmt.Printf("  slippage_abs=%.4f is_min_out=%v → worst=%.6f (predict_bps=%d)\n",
-		slip.Abs, slip.IsMinAmountOut, limitPx, predictBps)
+	fmt.Printf("  best_ask=%.6f ask_size=%.6f\n", bestAsk, bestSz)
+	fmt.Printf("  net_qty=%.4f → platform_qty=%.6f", qty, orderQty)
+	if plat == appcommon.PlatformSxbet {
+		fmt.Printf(" (SX totalBetSize=USDC stake ≈ net_qty×price)")
+	}
+	if plat == appcommon.PlatformPredict {
+		fmt.Printf(" (Predict 扣费前份额)")
+	}
+	fmt.Println()
+	fmt.Printf("  fee_coef=%.4f slippage_abs=%.4f is_min_out=%v → worst=%.6f (predict_bps=%d)\n",
+		fee, slip.Abs, slip.IsMinAmountOut, limitPx, predictBps)
 	fmt.Printf("  neg_risk=%v\n", negRisk)
 
 	if reason := tradeBlockReason(plat, creds, poly, predict, sxbet); reason != "" {
@@ -121,7 +138,7 @@ func main() {
 		broker.KalshiCreds{},
 		broker.PredictCreds{Account: creds.predict, OK: creds.predictOK},
 		broker.SxbetCreds{Account: creds.sxbet, OK: creds.sxbetOK},
-		&oc, buyYes, bestAsk, qty, negRisk, slip,
+		&oc, buyYes, bestAsk, orderQty, negRisk, slip,
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "place failed: %v\n", err)
@@ -130,8 +147,9 @@ func main() {
 		}
 		os.Exit(1)
 	}
-	fmt.Printf("\n下单结果 client=%s platform_oid=%s fill=%.6f fee=%.6f\n",
-		res.ClientOrderID, res.PlatformOrderID, res.Fill, res.Fee)
+	fillNet := es.FillToNet(buyYes, res.Fill)
+	fmt.Printf("\n下单结果 client=%s platform_oid=%s platform_fill=%.6f net_fill=%.6f fee=%.6f\n",
+		res.ClientOrderID, res.PlatformOrderID, res.Fill, fillNet, res.Fee)
 }
 
 func fetchBestAsk(

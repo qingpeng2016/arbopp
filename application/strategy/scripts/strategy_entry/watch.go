@@ -170,8 +170,8 @@ func newWatch(ctx context.Context, e *Entry, g group) *watch {
 			}
 			w.entry.MarkMapKeyOpenOrders(mapKey)
 		},
-		SendOnOutcome:    w.sendOnOutcome,
-		FlattenOnOutcome: w.flattenOnOutcome,
+		SendOnOutcome: w.sendOnOutcome,
+		// FlattenOnOutcome: w.flattenOnOutcome, // 暂时关闭：单边成交后不再自动反向平仓
 		OppRepo: func() persistentrepo.ArbBinaryOpportunityRepo {
 			if w.entry == nil {
 				return nil

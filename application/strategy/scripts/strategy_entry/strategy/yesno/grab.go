@@ -13,7 +13,7 @@ type Sender interface {
 	Flatten(side Side, boughtYes bool, mine, other float64)
 }
 
-// Fire 并发双腿 LIMIT+FAK，再 flatten。
+// Fire 并发双腿 LIMIT+FAK（flatten 暂时关闭）。
 func Fire(snd Sender, a, b Side, aBuyYes, bBuyYes bool, qty float64) (ra, rb watchgroup.SendResult, errA, errB error) {
 	pxA, pxB := SidePx(a, aBuyYes), SidePx(b, bBuyYes)
 	var wg sync.WaitGroup
@@ -27,8 +27,8 @@ func Fire(snd Sender, a, b Side, aBuyYes, bBuyYes bool, qty float64) (ra, rb wat
 		rb, errB = snd.Send(b, bBuyYes, pxB, qty)
 	}()
 	wg.Wait()
-	snd.Flatten(a, aBuyYes, ra.Fill, rb.Fill)
-	snd.Flatten(b, bBuyYes, rb.Fill, ra.Fill)
+	// snd.Flatten(a, aBuyYes, ra.Fill, rb.Fill)
+	// snd.Flatten(b, bBuyYes, rb.Fill, ra.Fill)
 	return ra, rb, errA, errB
 }
 

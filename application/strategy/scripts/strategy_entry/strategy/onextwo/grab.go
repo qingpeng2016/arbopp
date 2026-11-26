@@ -202,22 +202,22 @@ func fireTriple(r *Runner, pick TriplePick) (fills [3]float64, errs [3]error, se
 		}()
 	}
 	wg.Wait()
-	// 单腿成交不全时 flatten
-	for i := 0; i < 3; i++ {
-		othersOK := true
-		for j := 0; j < 3; j++ {
-			if i == j {
-				continue
-			}
-			if fills[j] <= 0 {
-				othersOK = false
-				break
-			}
-		}
-		if fills[i] > 0 && !othersOK && r.w.Ops.FlattenOnOutcome != nil {
-			r.w.Ops.FlattenOnOutcome(pick.Legs[i].Index, pick.BuyYes, fills[i], 0)
-		}
-	}
+	// 单腿成交不全时 flatten（暂时关闭）
+	// for i := 0; i < 3; i++ {
+	// 	othersOK := true
+	// 	for j := 0; j < 3; j++ {
+	// 		if i == j {
+	// 			continue
+	// 		}
+	// 		if fills[j] <= 0 {
+	// 			othersOK = false
+	// 			break
+	// 		}
+	// 	}
+	// 	if fills[i] > 0 && !othersOK && r.w.Ops.FlattenOnOutcome != nil {
+	// 		r.w.Ops.FlattenOnOutcome(pick.Legs[i].Index, pick.BuyYes, fills[i], 0)
+	// 	}
+	// }
 	return fills, errs, sends
 }
 
