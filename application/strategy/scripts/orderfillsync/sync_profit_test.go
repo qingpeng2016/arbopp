@@ -53,3 +53,30 @@ func TestAllOrdersTerminal(t *testing.T) {
 		t.Fatal("all terminal")
 	}
 }
+
+func TestResolveFillUpdate(t *testing.T) {
+	// OPEN 且 0 成交：不落库，避免写成 NO_FILL
+	if _, _, apply := resolveFillUpdate(0, 0, 10, "OPEN"); apply {
+		t.Fatal("open zero should skip")
+	}
+	// FILLED 结算中：保留 prev，不冲掉
+	fill, st, apply := resolveFillUpdate(10, 0, 10, "FILLED")
+	if apply || fill != 10 || st != "FILLED" {
+		t.Fatalf("settling filled: fill=%v st=%s apply=%v", fill, st, apply)
+	}
+	// CANCELLED 0 成交 → NO_FILL
+	fill, st, apply = resolveFillUpdate(10, 0, 10, "CANCELLED")
+	if !apply || fill != 0 || st != "NO_FILL" {
+		t.Fatalf("cancelled zero: fill=%v st=%s apply=%v", fill, st, apply)
+	}
+	// CANCELLED 有成交 → PARTIAL
+	fill, st, apply = resolveFillUpdate(0, 4, 10, "CANCELLED")
+	if !apply || fill != 4 || st != "PARTIAL" {
+		t.Fatalf("cancelled partial: fill=%v st=%s apply=%v", fill, st, apply)
+	}
+	// 查到成交
+	fill, st, apply = resolveFillUpdate(0, 10, 10, "FILLED")
+	if !apply || fill != 10 || st != "FILLED" {
+		t.Fatalf("filled: fill=%v st=%s apply=%v", fill, st, apply)
+	}
+}

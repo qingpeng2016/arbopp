@@ -73,6 +73,10 @@ func SendPoly(poly httprepo.PolymarketRepo, cred PolyCreds, token string, price,
 		if err == nil {
 			err = errEmptyOrder
 		}
+		// FAK 400 常仍带 orderID，留给 order_fill_sync 回查 size_matched。
+		if oid := orderIDFromErrMsg(err.Error()); oid != "" {
+			out.PlatformOrderID = oid
+		}
 		return out, err
 	}
 	out.PlatformOrderID = strings.TrimSpace(resp.OrderID)
@@ -167,19 +171,87 @@ func SendPredict(predict httprepo.PredictRepo, cred PredictCreds, oc *persistent
 		}
 		return out, err
 	}
-	// Predict 查单走 hash。
+	// Predict 查单走 hash；成交以 GetOrderByHash.amountFilled 为准（受理≠成交）。
 	out.PlatformOrderID = strings.TrimSpace(resp.OrderHash)
 	if out.PlatformOrderID == "" {
 		out.PlatformOrderID = strings.TrimSpace(resp.OrderID)
 	}
-	if resp.FillQty > 0 {
-		if resp.FillQty < qty {
-			out.Fill = resp.FillQty
-		} else {
-			out.Fill = qty
-		}
+	if out.PlatformOrderID != "" {
+		out.Fill = pollPredictFill(ctx, predict, cred.Account, out.PlatformOrderID, qty)
 	}
 	return out, nil
+}
+
+// pollPredictFill 下单后短轮询查单：FILLED/有 amountFilled 即返回；CANCELLED 等终态停。
+func pollPredictFill(ctx context.Context, predict httprepo.PredictRepo, acc httpentity.PredictAccount, orderHash string, qty float64) float64 {
+	if predict == nil || strings.TrimSpace(orderHash) == "" {
+		return 0
+	}
+	var fill float64
+	for i := 0; i < 6; i++ {
+		if i > 0 {
+			select {
+			case <-ctx.Done():
+				return fill
+			case <-time.After(500 * time.Millisecond):
+			}
+		}
+		d, err := predict.GetOrderByHash(ctx, acc, orderHash)
+		if err != nil || d == nil {
+			continue
+		}
+		if d.AmountFilled > 0 {
+			fill = d.AmountFilled
+			if qty > 0 && fill > qty {
+				fill = qty
+			}
+		}
+		st := strings.ToUpper(strings.TrimSpace(d.Status))
+		switch st {
+		case "FILLED":
+			if fill > 0 {
+				return fill
+			}
+		case "CANCELLED", "CANCELED", "EXPIRED", "INVALIDATED":
+			return fill
+		}
+	}
+	return fill
+}
+
+func orderIDFromErrMsg(msg string) string {
+	msg = strings.TrimSpace(msg)
+	if msg == "" {
+		return ""
+	}
+	// body: {"error":"...","orderID":"0x..."}
+	const key = `"orderID"`
+	i := strings.Index(msg, key)
+	if i < 0 {
+		i = strings.Index(msg, `"orderId"`)
+		if i < 0 {
+			return ""
+		}
+	}
+	rest := msg[i:]
+	colon := strings.Index(rest, ":")
+	if colon < 0 {
+		return ""
+	}
+	rest = strings.TrimSpace(rest[colon+1:])
+	if !strings.HasPrefix(rest, `"`) {
+		return ""
+	}
+	rest = rest[1:]
+	end := strings.Index(rest, `"`)
+	if end <= 0 {
+		return ""
+	}
+	oid := strings.TrimSpace(rest[:end])
+	if oid == "" || strings.EqualFold(oid, "null") {
+		return ""
+	}
+	return oid
 }
 
 // SendSxbet SX Bet LIMIT+IOC（waitForOutcome）；qty=USDC stake。

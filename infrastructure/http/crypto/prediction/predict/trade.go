@@ -123,17 +123,11 @@ func (c *Client) PlaceMarketOrder(ctx context.Context, acc httpentity.PredictAcc
 	if !resp.Success {
 		return nil, fmt.Errorf("predict place order: %s", apiErr(resp.Message, resp.Error))
 	}
-	fill := weiToFloatShares(amounts.takerAmount)
-	if req.Sell {
-		fill = weiToFloatShares(amounts.makerAmount)
-	}
-	if req.Quantity < fill {
-		fill = req.Quantity
-	}
+	// POST /orders 只表示受理，成交量必须查单；勿用签名金额当成交。
 	return &repository.PredictPlaceOrderResult{
 		OrderID:   resp.Data.OrderID,
 		OrderHash: resp.Data.OrderHash,
-		FillQty:   fill,
+		FillQty:   0,
 	}, nil
 }
 

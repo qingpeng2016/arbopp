@@ -69,10 +69,18 @@ func (s *Sync) Run(ctx context.Context) {
 		notification.SendErrorLog(ctx, "order_fill_sync-list", zap.Error(err))
 		return
 	}
-	var okN, errN, profitN int
+	var okN, errN, profitN, skipN int
 	touchedOpp := make(map[uint]struct{})
 	for _, row := range list {
-		fill, fee, status, qerr := s.queryFill(ctx, row, creds)
+		if strings.TrimSpace(row.PlatformOrderID) == "" {
+			if oid := extractOrderIDFromText(row.ErrMsg); oid != "" {
+				row.PlatformOrderID = oid
+			} else {
+				skipN++
+				continue
+			}
+		}
+		fill, fee, exchStatus, qerr := s.queryFill(ctx, row, creds)
 		if qerr != nil {
 			errN++
 			logger.InfoZ(ctx, "order_fill_sync-query-fail",
@@ -80,7 +88,17 @@ func (s *Sync) Run(ctx context.Context) {
 				zap.String("oid", row.PlatformOrderID), zap.Error(qerr))
 			continue
 		}
-		status = statusFromFill(fill, row.Qty.InexactFloat64())
+		qty := row.Qty.InexactFloat64()
+		prev := row.FillQty.InexactFloat64()
+		fill, status, apply := resolveFillUpdate(prev, fill, qty, exchStatus)
+		if !apply {
+			skipN++
+			logger.InfoZ(ctx, "order_fill_sync-pending",
+				zap.Uint("id", row.ID), zap.String("platform", row.Platform),
+				zap.String("oid", row.PlatformOrderID), zap.String("exch_status", exchStatus),
+				zap.Float64("fill", fill), zap.Float64("prev_fill", prev))
+			continue
+		}
 		if err := s.orderRepo.UpdateFill(ctx, row.ID, fill, fee, status, ""); err != nil {
 			errN++
 			notification.SendErrorLog(ctx, "order_fill_sync-update",
@@ -98,7 +116,7 @@ func (s *Sync) Run(ctx context.Context) {
 		}
 	}
 	logger.InfoZ(ctx, "order_fill_sync-done",
-		zap.Int("ok", okN), zap.Int("err", errN), zap.Int("profit", profitN),
+		zap.Int("ok", okN), zap.Int("err", errN), zap.Int("skip", skipN), zap.Int("profit", profitN),
 		zap.Int("batch", len(list)), zap.Duration("elapsed", time.Since(start)))
 }
 
@@ -306,6 +324,78 @@ func statusFromFill(fill, qty float64) string {
 		return "PARTIAL"
 	}
 	return "FILLED"
+}
+
+// resolveFillUpdate 结合交易所状态与成交量；未结算/仍挂单时不落库，避免把真实成交冲成 NO_FILL。
+// apply=false：本轮跳过更新（保持原行，下次再查）。
+func resolveFillUpdate(prevFill, fill, qty float64, exchangeStatus string) (outFill float64, status string, apply bool) {
+	st := strings.ToUpper(strings.TrimSpace(exchangeStatus))
+	switch st {
+	case "OPEN", "LIVE", "PENDING", "ACCEPTED", "CREATE":
+		if fill > 0 {
+			return fill, statusFromFill(fill, qty), true
+		}
+		// 仍挂着且尚未成交：不写成 NO_FILL，留给下次回查。
+		return prevFill, "PENDING", false
+	case "FILLED", "MATCHED":
+		if fill <= 0 {
+			// Predict：FILLED 后 amountFilled 可能尚在链上结算中。
+			if prevFill > 0 {
+				return prevFill, "FILLED", false
+			}
+			return 0, "PENDING", false
+		}
+		return fill, statusFromFill(fill, qty), true
+	case "CANCELLED", "CANCELED", "EXPIRED", "INVALIDATED":
+		// 市价单未成交取消 → NO_FILL；有成交再取消剩余 → PARTIAL/FILLED。
+		return fill, statusFromFill(fill, qty), true
+	case "FAILED", "CREATE_FAILED", "REJECTED":
+		if fill > 0 {
+			return fill, statusFromFill(fill, qty), true
+		}
+		return 0, "ERROR", true
+	default:
+		// 未知状态：有成交量就写；0 成交且库里已有成交则不冲掉。
+		if fill > 0 {
+			return fill, statusFromFill(fill, qty), true
+		}
+		if prevFill > 0 {
+			return prevFill, statusFromFill(prevFill, qty), false
+		}
+		return 0, statusFromFill(0, qty), true
+	}
+}
+
+func extractOrderIDFromText(msg string) string {
+	msg = strings.TrimSpace(msg)
+	if msg == "" {
+		return ""
+	}
+	for _, key := range []string{`"orderID"`, `"orderId"`} {
+		i := strings.Index(msg, key)
+		if i < 0 {
+			continue
+		}
+		rest := msg[i:]
+		colon := strings.Index(rest, ":")
+		if colon < 0 {
+			continue
+		}
+		rest = strings.TrimSpace(rest[colon+1:])
+		if !strings.HasPrefix(rest, `"`) {
+			continue
+		}
+		rest = rest[1:]
+		end := strings.Index(rest, `"`)
+		if end <= 0 {
+			continue
+		}
+		oid := strings.TrimSpace(rest[:end])
+		if oid != "" && !strings.EqualFold(oid, "null") {
+			return oid
+		}
+	}
+	return ""
 }
 
 func errUnavailable(platform string) error {

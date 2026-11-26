@@ -44,10 +44,16 @@ func (r *ArbBinaryOrderImpl) DeleteWhere(ctx context.Context, tx *gorm.DB, where
 
 func (r *ArbBinaryOrderImpl) ListForFillSync(ctx context.Context, limit int, onlyMissing bool) ([]*entity.ArbBinaryOrder, error) {
 	q := r.db.WithContext(ctx).Model(&entity.ArbBinaryOrder{}).
-		Where("platform_order_id <> ''").
+		// 有平台单号，或 ERROR 的 err_msg 里藏了 orderID（Poly FAK 400）
+		Where("(platform_order_id <> '' OR (platform_order_id = '' AND err_msg LIKE ?))", "%orderID%").
 		Order("id asc")
 	if onlyMissing {
-		q = q.Where("(fill_qty = 0 OR status IN ? OR fee = 0)", []string{"NO_FILL", "PARTIAL", "ERROR", ""})
+		// 未成交/部分/错误/挂起需回查；FILLED 且 fill>0 仅在 fee 仍为 0 时补手续费。
+		q = q.Where(`(
+			fill_qty = 0
+			OR fee = 0
+			OR UPPER(TRIM(status)) IN ?
+		)`, []string{"NO_FILL", "PARTIAL", "ERROR", "PENDING", "OPEN", "LIVE", ""})
 	}
 	if limit > 0 {
 		q = q.Limit(limit)
