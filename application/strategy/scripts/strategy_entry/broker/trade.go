@@ -308,18 +308,20 @@ func SendOnOutcome(
 		return SendPredict(predict, predictCred, oc, yes, price, qty, false, predictSlip)
 	}
 	if strings.EqualFold(oc.Platform, appcommon.PlatformSxbet) {
-		// SX IOC：percentageOdds = 最差可接受价；文档明确可按更优价成交。
+		// SX IOC：percentageOdds = 最差可接受价；文档明确可按更优价成交且份额/stake 语义固定。
 		return SendSxbet(sxbet, sxbetCred, oc, yes, limitPriceWithAbsSlip(price, predictSlip.Abs), qty)
 	}
 	token := strings.TrimSpace(oc.YesTokenID)
 	if !yes {
 		token = strings.TrimSpace(oc.NoTokenID)
 	}
-	// Poly 限价 FAK：LimitPrice = 卖一 + Abs，作最差可接受价；实际成交仍吃簿上更优卖档。
-	return SendPoly(poly, polyCred, token, limitPriceWithAbsSlip(price, predictSlip.Abs), qty, true, negRisk)
+	// Poly BUY：makerAmount=price×size USDC，takerAmount=size。CLOB 作 taker 吃更优卖档时
+	// 按 USDC 预算成交 → 限价若被 Abs 抬高，同预算会多拿份额（10@0.25 实际 0.20 → 12.5）。
+	// 策略要「份额固定」：签名限价必须用盘口卖一，Abs 只作策略侧报价门槛，不写进 Poly 单。
+	return SendPoly(poly, polyCred, token, price, qty, true, negRisk)
 }
 
-// limitPriceWithAbsSlip 买入限价绝对上浮：price+abs，封顶 0.99（Poly/SX）。
+// limitPriceWithAbsSlip 买入限价绝对上浮：price+abs，封顶 0.99（SX；Poly 不用）。
 func limitPriceWithAbsSlip(price, abs float64) float64 {
 	if !(price > 0) {
 		return price

@@ -98,6 +98,8 @@ func main() {
 		limitPx = 0.99
 	}
 	predictBps := broker.AbsoluteSlipToPredictBps(bestAsk, slip.Abs, false, slip.IsMinAmountOut)
+	// Poly：签名限价=卖一（份额固定）；Abs 不抬价，否则 USDC 预算变大 → 更好价多拿份。
+	polySignPx := bestAsk
 
 	// 与 strategy_entry 一致：-qty 是净兑付份额；SX→USDC stake，Predict→扣费前份额。
 	fee := params.Fee(plat, deref(oc.Category), deref(oc.SubCategory))
@@ -119,8 +121,15 @@ func main() {
 		fmt.Printf(" (Predict 扣费前份额)")
 	}
 	fmt.Println()
-	fmt.Printf("  fee_coef=%.4f slippage_abs=%.4f is_min_out=%v → worst=%.6f (predict_bps=%d)\n",
-		fee, slip.Abs, slip.IsMinAmountOut, limitPx, predictBps)
+	fmt.Printf("  fee_coef=%.4f slippage_abs=%.4f is_min_out=%v", fee, slip.Abs, slip.IsMinAmountOut)
+	switch plat {
+	case appcommon.PlatformPolymarket:
+		fmt.Printf(" → poly_sign_px=%.6f (份额固定；abs 不写入限价)\n", polySignPx)
+	case appcommon.PlatformPredict:
+		fmt.Printf(" → worst=%.6f (predict_bps=%d)\n", limitPx, predictBps)
+	default:
+		fmt.Printf(" → worst=%.6f\n", limitPx)
+	}
 	fmt.Printf("  neg_risk=%v\n", negRisk)
 
 	if reason := tradeBlockReason(plat, creds, poly, predict, sxbet); reason != "" {

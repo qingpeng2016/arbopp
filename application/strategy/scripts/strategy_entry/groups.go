@@ -69,7 +69,7 @@ type Params struct {
 	MaxAmount            float64
 	OneX2YesMax          float64
 	OneX2NoMax           float64
-	PredictSlippage       float64 // Predict/Poly/SX 共用绝对价格滑点（0.05→限价+0.05；Predict 反算 slippageBps）
+	PredictSlippage       float64 // 绝对价格滑点：SX 写入限价+abs；Predict 反算 bps；Poly 不写入限价（份额固定，仅策略门槛）
 	PredictIsMinAmountOut bool    // Predict 买：固定 USDT、少收份额
 	FillShareMismatchPct  float64 // 下单结果：各平台成交 (max-min)/max 上限（0.01=1%）
 	fees                  map[string]float64
