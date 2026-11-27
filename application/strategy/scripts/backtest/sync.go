@@ -175,7 +175,7 @@ func (j *Replay) runTask(ctx context.Context, task *persistententity.BacktestTas
 			gk := sess.runner.OutcomeGroupKeyForOutcomeID(oid)
 			if gk == "" {
 				if runYesno {
-					sess.runner.OnBookUpdate(oid)
+					sess.runner.OnBookUpdate(oid, "", time.Time{})
 				}
 				continue
 			}
@@ -185,7 +185,7 @@ func (j *Replay) runTask(ctx context.Context, task *persistententity.BacktestTas
 		}
 		for _, oid := range groupTouch {
 			if runYesno {
-				sess.runner.OnBookUpdate(oid)
+				sess.runner.OnBookUpdate(oid, "", time.Time{})
 			}
 		}
 		if runOneX2 && sess.onextwo != nil {

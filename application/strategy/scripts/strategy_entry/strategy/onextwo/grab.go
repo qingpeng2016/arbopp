@@ -21,18 +21,25 @@ type GrabHit struct {
 	Sends           [3]watchgroup.SendResult
 }
 
-func (r *Runner) grabOne(outcomeID uint) {
-	r.grabOneAttempt(outcomeID, false)
+func (r *Runner) grabOne(outcomeID uint, platform string, start time.Time) {
+	r.grabOneAttempt(outcomeID, platform, start, false)
 }
 
-func (r *Runner) grabOneAttempt(_ uint, retried bool) {
+func (r *Runner) noteDetectLatency(platform string, start time.Time) {
+	if r == nil || r.w == nil || r.w.Ops.RecordDetectLatency == nil || start.IsZero() {
+		return
+	}
+	r.w.Ops.RecordDetectLatency("onextwo", r.w.MapKey, platform, time.Since(start))
+}
+
+func (r *Runner) grabOneAttempt(_ uint, platform string, start time.Time, retried bool) {
 	if !r.orderMu.TryLock() {
 		// Lock held (usually Fire in flight). Do not write map_key_lock_missed:
 		// every book tick would otherwise flood dry-run rows; the holder already persists.
 		if !retried {
 			go func() {
 				time.Sleep(25 * time.Millisecond)
-				r.grabOneAttempt(0, true)
+				r.grabOneAttempt(0, platform, start, true)
 			}()
 		}
 		return
@@ -41,6 +48,9 @@ func (r *Runner) grabOneAttempt(_ uint, retried bool) {
 	lim := r.limits()
 	all := r.allTriplePicks(lim)
 	if len(all) == 0 {
+		if !retried {
+			r.noteDetectLatency(platform, start)
+		}
 		return
 	}
 
@@ -71,6 +81,11 @@ func (r *Runner) grabOneAttempt(_ uint, retried bool) {
 		if !tradeOK || p.Per < tradePick.Per {
 			tradePick, tradeOK = p, true
 		}
+	}
+
+	// 只记 WS收包→下单前；fireTriple 不进样本。重试跳过。
+	if !retried {
+		r.noteDetectLatency(platform, start)
 	}
 
 	var fills [3]float64

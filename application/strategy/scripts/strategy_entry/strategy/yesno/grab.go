@@ -72,18 +72,25 @@ func (r *Runner) tryAllPicksForGrab(outcomeID uint, lim Limits) (all []FilledPic
 	return r.AllFilledPicks(group, lim)
 }
 
-func (r *Runner) grabOne(outcomeID uint) {
-	r.grabOneAttempt(outcomeID, false)
+func (r *Runner) grabOne(outcomeID uint, platform string, start time.Time) {
+	r.grabOneAttempt(outcomeID, platform, start, false)
 }
 
-func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
+func (r *Runner) noteDetectLatency(platform string, start time.Time) {
+	if r == nil || r.w == nil || r.w.Ops.RecordDetectLatency == nil || start.IsZero() {
+		return
+	}
+	r.w.Ops.RecordDetectLatency("yesno", r.w.MapKey, platform, time.Since(start))
+}
+
+func (r *Runner) grabOneAttempt(outcomeID uint, platform string, start time.Time, retried bool) {
 	if !r.orderMu.TryLock() {
 		// Lock held (usually Fire in flight). Do not write map_key_lock_missed:
 		// every book tick would otherwise flood dry-run rows; the holder already persists.
 		if !retried {
 			go func(id uint) {
 				time.Sleep(25 * time.Millisecond)
-				r.grabOneAttempt(id, true)
+				r.grabOneAttempt(id, platform, start, true)
 			}(outcomeID)
 		}
 		return
@@ -93,6 +100,10 @@ func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
 	lim := r.limits()
 	all, _, ok := r.tryAllPicksForGrab(outcomeID, lim)
 	if !ok {
+		// 无腿可试也记：WS收包→检测结束（仍不下单）。
+		if !retried {
+			r.noteDetectLatency(platform, start)
+		}
 		return
 	}
 
@@ -120,6 +131,11 @@ func (r *Runner) grabOneAttempt(outcomeID uint, retried bool) {
 		if !tradeOK || fp.Per < tradePick.Per {
 			tradePick, tradeOK = fp, true
 		}
+	}
+
+	// 只记 WS收包→下单前；Fire 网络不进样本。重试跳过（避免等锁把发单算进去）。
+	if !retried {
+		r.noteDetectLatency(platform, start)
 	}
 
 	var yesRes, noRes watchgroup.SendResult

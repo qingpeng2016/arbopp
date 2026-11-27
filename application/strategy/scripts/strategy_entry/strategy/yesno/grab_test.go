@@ -51,5 +51,5 @@ func TestGrabOneDryRunIgnoresCanTrade(t *testing.T) {
 		outcomeGroups: map[string]OutcomeGroup{groupKey: group},
 	}
 	r.w.Ops.CanTrade = func(string) bool { return false }
-	r.grabOne(1)
+	r.grabOne(1, "", time.Time{})
 }

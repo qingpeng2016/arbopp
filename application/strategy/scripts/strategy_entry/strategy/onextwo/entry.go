@@ -3,6 +3,7 @@ package onextwo
 import (
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/strategy/yesno"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/watchgroup"
@@ -47,7 +48,7 @@ func buildOutcomeGroups(w *watchgroup.Watch) map[string]yesno.OutcomeGroup {
 	return groups
 }
 
-func (r *Runner) OnBookUpdate(outcomeID uint) {
+func (r *Runner) OnBookUpdate(outcomeID uint, platform string, start time.Time) {
 	idx, ok := r.w.OutcomeIndex(outcomeID)
 	if !ok {
 		return
@@ -59,7 +60,7 @@ func (r *Runner) OnBookUpdate(outcomeID uint) {
 	if r.w.Ops.BacktestMode {
 		return
 	}
-	r.grabOne(outcomeID)
+	r.grabOne(outcomeID, platform, start)
 }
 
 func (r *Runner) limits() Limits {

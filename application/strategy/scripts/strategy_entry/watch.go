@@ -172,6 +172,18 @@ func newWatch(ctx context.Context, e *Entry, g group) *watch {
 		},
 		SendOnOutcome: w.sendOnOutcome,
 		// FlattenOnOutcome: w.flattenOnOutcome, // 暂时关闭：单边成交后不再自动反向平仓
+		// RecordDetectLatency：仅 WS收包→下单前（Fire 之前）。
+		RecordDetectLatency: func(kind, mapKey, platform string, elapsed time.Duration) {
+			if w.entry == nil {
+				return
+			}
+			switch kind {
+			case "yesno":
+				w.entry.recordDetectLatencyYesno(mapKey, platform, elapsed)
+			case "onextwo":
+				w.entry.recordDetectLatencyOnextwo(mapKey, platform, elapsed)
+			}
+		},
 		OppRepo: func() persistentrepo.ArbBinaryOpportunityRepo {
 			if w.entry == nil {
 				return nil
@@ -257,7 +269,7 @@ func (w *watch) rescanAllOutcomeGroups() {
 			continue
 		}
 		seenKey[key] = struct{}{}
-		w.dispatchBookUpdate(w.Outcomes[i].ID, start)
+		w.dispatchBookUpdate(w.Outcomes[i].ID, "", start)
 	}
 }
 
@@ -494,10 +506,11 @@ func (w *watch) write(e event) {
 		return
 	}
 
+	platform := e.Platform
 	start := recvAtOrNow(e.RecvAt)
 	for _, outcomeID := range outcomeIDs {
 		oid := outcomeID
-		go w.dispatchBookUpdate(oid, start)
+		go w.dispatchBookUpdate(oid, platform, start)
 	}
 }
 
@@ -592,21 +605,16 @@ func (w *watch) outcomeIDsForGrab(e event) []uint {
 	return ids
 }
 
-func (w *watch) dispatchBookUpdate(outcomeID uint, start time.Time) {
+func (w *watch) dispatchBookUpdate(outcomeID uint, platform string, start time.Time) {
 	if w.yesno == nil && w.onextwo == nil {
 		return
 	}
+	// yesno / onextwo 并行：各自测 WS→试算，互不把对方发单耗时算进去。
 	if w.yesno != nil {
-		w.yesno.OnBookUpdate(outcomeID)
-		if w.entry != nil {
-			w.entry.recordDetectLatencyYesno(w.MapKey, time.Since(start))
-		}
+		go w.yesno.OnBookUpdate(outcomeID, platform, start)
 	}
 	if w.onextwo != nil {
-		w.onextwo.OnBookUpdate(outcomeID)
-		if w.entry != nil {
-			w.entry.recordDetectLatencyOnextwo(w.MapKey, time.Since(start))
-		}
+		go w.onextwo.OnBookUpdate(outcomeID, platform, start)
 	}
 }
 

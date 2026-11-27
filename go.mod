@@ -3,11 +3,13 @@ module github.com/gph-tech/fgmm-strategy-bitfinex
 go 1.26.0
 
 require (
+	github.com/centrifugal/centrifuge-go v0.13.0
 	github.com/ethereum/go-ethereum v1.16.3
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-co-op/gocron v1.37.0
 	github.com/go-resty/resty/v2 v2.16.5
 	github.com/go-sql-driver/mysql v1.9.1
+	github.com/gorilla/websocket v1.5.3
 	github.com/redis/go-redis/v9 v9.7.3
 	github.com/shopspring/decimal v1.4.0
 	github.com/spf13/viper v1.20.1
@@ -38,7 +40,6 @@ require (
 	github.com/bits-and-blooms/bitset v1.20.0 // indirect
 	github.com/bytedance/sonic v1.11.6 // indirect
 	github.com/bytedance/sonic/loader v0.1.1 // indirect
-	github.com/centrifugal/centrifuge-go v0.13.0 // indirect
 	github.com/centrifugal/fdelta v0.0.3 // indirect
 	github.com/centrifugal/protocol v0.23.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -67,7 +68,6 @@ require (
 	github.com/goccy/go-json v0.10.4 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/holiman/uint256 v1.3.2 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect

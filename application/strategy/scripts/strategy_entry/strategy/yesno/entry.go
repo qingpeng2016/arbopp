@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/watchgroup"
 	persistententity "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/entity"
@@ -66,7 +67,7 @@ func buildOutcomeGroups(w *watchgroup.Watch) map[string]OutcomeGroup {
 	return groups
 }
 
-func (r *Runner) OnBookUpdate(outcomeID uint) {
+func (r *Runner) OnBookUpdate(outcomeID uint, platform string, start time.Time) {
 	idx, ok := r.outcomeIndex(outcomeID)
 	if !ok {
 		return
@@ -78,7 +79,7 @@ func (r *Runner) OnBookUpdate(outcomeID uint) {
 		r.grabOneBacktest(outcomeID)
 		return
 	}
-	r.grabOne(outcomeID)
+	r.grabOne(outcomeID, platform, start)
 }
 
 func outcomeIsMoneyline(oc *persistententity.MarketOutcome) bool {

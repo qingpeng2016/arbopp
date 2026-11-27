@@ -24,8 +24,10 @@ type Ops struct {
 	MapKeyHasOpenOrders func(mapKey string) bool
 	// NoteOpenOrdersWritten 实盘落单后立刻记入内存。
 	NoteOpenOrdersWritten func(mapKey string)
-	SendOnOutcome         func(outcomeIndex int, buyYes bool, px, qty float64) (SendResult, error)
-	FlattenOnOutcome      func(outcomeIndex int, boughtYes bool, mine, other float64)
+	SendOnOutcome    func(outcomeIndex int, buyYes bool, px, qty float64) (SendResult, error)
+	FlattenOnOutcome func(outcomeIndex int, boughtYes bool, mine, other float64)
+	// RecordDetectLatency WS收包→下单前（kind=yesno|onextwo）；elapsed 不含发单。
+	RecordDetectLatency   func(kind, mapKey, platform string, elapsed time.Duration)
 	OppRepo               func() persistentrepo.ArbBinaryOpportunityRepo
 	OrderRepo             func() persistentrepo.ArbBinaryOrderRepo
 	BookRepo              func() persistentrepo.OrderBookRepo
