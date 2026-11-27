@@ -45,14 +45,17 @@ const (
 	thresholdPredictSlippage      = "predict_polymarket_sxbet_slippage_bps"
 	thresholdPredictIsMinOut      = "predict_is_min_amount_out"
 	thresholdFillShareMismatchPct = "fill_share_mismatch_pct"
-	defaultMaxCost                = 0.95
-	default1X2YesMax              = 0.95
-	default1X2NoMax               = 1.90
-	defaultMinAmount              = 5.0
-	defaultMaxAmount              = 5.0
-	defaultPredictSlippage        = 0.03 // 绝对价格上浮（0.50→0.53）
+	// 进程内实盘下单次数上限；≤0 表示不限制。仅内存计数，20s reconcile 重读上限。
+	thresholdMaxOrderCount = "max_order_count"
+	defaultMaxCost         = 0.95
+	default1X2YesMax       = 0.95
+	default1X2NoMax        = 1.90
+	defaultMinAmount       = 5.0
+	defaultMaxAmount       = 5.0
+	defaultPredictSlippage = 0.03 // 绝对价格上浮（0.50→0.53）
 	defaultPredictIsMinAmountOut = true
 	defaultFillShareMismatchPct  = 0.01
+	defaultMaxOrderCount         = 0 // 0=不限制
 	defaultPolySports            = 0.05
 	defaultKalshiSports          = 0.07
 	defaultPredictSports         = 0.02
@@ -73,6 +76,7 @@ type Params struct {
 	PredictSlippage       float64 // 绝对价格滑点（config …_slippage_bps）：SX 限价+abs；Predict 反算 API bps；Poly 不写入限价
 	PredictIsMinAmountOut bool    // Predict 买：固定 USDT、少收份额
 	FillShareMismatchPct  float64 // 下单结果：各平台成交 (max-min)/max 上限（0.01=1%）
+	MaxOrderCount         int64   // 进程实盘下单次数上限；≤0 不限制
 	fees                  map[string]float64
 }
 
@@ -87,6 +91,7 @@ func defaultParams() Params {
 		PredictSlippage:       defaultPredictSlippage,
 		PredictIsMinAmountOut: defaultPredictIsMinAmountOut,
 		FillShareMismatchPct:  defaultFillShareMismatchPct,
+		MaxOrderCount:         defaultMaxOrderCount,
 		fees: map[string]float64{
 			feeKey(appcommon.PlatformPolymarket, "Sports", ""): defaultPolySports,
 			feeKey(appcommon.PlatformKalshi, "Sports", ""):     defaultKalshiSports,
@@ -151,6 +156,13 @@ func (e *Entry) loadParams(ctx context.Context) Params {
 	}
 	if row, ok := e.thresholdRow(ctx, thresholdFillShareMismatchPct); ok {
 		p.FillShareMismatchPct = thresholdNonNegative(row.ConfigValue)
+	}
+	if row, ok := e.thresholdRow(ctx, thresholdMaxOrderCount); ok {
+		v := row.ConfigValue.IntPart()
+		if v < 0 {
+			v = 0
+		}
+		p.MaxOrderCount = v
 	}
 	p.fees = e.loadFees(ctx, p.fees)
 	return p

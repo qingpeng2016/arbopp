@@ -24,8 +24,12 @@ type Ops struct {
 	MapKeyHasOpenOrders func(mapKey string) bool
 	// NoteOpenOrdersWritten 实盘落单后立刻记入内存。
 	NoteOpenOrdersWritten func(mapKey string)
-	SendOnOutcome    func(outcomeIndex int, buyYes bool, px, qty float64) (SendResult, error)
-	FlattenOnOutcome func(outcomeIndex int, boughtYes bool, mine, other float64)
+	// TryConsumeOrderSlot 实盘 Fire 前占坑；false=已达 max_order_count，只写机会表。
+	TryConsumeOrderSlot func() bool
+	// OrderCountSnapshot 当前已下单次数与内存上限（≤0 表示不限制）。
+	OrderCountSnapshot func() (placed, max int64)
+	SendOnOutcome      func(outcomeIndex int, buyYes bool, px, qty float64) (SendResult, error)
+	FlattenOnOutcome   func(outcomeIndex int, boughtYes bool, mine, other float64)
 	// RecordDetectLatency WS收包→下单前（kind=yesno|onextwo）；elapsed 不含发单。
 	RecordDetectLatency   func(kind, mapKey, platform string, elapsed time.Duration)
 	OppRepo               func() persistentrepo.ArbBinaryOpportunityRepo

@@ -569,6 +569,7 @@ INSERT INTO `config_strategy_threshold` (`config_key`, `config_value`, `value_ty
   ('predict_polymarket_sxbet_slippage_bps', 0.03000000, 'DECIMAL', 'Predict+Poly+SX 绝对价格滑点（0.03：卖一 0.50→最差 0.53；键名 _bps 为历史命名）'),
   ('predict_is_min_amount_out', 1.00000000, 'DECIMAL', 'Predict MARKET isMinAmountOut（1=true 花固定 USDT、少收份额；0=false 多付钱拿满份额）'),
   ('fill_share_mismatch_pct', 0.01000000, 'DECIMAL', '下单结果判定套利成功：各平台成交份额 (max-min)/max 上限（0.01=1%）'),
+  ('max_order_count', 10.00000000, 'DECIMAL', 'strategy_entry 进程实盘下单次数上限（达限后只写机会表；≤0=不限制；热路径只读内存）'),
   ('certain_min_return_pct', 0.10000000, 'DECIMAL', '必然事件最低收益率'),
   ('stochastic_min_expected_return_pct', 0.10000000, 'DECIMAL', '偶然事件期望收益率'),
   ('stochastic_high_priority_return_pct', 0.20000000, 'DECIMAL', '偶然高优先级')

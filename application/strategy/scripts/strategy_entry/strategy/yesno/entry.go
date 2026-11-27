@@ -134,6 +134,22 @@ func HasBlockingOpenOrders(ops *watchgroup.Ops, mapKey string) bool {
 	return ops.MapKeyHasOpenOrders(mapKey)
 }
 
+// TryConsumeOrderSlot 实盘 Fire 前占坑；未注入回调时放行（回测等）。
+func TryConsumeOrderSlot(ops *watchgroup.Ops) bool {
+	if ops == nil || ops.TryConsumeOrderSlot == nil {
+		return true
+	}
+	return ops.TryConsumeOrderSlot()
+}
+
+// OrderCountSnapshot 已下单次数与内存上限。
+func OrderCountSnapshot(ops *watchgroup.Ops) (placed, max int64) {
+	if ops == nil || ops.OrderCountSnapshot == nil {
+		return 0, 0
+	}
+	return ops.OrderCountSnapshot()
+}
+
 func (r *Runner) grabContext() context.Context {
 	return r.w.Context()
 }

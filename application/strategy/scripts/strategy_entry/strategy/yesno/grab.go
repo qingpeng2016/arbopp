@@ -141,11 +141,17 @@ func (r *Runner) grabOneAttempt(outcomeID uint, platform string, start time.Time
 	var yesRes, noRes watchgroup.SendResult
 	var yesErr, noErr error
 	ordered := false
+	orderCapHit := false
 	if tradeOK && !openBlocked {
-		yesRes, noRes, yesErr, noErr = Fire(outcomeSender{r}, tradePick.Yes.Side, tradePick.No.Side, tradePick.YesBuyYes, tradePick.NoBuyYes, tradePick.Qty)
-		ordered = true
+		if TryConsumeOrderSlot(&r.w.Ops) {
+			yesRes, noRes, yesErr, noErr = Fire(outcomeSender{r}, tradePick.Yes.Side, tradePick.No.Side, tradePick.YesBuyYes, tradePick.NoBuyYes, tradePick.Qty)
+			ordered = true
+		} else {
+			orderCapHit = true
+		}
 	}
 	yesFill, noFill := yesRes.Fill, noRes.Fill
+	placedN, maxN := OrderCountSnapshot(&r.w.Ops)
 
 	r.recent.Prune(all[0].At)
 	var bestHit GrabHit
@@ -175,6 +181,7 @@ func (r *Runner) grabOneAttempt(outcomeID uint, platform string, start time.Time
 			hit.SkipOrderReason = ""
 			hit.ExtData = ExtDataJSON(fp.SizeCheck.Snapshot, predBookSnap, map[string]any{
 				"ordered": true, "order_qty": fp.Qty, "fill_yes": yesFill, "fill_no": noFill,
+				"order_count": placedN, "max_order_count": maxN,
 			})
 		} else if !fp.SizeCheckOK {
 			// already set in buildGrabHit
@@ -197,6 +204,14 @@ func (r *Runner) grabOneAttempt(outcomeID uint, platform string, start time.Time
 			hit.ExtData = ExtDataJSON(fp.SizeCheck.Snapshot, map[string]any{
 				"skip_order_reason": "non_terminal_orders",
 				"map_key":           mapKey,
+			})
+		} else if orderCapHit {
+			hit.DryRun = true
+			hit.SkipOrderReason = "max_order_count_reached"
+			hit.ExtData = ExtDataJSON(fp.SizeCheck.Snapshot, map[string]any{
+				"skip_order_reason": "max_order_count_reached",
+				"order_count":       placedN,
+				"max_order_count":   maxN,
 			})
 		} else {
 			// 有更优腿已下单，本组合仅记机会

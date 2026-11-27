@@ -54,7 +54,9 @@ type Entry struct {
 	// openOrderKeysBox：仍有未终态订单的 map_key 集合（reconcile 刷库；WS 热路径只读内存）。
 	openOrderKeysBox atomic.Value
 	// warnKalshiKey 没有 Kalshi 签名账户时只打一次日志。
-	warnKalshiKey    atomic.Bool
+	warnKalshiKey atomic.Bool
+	// orderCount 本进程已发起的实盘下单次数（Fire 前 CAS 占坑；上限来自 Params.MaxOrderCount）。
+	orderCount       atomic.Int64
 	detectLatYesno   *DetectLatency
 	detectLatOnextwo *DetectLatency
 }
@@ -161,6 +163,36 @@ func (e *Entry) Params() Params {
 		return defaultParams()
 	}
 	return v.(Params)
+}
+
+// OrderCount 本进程已占坑的实盘下单次数（只读内存）。
+func (e *Entry) OrderCount() int64 {
+	if e == nil {
+		return 0
+	}
+	return e.orderCount.Load()
+}
+
+// TryConsumeOrderSlot 下单前占一次名额：已达 MaxOrderCount 则 false（只写机会表）。
+// MaxOrderCount≤0 表示不限制，仍递增计数。热路径不读库。
+func (e *Entry) TryConsumeOrderSlot() bool {
+	if e == nil {
+		return false
+	}
+	max := e.Params().MaxOrderCount
+	if max <= 0 {
+		e.orderCount.Add(1)
+		return true
+	}
+	for {
+		cur := e.orderCount.Load()
+		if cur >= max {
+			return false
+		}
+		if e.orderCount.CompareAndSwap(cur, cur+1) {
+			return true
+		}
+	}
 }
 
 // refreshOpenOrderKeys reconcile 刷未终态 map_key 到内存（WS 热路径禁止查 orders 表）。

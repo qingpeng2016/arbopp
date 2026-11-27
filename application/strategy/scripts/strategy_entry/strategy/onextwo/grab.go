@@ -92,10 +92,16 @@ func (r *Runner) grabOneAttempt(_ uint, platform string, start time.Time, retrie
 	var fillErrs [3]error
 	var sends [3]watchgroup.SendResult
 	ordered := false
+	orderCapHit := false
 	if tradeOK && !openBlocked {
-		fills, fillErrs, sends = fireTriple(r, tradePick)
-		ordered = true
+		if yesno.TryConsumeOrderSlot(&r.w.Ops) {
+			fills, fillErrs, sends = fireTriple(r, tradePick)
+			ordered = true
+		} else {
+			orderCapHit = true
+		}
 	}
+	placedN, maxN := yesno.OrderCountSnapshot(&r.w.Ops)
 
 	r.recent.Prune(all[0].At)
 	var bestHit GrabHit
@@ -135,10 +141,20 @@ func (r *Runner) grabOneAttempt(_ uint, platform string, start time.Time, retrie
 				"skip_order_reason": "non_terminal_orders",
 				"map_key":           mapKey,
 			})
+		} else if orderCapHit {
+			hit.SkipOrderReason = "max_order_count_reached"
+			hit.ExtData = yesno.ExtDataJSON(p.SizeCheck.Snapshot, map[string]any{
+				"skip_order_reason": "max_order_count_reached",
+				"order_count":       placedN,
+				"max_order_count":   maxN,
+			})
 		} else if isTrade {
 			hit.DryRun = false
 			hit.Fills, hit.FillErrs, hit.Sends = fills, fillErrs, sends
-			hit.ExtData = yesno.ExtDataJSON(p.SizeCheck.Snapshot, predSnap, map[string]any{"ordered": true, "order_qty": p.Qty, "fills": fills})
+			hit.ExtData = yesno.ExtDataJSON(p.SizeCheck.Snapshot, predSnap, map[string]any{
+				"ordered": true, "order_qty": p.Qty, "fills": fills,
+				"order_count": placedN, "max_order_count": maxN,
+			})
 		} else {
 			hit.SkipOrderReason = "not_selected_for_order"
 			hit.ExtData = yesno.ExtDataJSON(p.SizeCheck.Snapshot, map[string]any{"skip_order_reason": hit.SkipOrderReason})

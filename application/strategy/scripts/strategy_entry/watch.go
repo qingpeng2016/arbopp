@@ -170,6 +170,18 @@ func newWatch(ctx context.Context, e *Entry, g group) *watch {
 			}
 			w.entry.MarkMapKeyOpenOrders(mapKey)
 		},
+		TryConsumeOrderSlot: func() bool {
+			if w.entry == nil {
+				return false
+			}
+			return w.entry.TryConsumeOrderSlot()
+		},
+		OrderCountSnapshot: func() (placed, max int64) {
+			if w.entry == nil {
+				return 0, 0
+			}
+			return w.entry.OrderCount(), w.entry.Params().MaxOrderCount
+		},
 		SendOnOutcome: w.sendOnOutcome,
 		// FlattenOnOutcome: w.flattenOnOutcome, // 暂时关闭：单边成交后不再自动反向平仓
 		// RecordDetectLatency：仅 WS收包→下单前（Fire 之前）。
