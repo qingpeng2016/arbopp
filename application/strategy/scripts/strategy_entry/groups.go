@@ -41,15 +41,16 @@ const (
 	thresholdMaxAmount           = "max_amount"
 	threshold1X2YesMax           = "1x2_yes_triple_max_cost"
 	threshold1X2NoMax            = "1x2_no_triple_max_cost"
-	thresholdPredictSlippage     = "predict_polymarket_sxbet_slippage"
-	thresholdPredictIsMinOut     = "predict_is_min_amount_out"
+	// 键名带 _bps 后缀，语义是绝对价格上浮（0.03：0.50→0.53），不是百分比。
+	thresholdPredictSlippage      = "predict_polymarket_sxbet_slippage_bps"
+	thresholdPredictIsMinOut      = "predict_is_min_amount_out"
 	thresholdFillShareMismatchPct = "fill_share_mismatch_pct"
-	defaultMaxCost               = 0.95
-	default1X2YesMax             = 0.95
-	default1X2NoMax              = 1.90
-	defaultMinAmount             = 5.0
-	defaultMaxAmount             = 5.0
-	defaultPredictSlippage       = 0.05 // 绝对价格上浮（0.20→0.25）
+	defaultMaxCost                = 0.95
+	default1X2YesMax              = 0.95
+	default1X2NoMax               = 1.90
+	defaultMinAmount              = 5.0
+	defaultMaxAmount              = 5.0
+	defaultPredictSlippage        = 0.03 // 绝对价格上浮（0.50→0.53）
 	defaultPredictIsMinAmountOut = true
 	defaultFillShareMismatchPct  = 0.01
 	defaultPolySports            = 0.05
@@ -69,7 +70,7 @@ type Params struct {
 	MaxAmount            float64
 	OneX2YesMax          float64
 	OneX2NoMax           float64
-	PredictSlippage       float64 // 绝对价格滑点：SX 写入限价+abs；Predict 反算 bps；Poly 不写入限价（份额固定，仅策略门槛）
+	PredictSlippage       float64 // 绝对价格滑点（config …_slippage_bps）：SX 限价+abs；Predict 反算 API bps；Poly 不写入限价
 	PredictIsMinAmountOut bool    // Predict 买：固定 USDT、少收份额
 	FillShareMismatchPct  float64 // 下单结果：各平台成交 (max-min)/max 上限（0.01=1%）
 	fees                  map[string]float64

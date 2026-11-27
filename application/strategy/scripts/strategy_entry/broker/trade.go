@@ -144,10 +144,10 @@ func SendKalshi(kalshi httprepo.KalshiRepo, cred KalshiCreds, oc *persistententi
 	return out, nil
 }
 
-// PredictSlippage 共用绝对价格滑点（来自 config_strategy_threshold.predict_polymarket_sxbet_slippage）。
-// Abs=0.05 表示限价可上浮到 price+0.05（例：0.20→0.25，0.90→0.95）。
+// PredictSlippage 共用绝对价格滑点（config_strategy_threshold.predict_polymarket_sxbet_slippage_bps）。
+// Abs=0.03 表示限价可上浮到 price+0.03（例：0.50→0.53）；键名带 _bps，语义是绝对值不是百分比。
 type PredictSlippage struct {
-	Abs            float64 // 绝对价格上浮（非 bps）
+	Abs            float64 // 绝对价格上浮（非百分比）
 	IsMinAmountOut bool
 }
 

@@ -1135,12 +1135,12 @@ func (w *watch) bookRowsForHit(view book.Snapshot, aIndex, bIndex int) []*persis
 
 func (w *watch) predictSlippage() broker.PredictSlippage {
 	if w.entry == nil {
-		return broker.PredictSlippage{Abs: 0.05, IsMinAmountOut: true}
+		return broker.PredictSlippage{Abs: 0.03, IsMinAmountOut: true}
 	}
 	p := w.entry.Params()
 	abs := p.PredictSlippage
 	if !(abs > 0) {
-		abs = 0.05
+		abs = 0.03
 	}
 	return broker.PredictSlippage{Abs: abs, IsMinAmountOut: p.PredictIsMinAmountOut}
 }
