@@ -32,6 +32,8 @@ type Ops struct {
 	FlattenOnOutcome   func(outcomeIndex int, boughtYes bool, mine, other float64)
 	// RecordDetectLatency WS收包→下单前 + 纯试算（kind=yesno|onextwo）；均不含发单。
 	RecordDetectLatency func(kind, mapKey, platform string, wsElapsed, computeElapsed time.Duration)
+	// RecordFireLatency 实盘 Fire 墙钟（kind=yesno|onextwo）；platforms=各腿平台。
+	RecordFireLatency func(kind, mapKey string, platforms []string, elapsed time.Duration)
 	OppRepo               func() persistentrepo.ArbBinaryOpportunityRepo
 	OrderRepo             func() persistentrepo.ArbBinaryOrderRepo
 	BookRepo              func() persistentrepo.OrderBookRepo

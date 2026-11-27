@@ -44,3 +44,9 @@ SELECT * FROM stat_kv WHERE group_name = 'stat_meta';
 -- WHERE group_name = 'strategy_entry_detect_latency'
 --   AND item_key IN ('ws_to_arb_check_ms_yesno', 'ws_to_arb_check_ms_onextwo');
 -- JSON: min_ms/max_ms = WS→下单前；compute_min_ms/compute_max_ms = 纯试算
+--
+-- Fire 发单墙钟（试算记完 → Fire 返回）
+-- SELECT item_key, updated_at, LEFT(item_value, 200) FROM stat_kv
+-- WHERE group_name = 'strategy_entry_fire_latency'
+--   AND item_key IN ('fire_order_ms_yesno', 'fire_order_ms_onextwo');
+-- JSON: by_map_key / by_platform → {min_ms,max_ms,samples}

@@ -59,6 +59,8 @@ type Entry struct {
 	orderCount       atomic.Int64
 	detectLatYesno   *DetectLatency
 	detectLatOnextwo *DetectLatency
+	fireLatYesno     *DetectLatency
+	fireLatOnextwo   *DetectLatency
 }
 
 type running struct {
@@ -108,6 +110,8 @@ func NewEntry(
 		watches:            map[string]*running{},
 		detectLatYesno:     NewDetectLatency(),
 		detectLatOnextwo:   NewDetectLatency(),
+		fireLatYesno:       NewDetectLatency(),
+		fireLatOnextwo:     NewDetectLatency(),
 	}
 	e.paramBox.Store(defaultParams())
 	e.credBox.Store(creds{})

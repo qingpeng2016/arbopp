@@ -91,6 +91,13 @@ func (r *Runner) noteDetectLatency(platform string, start, computeStart time.Tim
 	r.w.Ops.RecordDetectLatency("yesno", r.w.MapKey, platform, wsElapsed, computeElapsed)
 }
 
+func (r *Runner) noteFireLatency(platforms []string, fireStart time.Time) {
+	if r == nil || r.w == nil || r.w.Ops.RecordFireLatency == nil || fireStart.IsZero() {
+		return
+	}
+	r.w.Ops.RecordFireLatency("yesno", r.w.MapKey, platforms, time.Since(fireStart))
+}
+
 // kickDetect 合并 pending：锁忙只更新最新票；持锁循环消化到空。
 func (r *Runner) kickDetect() {
 	if !r.orderMu.TryLock() {
@@ -146,7 +153,7 @@ func (r *Runner) grabOneLocked(outcomeID uint, platform string, start time.Time)
 		}
 	}
 
-	// WS收包→下单前 + 纯试算；Fire 不进样本。
+	// WS收包→下单前 + 纯试算；下一段才是 Fire。
 	r.noteDetectLatency(platform, start, computeStart)
 
 	var yesRes, noRes watchgroup.SendResult
@@ -155,7 +162,9 @@ func (r *Runner) grabOneLocked(outcomeID uint, platform string, start time.Time)
 	orderCapHit := false
 	if tradeOK && !openBlocked {
 		if TryConsumeOrderSlot(&r.w.Ops) {
+			fireStart := time.Now()
 			yesRes, noRes, yesErr, noErr = Fire(outcomeSender{r}, tradePick.Yes.Side, tradePick.No.Side, tradePick.YesBuyYes, tradePick.NoBuyYes, tradePick.Qty)
+			r.noteFireLatency([]string{tradePick.Yes.Platform, tradePick.No.Platform}, fireStart)
 			ordered = true
 		} else {
 			orderCapHit = true

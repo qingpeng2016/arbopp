@@ -19,6 +19,9 @@ const (
 	statGroupDetectLatency      = "strategy_entry_detect_latency"
 	statKeyDetectLatencyYesno   = "ws_to_arb_check_ms_yesno"
 	statKeyDetectLatencyOnextwo = "ws_to_arb_check_ms_onextwo"
+	statGroupFireLatency        = "strategy_entry_fire_latency"
+	statKeyFireLatencyYesno     = "fire_order_ms_yesno"
+	statKeyFireLatencyOnextwo   = "fire_order_ms_onextwo"
 )
 
 // mapLatencyStats：ws_* = RecvAt→下单前；compute_* = 拿锁后纯试算。
@@ -70,6 +73,31 @@ func (d *DetectLatency) Record(mapKey, platform string, wsElapsed, computeElapse
 	}
 	if p := strings.ToUpper(strings.TrimSpace(platform)); p != "" {
 		d.byPlatform[p] = bumpLatency(d.byPlatform[p], wsMs, computeMs)
+	}
+}
+
+// RecordFire 实盘 Fire 墙钟耗时（仅 min/max/samples；by_map_key + 各腿 platform）。
+func (d *DetectLatency) RecordFire(mapKey string, platforms []string, elapsed time.Duration) {
+	if d == nil || elapsed < 0 {
+		return
+	}
+	ms := float64(elapsed.Nanoseconds()) / 1e6
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if mapKey != "" {
+		d.byKey[mapKey] = bumpLatency(d.byKey[mapKey], ms, -1)
+	}
+	seen := map[string]struct{}{}
+	for _, raw := range platforms {
+		p := strings.ToUpper(strings.TrimSpace(raw))
+		if p == "" {
+			continue
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		d.byPlatform[p] = bumpLatency(d.byPlatform[p], ms, -1)
 	}
 }
 
@@ -155,18 +183,35 @@ func (e *Entry) recordDetectLatencyOnextwo(mapKey, platform string, wsElapsed, c
 	e.detectLatOnextwo.Record(mapKey, platform, wsElapsed, computeElapsed)
 }
 
+func (e *Entry) recordFireLatencyYesno(mapKey string, platforms []string, elapsed time.Duration) {
+	if e == nil || e.fireLatYesno == nil {
+		return
+	}
+	e.fireLatYesno.RecordFire(mapKey, platforms, elapsed)
+}
+
+func (e *Entry) recordFireLatencyOnextwo(mapKey string, platforms []string, elapsed time.Duration) {
+	if e == nil || e.fireLatOnextwo == nil {
+		return
+	}
+	e.fireLatOnextwo.RecordFire(mapKey, platforms, elapsed)
+}
+
 func (e *Entry) flushDetectLatencyStat(ctx context.Context) {
 	if e == nil || e.statRepo == nil {
 		return
 	}
-	rows := make([]*persistententity.StatKV, 0, 2)
+	rows := make([]*persistententity.StatKV, 0, 4)
 	for _, spec := range []struct {
-		key  string
-		desc string
-		lat  *DetectLatency
+		group string
+		key   string
+		desc  string
+		lat   *DetectLatency
 	}{
-		{statKeyDetectLatencyYesno, "strategy_entry yesno：min/max=WS→下单前；compute_*=纯试算(ms，不含发单)", e.detectLatYesno},
-		{statKeyDetectLatencyOnextwo, "strategy_entry onextwo：min/max=WS→下单前；compute_*=纯试算(ms，不含发单)", e.detectLatOnextwo},
+		{statGroupDetectLatency, statKeyDetectLatencyYesno, "strategy_entry yesno：min/max=WS→下单前；compute_*=纯试算(ms，不含发单)", e.detectLatYesno},
+		{statGroupDetectLatency, statKeyDetectLatencyOnextwo, "strategy_entry onextwo：min/max=WS→下单前；compute_*=纯试算(ms，不含发单)", e.detectLatOnextwo},
+		{statGroupFireLatency, statKeyFireLatencyYesno, "strategy_entry yesno：Fire发单墙钟(ms)；by_map_key + 各腿 by_platform", e.fireLatYesno},
+		{statGroupFireLatency, statKeyFireLatencyOnextwo, "strategy_entry onextwo：Fire发单墙钟(ms)；by_map_key + 各腿 by_platform", e.fireLatOnextwo},
 	} {
 		if spec.lat == nil {
 			continue
@@ -174,11 +219,11 @@ func (e *Entry) flushDetectLatencyStat(ctx context.Context) {
 		payload := spec.lat.snapshot()
 		raw, err := json.MarshalIndent(payload, "", "  ")
 		if err != nil {
-			notification.SendErrorLog(ctx, "strategy_entry-detect-latency-marshal", zap.String("item_key", spec.key), zap.Error(err))
+			notification.SendErrorLog(ctx, "strategy_entry-latency-marshal", zap.String("item_key", spec.key), zap.Error(err))
 			continue
 		}
 		rows = append(rows, &persistententity.StatKV{
-			GroupName:   statGroupDetectLatency,
+			GroupName:   spec.group,
 			ItemKey:     spec.key,
 			ItemValue:   string(raw),
 			ValueType:   "json",
@@ -191,18 +236,10 @@ func (e *Entry) flushDetectLatencyStat(ctx context.Context) {
 		return
 	}
 	if err := e.statRepo.UpsertBatch(ctx, nil, rows); err != nil {
-		notification.SendErrorLog(ctx, "strategy_entry-detect-latency-stat_kv", zap.Error(err))
+		notification.SendErrorLog(ctx, "strategy_entry-latency-stat_kv", zap.Error(err))
 		return
 	}
-	yesnoN, onextwoN := 0, 0
-	if e.detectLatYesno != nil {
-		yesnoN = len(e.detectLatYesno.snapshot().ByMapKey)
-	}
-	if e.detectLatOnextwo != nil {
-		onextwoN = len(e.detectLatOnextwo.snapshot().ByMapKey)
-	}
-	logger.GetLogger().Info("strategy_entry-detect-latency-flushed",
-		zap.Int("yesno_map_keys", yesnoN),
-		zap.Int("onextwo_map_keys", onextwoN),
-		zap.String("group", statGroupDetectLatency))
+	logger.GetLogger().Info("strategy_entry-latency-flushed",
+		zap.String("detect_group", statGroupDetectLatency),
+		zap.String("fire_group", statGroupFireLatency))
 }

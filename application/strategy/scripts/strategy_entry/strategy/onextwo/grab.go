@@ -40,6 +40,13 @@ func (r *Runner) noteDetectLatency(platform string, start, computeStart time.Tim
 	r.w.Ops.RecordDetectLatency("onextwo", r.w.MapKey, platform, wsElapsed, computeElapsed)
 }
 
+func (r *Runner) noteFireLatency(platforms []string, fireStart time.Time) {
+	if r == nil || r.w == nil || r.w.Ops.RecordFireLatency == nil || fireStart.IsZero() {
+		return
+	}
+	r.w.Ops.RecordFireLatency("onextwo", r.w.MapKey, platforms, time.Since(fireStart))
+}
+
 func (r *Runner) kickDetect() {
 	if !r.orderMu.TryLock() {
 		return
@@ -106,7 +113,11 @@ func (r *Runner) grabOneLocked(_ uint, platform string, start time.Time) {
 	orderCapHit := false
 	if tradeOK && !openBlocked {
 		if yesno.TryConsumeOrderSlot(&r.w.Ops) {
+			fireStart := time.Now()
 			fills, fillErrs, sends = fireTriple(r, tradePick)
+			r.noteFireLatency([]string{
+				tradePick.Legs[0].Platform, tradePick.Legs[1].Platform, tradePick.Legs[2].Platform,
+			}, fireStart)
 			ordered = true
 		} else {
 			orderCapHit = true

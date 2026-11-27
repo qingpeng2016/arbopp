@@ -196,6 +196,17 @@ func newWatch(ctx context.Context, e *Entry, g group) *watch {
 				w.entry.recordDetectLatencyOnextwo(mapKey, platform, wsElapsed, computeElapsed)
 			}
 		},
+		RecordFireLatency: func(kind, mapKey string, platforms []string, elapsed time.Duration) {
+			if w.entry == nil {
+				return
+			}
+			switch kind {
+			case "yesno":
+				w.entry.recordFireLatencyYesno(mapKey, platforms, elapsed)
+			case "onextwo":
+				w.entry.recordFireLatencyOnextwo(mapKey, platforms, elapsed)
+			}
+		},
 		OppRepo: func() persistentrepo.ArbBinaryOpportunityRepo {
 			if w.entry == nil {
 				return nil
