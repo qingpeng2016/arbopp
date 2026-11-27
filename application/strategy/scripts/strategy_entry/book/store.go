@@ -54,7 +54,11 @@ func (s *Store) Snapshot() Snapshot {
 
 func (s Snapshot) Get(platform, id string) (Book, bool) {
 	b, ok := s.books[key(platform, id)]
-	return cloneBook(b), ok
+	if !ok {
+		return Book{}, false
+	}
+	// Snapshot 契约：写路径替换 slice，不原地改档；热路径不 Clone 整本。
+	return b, true
 }
 
 func cloneBook(b Book) Book {

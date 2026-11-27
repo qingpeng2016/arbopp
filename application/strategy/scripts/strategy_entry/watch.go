@@ -184,16 +184,16 @@ func newWatch(ctx context.Context, e *Entry, g group) *watch {
 		},
 		SendOnOutcome: w.sendOnOutcome,
 		// FlattenOnOutcome: w.flattenOnOutcome, // 暂时关闭：单边成交后不再自动反向平仓
-		// RecordDetectLatency：仅 WS收包→下单前（Fire 之前）。
-		RecordDetectLatency: func(kind, mapKey, platform string, elapsed time.Duration) {
+		// RecordDetectLatency：WS收包→下单前 + 纯试算（Fire 之前）。
+		RecordDetectLatency: func(kind, mapKey, platform string, wsElapsed, computeElapsed time.Duration) {
 			if w.entry == nil {
 				return
 			}
 			switch kind {
 			case "yesno":
-				w.entry.recordDetectLatencyYesno(mapKey, platform, elapsed)
+				w.entry.recordDetectLatencyYesno(mapKey, platform, wsElapsed, computeElapsed)
 			case "onextwo":
-				w.entry.recordDetectLatencyOnextwo(mapKey, platform, elapsed)
+				w.entry.recordDetectLatencyOnextwo(mapKey, platform, wsElapsed, computeElapsed)
 			}
 		},
 		OppRepo: func() persistentrepo.ArbBinaryOpportunityRepo {
@@ -493,37 +493,34 @@ func (w *watch) applyKalshi(msg kalshiws.Feed) {
 }
 
 // write 把这一条写入内存盘口。price_change 的多档是消息体，写完检测一次。
+// 热路径：先改簿 → 立刻派发试算；Redis 落库异步，不挡 WS→检测。
 func (w *watch) write(e event) {
 	if e.TS.IsZero() {
 		e.TS = recvAtOrNow(e.RecvAt)
 	}
-	var rows []*persistententity.OrderBook
 	if !w.ApplyBookEvent(func() bool {
-		if !w.applyBookEvent(e) {
-			return false
-		}
-		if w.entry != nil && w.entry.wsBookQueue != nil {
-			rows = w.orderBookRowsFromEvent(e)
-		}
-		return true
+		return w.applyBookEvent(e)
 	}) {
 		return
 	}
 	w.touchWS(e.Platform)
 
-	w.enqueueBookPersistWS(e, rows)
-
 	outcomeIDs := w.outcomeIDsForGrab(e)
-	if len(outcomeIDs) == 0 {
-		return
-	}
-
 	platform := e.Platform
 	start := recvAtOrNow(e.RecvAt)
 	for _, outcomeID := range outcomeIDs {
 		oid := outcomeID
 		go w.dispatchBookUpdate(oid, platform, start)
 	}
+
+	if w.entry != nil && w.entry.wsBookQueue != nil {
+		go w.persistBookEventWS(e)
+	}
+}
+
+func (w *watch) persistBookEventWS(e event) {
+	rows := w.orderBookRowsFromEvent(e)
+	w.enqueueBookPersistWS(e, rows)
 }
 
 func (w *watch) applyBookEvent(e event) bool {

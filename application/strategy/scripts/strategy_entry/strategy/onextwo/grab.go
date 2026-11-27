@@ -22,35 +22,49 @@ type GrabHit struct {
 }
 
 func (r *Runner) grabOne(outcomeID uint, platform string, start time.Time) {
-	r.grabOneAttempt(outcomeID, platform, start, false)
+	r.pending.Store(&pendingDetect{outcomeID: outcomeID, platform: platform, start: start})
+	r.kickDetect()
 }
 
-func (r *Runner) noteDetectLatency(platform string, start time.Time) {
-	if r == nil || r.w == nil || r.w.Ops.RecordDetectLatency == nil || start.IsZero() {
+func (r *Runner) noteDetectLatency(platform string, start, computeStart time.Time) {
+	if r == nil || r.w == nil || r.w.Ops.RecordDetectLatency == nil {
 		return
 	}
-	r.w.Ops.RecordDetectLatency("onextwo", r.w.MapKey, platform, time.Since(start))
+	var wsElapsed, computeElapsed time.Duration = -1, -1
+	if !start.IsZero() {
+		wsElapsed = time.Since(start)
+	}
+	if !computeStart.IsZero() {
+		computeElapsed = time.Since(computeStart)
+	}
+	r.w.Ops.RecordDetectLatency("onextwo", r.w.MapKey, platform, wsElapsed, computeElapsed)
 }
 
-func (r *Runner) grabOneAttempt(_ uint, platform string, start time.Time, retried bool) {
+func (r *Runner) kickDetect() {
 	if !r.orderMu.TryLock() {
-		// Lock held (usually Fire in flight). Do not write map_key_lock_missed:
-		// every book tick would otherwise flood dry-run rows; the holder already persists.
-		if !retried {
-			go func() {
-				time.Sleep(25 * time.Millisecond)
-				r.grabOneAttempt(0, platform, start, true)
-			}()
-		}
 		return
 	}
-	defer r.orderMu.Unlock()
+	defer func() {
+		r.orderMu.Unlock()
+		if r.pending.Load() != nil {
+			go r.kickDetect()
+		}
+	}()
+	for {
+		p := r.pending.Swap(nil)
+		if p == nil {
+			return
+		}
+		r.grabOneLocked(p.outcomeID, p.platform, p.start)
+	}
+}
+
+func (r *Runner) grabOneLocked(_ uint, platform string, start time.Time) {
+	computeStart := time.Now()
 	lim := r.limits()
 	all := r.allTriplePicks(lim)
 	if len(all) == 0 {
-		if !retried {
-			r.noteDetectLatency(platform, start)
-		}
+		r.noteDetectLatency(platform, start, computeStart)
 		return
 	}
 
@@ -83,10 +97,7 @@ func (r *Runner) grabOneAttempt(_ uint, platform string, start time.Time, retrie
 		}
 	}
 
-	// 只记 WS收包→下单前；fireTriple 不进样本。重试跳过。
-	if !retried {
-		r.noteDetectLatency(platform, start)
-	}
+	r.noteDetectLatency(platform, start, computeStart)
 
 	var fills [3]float64
 	var fillErrs [3]error

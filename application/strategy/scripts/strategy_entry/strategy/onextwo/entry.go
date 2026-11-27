@@ -3,11 +3,18 @@ package onextwo
 import (
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/strategy/yesno"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/watchgroup"
 )
+
+type pendingDetect struct {
+	outcomeID uint
+	platform  string
+	start     time.Time
+}
 
 // Runner 足球 1X2 三路全覆盖（YES 包 / NO 包）。
 type Runner struct {
@@ -15,6 +22,7 @@ type Runner struct {
 	outcomeGroups map[string]yesno.OutcomeGroup
 	recent        watchgroup.RecentHits
 	orderMu       sync.Mutex
+	pending       atomic.Pointer[pendingDetect]
 }
 
 // Entry 绑定 watch，预建 OutcomeGroup。

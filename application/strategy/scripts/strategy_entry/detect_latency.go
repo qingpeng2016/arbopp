@@ -21,11 +21,14 @@ const (
 	statKeyDetectLatencyOnextwo = "ws_to_arb_check_ms_onextwo"
 )
 
-// mapLatencyStats 单维度：WS收包→下单前（ms），不含发单网络。
+// mapLatencyStats：ws_* = RecvAt→下单前；compute_* = 拿锁后纯试算。
 type mapLatencyStats struct {
-	MinMs   float64 `json:"min_ms"`
-	MaxMs   float64 `json:"max_ms"`
-	Samples int64   `json:"samples"`
+	MinMs         float64 `json:"min_ms"`
+	MaxMs         float64 `json:"max_ms"`
+	Samples       int64   `json:"samples"`
+	ComputeMinMs  float64 `json:"compute_min_ms"`
+	ComputeMaxMs  float64 `json:"compute_max_ms"`
+	ComputeSamples int64  `json:"compute_samples"`
 }
 
 // detectLatencyPayload 写入 stat_kv 的单条 JSON。
@@ -35,7 +38,7 @@ type detectLatencyPayload struct {
 	ByPlatform  map[string]mapLatencyStats `json:"by_platform"`
 }
 
-// DetectLatency 按 map_key / platform 累计 WS→下单前耗时（进程内存，心跳落盘）。
+// DetectLatency 按 map_key / platform 累计耗时（进程内存，心跳落盘）。
 type DetectLatency struct {
 	mu         sync.Mutex
 	byKey      map[string]mapLatencyStats
@@ -49,31 +52,53 @@ func NewDetectLatency() *DetectLatency {
 	}
 }
 
-func (d *DetectLatency) Record(mapKey, platform string, elapsed time.Duration) {
-	if d == nil || elapsed < 0 {
+func (d *DetectLatency) Record(mapKey, platform string, wsElapsed, computeElapsed time.Duration) {
+	if d == nil {
 		return
 	}
-	ms := float64(elapsed.Nanoseconds()) / 1e6
+	wsMs, computeMs := -1.0, -1.0
+	if wsElapsed >= 0 {
+		wsMs = float64(wsElapsed.Nanoseconds()) / 1e6
+	}
+	if computeElapsed >= 0 {
+		computeMs = float64(computeElapsed.Nanoseconds()) / 1e6
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if mapKey != "" {
-		d.byKey[mapKey] = bumpLatency(d.byKey[mapKey], ms)
+		d.byKey[mapKey] = bumpLatency(d.byKey[mapKey], wsMs, computeMs)
 	}
 	if p := strings.ToUpper(strings.TrimSpace(platform)); p != "" {
-		d.byPlatform[p] = bumpLatency(d.byPlatform[p], ms)
+		d.byPlatform[p] = bumpLatency(d.byPlatform[p], wsMs, computeMs)
 	}
 }
 
-func bumpLatency(st mapLatencyStats, ms float64) mapLatencyStats {
-	if st.Samples == 0 {
-		return mapLatencyStats{MinMs: ms, MaxMs: ms, Samples: 1}
+func bumpLatency(st mapLatencyStats, wsMs, computeMs float64) mapLatencyStats {
+	if wsMs >= 0 {
+		if st.Samples == 0 {
+			st.MinMs, st.MaxMs, st.Samples = wsMs, wsMs, 1
+		} else {
+			st.Samples++
+			if wsMs < st.MinMs {
+				st.MinMs = wsMs
+			}
+			if wsMs > st.MaxMs {
+				st.MaxMs = wsMs
+			}
+		}
 	}
-	st.Samples++
-	if ms < st.MinMs {
-		st.MinMs = ms
-	}
-	if ms > st.MaxMs {
-		st.MaxMs = ms
+	if computeMs >= 0 {
+		if st.ComputeSamples == 0 {
+			st.ComputeMinMs, st.ComputeMaxMs, st.ComputeSamples = computeMs, computeMs, 1
+		} else {
+			st.ComputeSamples++
+			if computeMs < st.ComputeMinMs {
+				st.ComputeMinMs = computeMs
+			}
+			if computeMs > st.ComputeMaxMs {
+				st.ComputeMaxMs = computeMs
+			}
+		}
 	}
 	return st
 }
@@ -98,9 +123,12 @@ func copyLatencyMap(in map[string]mapLatencyStats) map[string]mapLatencyStats {
 	out := make(map[string]mapLatencyStats, len(in))
 	for k, v := range in {
 		out[k] = mapLatencyStats{
-			MinMs:   roundMs(v.MinMs),
-			MaxMs:   roundMs(v.MaxMs),
-			Samples: v.Samples,
+			MinMs:          roundMs(v.MinMs),
+			MaxMs:          roundMs(v.MaxMs),
+			Samples:        v.Samples,
+			ComputeMinMs:   roundMs(v.ComputeMinMs),
+			ComputeMaxMs:   roundMs(v.ComputeMaxMs),
+			ComputeSamples: v.ComputeSamples,
 		}
 	}
 	return out
@@ -113,18 +141,18 @@ func roundMs(v float64) float64 {
 	return math.Round(v*1000) / 1000
 }
 
-func (e *Entry) recordDetectLatencyYesno(mapKey, platform string, elapsed time.Duration) {
+func (e *Entry) recordDetectLatencyYesno(mapKey, platform string, wsElapsed, computeElapsed time.Duration) {
 	if e == nil || e.detectLatYesno == nil {
 		return
 	}
-	e.detectLatYesno.Record(mapKey, platform, elapsed)
+	e.detectLatYesno.Record(mapKey, platform, wsElapsed, computeElapsed)
 }
 
-func (e *Entry) recordDetectLatencyOnextwo(mapKey, platform string, elapsed time.Duration) {
+func (e *Entry) recordDetectLatencyOnextwo(mapKey, platform string, wsElapsed, computeElapsed time.Duration) {
 	if e == nil || e.detectLatOnextwo == nil {
 		return
 	}
-	e.detectLatOnextwo.Record(mapKey, platform, elapsed)
+	e.detectLatOnextwo.Record(mapKey, platform, wsElapsed, computeElapsed)
 }
 
 func (e *Entry) flushDetectLatencyStat(ctx context.Context) {
@@ -137,8 +165,8 @@ func (e *Entry) flushDetectLatencyStat(ctx context.Context) {
 		desc string
 		lat  *DetectLatency
 	}{
-		{statKeyDetectLatencyYesno, "strategy_entry yesno：WS收包→下单前(ms，不含发单)；by_map_key + by_platform", e.detectLatYesno},
-		{statKeyDetectLatencyOnextwo, "strategy_entry onextwo：WS收包→下单前(ms，不含发单)；by_map_key + by_platform", e.detectLatOnextwo},
+		{statKeyDetectLatencyYesno, "strategy_entry yesno：min/max=WS→下单前；compute_*=纯试算(ms，不含发单)", e.detectLatYesno},
+		{statKeyDetectLatencyOnextwo, "strategy_entry onextwo：min/max=WS→下单前；compute_*=纯试算(ms，不含发单)", e.detectLatOnextwo},
 	} {
 		if spec.lat == nil {
 			continue

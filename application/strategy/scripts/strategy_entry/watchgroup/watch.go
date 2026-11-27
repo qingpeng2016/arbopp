@@ -30,8 +30,8 @@ type Ops struct {
 	OrderCountSnapshot func() (placed, max int64)
 	SendOnOutcome      func(outcomeIndex int, buyYes bool, px, qty float64) (SendResult, error)
 	FlattenOnOutcome   func(outcomeIndex int, boughtYes bool, mine, other float64)
-	// RecordDetectLatency WS收包→下单前（kind=yesno|onextwo）；elapsed 不含发单。
-	RecordDetectLatency   func(kind, mapKey, platform string, elapsed time.Duration)
+	// RecordDetectLatency WS收包→下单前 + 纯试算（kind=yesno|onextwo）；均不含发单。
+	RecordDetectLatency func(kind, mapKey, platform string, wsElapsed, computeElapsed time.Duration)
 	OppRepo               func() persistentrepo.ArbBinaryOpportunityRepo
 	OrderRepo             func() persistentrepo.ArbBinaryOrderRepo
 	BookRepo              func() persistentrepo.OrderBookRepo

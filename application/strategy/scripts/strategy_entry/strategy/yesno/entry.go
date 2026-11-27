@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/watchgroup"
@@ -11,14 +12,22 @@ import (
 	persistentrepo "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/repository"
 )
 
+// pendingDetect 锁忙时只保留最新一票，避免 25ms×N 重试风暴。
+type pendingDetect struct {
+	outcomeID uint
+	platform  string
+	start     time.Time
+}
+
 // Runner 跨所二元 YES+NO 策略（由 watch 在盘口更新时调用）。
 // 仅 moneyline：同一命题 YES+NO；让分/大小球等不入组（与 onextwo 一致）。
-// 每个 Watch 对应一个 map_key，orderMu 即按场次互斥，防止双所 WS 同时触发重复下单。
+// 每个 Watch 对应一个 map_key，orderMu 按场次互斥（试算+发单）；忙时合并 pending。
 type Runner struct {
 	w             *watchgroup.Watch
 	outcomeGroups map[string]OutcomeGroup
 	recent        watchgroup.RecentHits
-	orderMu       sync.Mutex // 仅在确认套利、发单/落库前 TryLock，不挡盘口试算
+	orderMu       sync.Mutex
+	pending       atomic.Pointer[pendingDetect]
 }
 
 // Entry 绑定本组 watch，预建 OutcomeGroup 索引。
@@ -243,4 +252,3 @@ func safeOrderRepo(ops *watchgroup.Ops) persistentrepo.ArbBinaryOrderRepo {
 	}
 	return ops.OrderRepo()
 }
-

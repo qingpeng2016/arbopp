@@ -73,37 +73,50 @@ func (r *Runner) tryAllPicksForGrab(outcomeID uint, lim Limits) (all []FilledPic
 }
 
 func (r *Runner) grabOne(outcomeID uint, platform string, start time.Time) {
-	r.grabOneAttempt(outcomeID, platform, start, false)
+	r.pending.Store(&pendingDetect{outcomeID: outcomeID, platform: platform, start: start})
+	r.kickDetect()
 }
 
-func (r *Runner) noteDetectLatency(platform string, start time.Time) {
-	if r == nil || r.w == nil || r.w.Ops.RecordDetectLatency == nil || start.IsZero() {
+func (r *Runner) noteDetectLatency(platform string, start, computeStart time.Time) {
+	if r == nil || r.w == nil || r.w.Ops.RecordDetectLatency == nil {
 		return
 	}
-	r.w.Ops.RecordDetectLatency("yesno", r.w.MapKey, platform, time.Since(start))
+	var wsElapsed, computeElapsed time.Duration = -1, -1
+	if !start.IsZero() {
+		wsElapsed = time.Since(start)
+	}
+	if !computeStart.IsZero() {
+		computeElapsed = time.Since(computeStart)
+	}
+	r.w.Ops.RecordDetectLatency("yesno", r.w.MapKey, platform, wsElapsed, computeElapsed)
 }
 
-func (r *Runner) grabOneAttempt(outcomeID uint, platform string, start time.Time, retried bool) {
+// kickDetect 合并 pending：锁忙只更新最新票；持锁循环消化到空。
+func (r *Runner) kickDetect() {
 	if !r.orderMu.TryLock() {
-		// Lock held (usually Fire in flight). Do not write map_key_lock_missed:
-		// every book tick would otherwise flood dry-run rows; the holder already persists.
-		if !retried {
-			go func(id uint) {
-				time.Sleep(25 * time.Millisecond)
-				r.grabOneAttempt(id, platform, start, true)
-			}(outcomeID)
-		}
 		return
 	}
-	defer r.orderMu.Unlock()
+	defer func() {
+		r.orderMu.Unlock()
+		if r.pending.Load() != nil {
+			go r.kickDetect()
+		}
+	}()
+	for {
+		p := r.pending.Swap(nil)
+		if p == nil {
+			return
+		}
+		r.grabOneLocked(p.outcomeID, p.platform, p.start)
+	}
+}
 
+func (r *Runner) grabOneLocked(outcomeID uint, platform string, start time.Time) {
+	computeStart := time.Now()
 	lim := r.limits()
 	all, _, ok := r.tryAllPicksForGrab(outcomeID, lim)
 	if !ok {
-		// 无腿可试也记：WS收包→检测结束（仍不下单）。
-		if !retried {
-			r.noteDetectLatency(platform, start)
-		}
+		r.noteDetectLatency(platform, start, computeStart)
 		return
 	}
 
@@ -133,10 +146,8 @@ func (r *Runner) grabOneAttempt(outcomeID uint, platform string, start time.Time
 		}
 	}
 
-	// 只记 WS收包→下单前；Fire 网络不进样本。重试跳过（避免等锁把发单算进去）。
-	if !retried {
-		r.noteDetectLatency(platform, start)
-	}
+	// WS收包→下单前 + 纯试算；Fire 不进样本。
+	r.noteDetectLatency(platform, start, computeStart)
 
 	var yesRes, noRes watchgroup.SendResult
 	var yesErr, noErr error
