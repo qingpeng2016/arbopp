@@ -2,6 +2,7 @@ package noderisk
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -399,4 +400,44 @@ func (g *Guard) alert(platform string, recovered bool, reason string, extra map[
 
 func formatMs(d time.Duration) string {
 	return strconv.FormatInt(d.Milliseconds(), 10)
+}
+
+// HeartbeatLine 供 WS 心跳汇报：镜像平台 relay 状态（无 DB）。
+func (g *Guard) HeartbeatLine(platform string) string {
+	if g == nil || g.prof == nil {
+		return ""
+	}
+	platform = strings.ToUpper(strings.TrimSpace(platform))
+	if g.prof.IsLocalPlatform(platform) || g.prof.EdgeForPlatform(platform) == nil {
+		return ""
+	}
+	cfg := g.Config()
+	g.mu.RLock()
+	st, ok := g.plat[platform]
+	g.mu.RUnlock()
+	if !ok || st == nil {
+		return "无状态"
+	}
+	if !cfg.Enabled {
+		return "风控未启用"
+	}
+	if st.tripped {
+		return "熔断(" + st.reason + ")"
+	}
+	if !st.gotBook {
+		return "未收到镜像BOOK"
+	}
+	age := time.Since(st.lastBookRx)
+	if age > cfg.BookStale {
+		return fmt.Sprintf("BOOK陈旧 %ds", int(age.Seconds()))
+	}
+	rtt := "RTT未测"
+	if st.lastRTT > 0 {
+		rtt = formatMs(st.lastRTT) + "ms"
+	}
+	conn := "TCP断"
+	if st.connUp || st.peerLinks > 0 {
+		conn = "TCP连"
+	}
+	return fmt.Sprintf("%s 末BOOK %ds前 %s", conn, int(age.Seconds()), rtt)
 }

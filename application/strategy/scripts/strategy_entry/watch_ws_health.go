@@ -6,6 +6,7 @@ import (
 	"time"
 
 	appcommon "github.com/gph-tech/fgmm-strategy-bitfinex/application/common"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/conf"
 	entrystat "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/stat"
 	kalshiws "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/ws/kalshi"
 	polyws "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/ws/polymarket"
@@ -82,8 +83,36 @@ func groupHasPlatformMarket(markets map[uint]persistententity.Market, platform s
 	return ok
 }
 
-// expectedWSCounts 与 stat_kv groups[].markets 一致：每组每平台至多 1 条 WS。
-func expectedWSCounts(_ *Entry, groups []group) map[string]int {
+// heartbeatNeedsOfficialWS 单节点模式下仅本机官方 WS 计入「WS」行；镜像平台走 relay 行。
+func heartbeatNeedsOfficialWS(e *Entry, platform string) bool {
+	platform = strings.ToUpper(strings.TrimSpace(platform))
+	if conf.IsNodeAllMode() {
+		return true
+	}
+	prof := e.NodeProfile()
+	if prof == nil {
+		return true
+	}
+	return prof.ServesOfficialWS(platform)
+}
+
+func heartbeatNeedsMirrorRelay(e *Entry, platform string) bool {
+	if conf.IsNodeAllMode() {
+		return false
+	}
+	prof := e.NodeProfile()
+	if prof == nil {
+		return false
+	}
+	platform = strings.ToUpper(strings.TrimSpace(platform))
+	if prof.ServesOfficialWS(platform) {
+		return false
+	}
+	return prof.EdgeForPlatform(platform) != nil
+}
+
+// expectedWSCounts 与 stat_kv groups[].markets 一致：每组每平台至多 1 条 WS（仅官方 WS）。
+func expectedWSCounts(e *Entry, groups []group) map[string]int {
 	platforms := wsHeartbeatPlatforms()
 	out := make(map[string]int, len(platforms))
 	for _, p := range platforms {
@@ -96,9 +125,32 @@ func expectedWSCounts(_ *Entry, groups []group) map[string]int {
 	for _, g := range groups {
 		by := entrystat.MarketsByPlatform(g.MarketsByRowID)
 		for p := range by {
-			if _, ok := platSet[p]; ok {
-				out[p]++
+			if _, ok := platSet[p]; !ok {
+				continue
 			}
+			if !heartbeatNeedsOfficialWS(e, p) {
+				continue
+			}
+			out[p]++
+		}
+	}
+	return out
+}
+
+// expectedMirrorRelayCounts 应对场次中需 TCP 镜像的平台数。
+func expectedMirrorRelayCounts(e *Entry, groups []group) map[string]int {
+	platforms := wsHeartbeatPlatforms()
+	out := make(map[string]int, len(platforms))
+	for _, p := range platforms {
+		out[p] = 0
+	}
+	for _, g := range groups {
+		by := entrystat.MarketsByPlatform(g.MarketsByRowID)
+		for p := range by {
+			if !heartbeatNeedsMirrorRelay(e, p) {
+				continue
+			}
+			out[strings.ToUpper(p)]++
 		}
 	}
 	return out

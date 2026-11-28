@@ -431,6 +431,7 @@ func (e *Entry) notifyWSHeartbeat(ctx context.Context) {
 	shouldGroups, matched, loadErr := e.loadGroups(ctx)
 	shouldN := len(shouldGroups)
 	shouldWS := expectedWSCounts(e, shouldGroups)
+	shouldMirror := expectedMirrorRelayCounts(e, shouldGroups)
 
 	type tally struct {
 		inRun, ok int
@@ -495,14 +496,17 @@ func (e *Entry) notifyWSHeartbeat(ctx context.Context) {
 	sumShould, sumOK := 0, 0
 	for _, p := range platforms {
 		want := shouldWS[p]
+		mirrorWant := shouldMirror[p]
 		t := byPlat[p]
-		sumShould += want
-		sumOK += t.ok
+		if want > 0 {
+			sumShould += want
+			sumOK += t.ok
+		}
 		val := "未配置"
 		if strings.EqualFold(p, appcommon.PlatformSxbet) && want > 0 && strings.TrimSpace(e.sxbetAPIKey()) == "" {
 			val = fmt.Sprintf("0/%d 未配置api_key", want)
 			allOK = false
-		} else if want > 0 || t.inRun > 0 {
+		} else if want > 0 {
 			if want != t.inRun || t.ok != want {
 				allOK = false
 			}
@@ -514,8 +518,23 @@ func (e *Entry) notifyWSHeartbeat(ctx context.Context) {
 			if t.inRun != want {
 				val += fmt.Sprintf(" (在连%d)", t.inRun)
 			}
+			fields = append(fields, notification.FieldPair{Key: p + " WS", Value: val})
+		} else if mirrorWant > 0 {
+			state := "正常"
+			if t.ok != mirrorWant || t.inRun != mirrorWant {
+				state = "异常"
+				allOK = false
+			}
+			val = fmt.Sprintf("%d/%d %s", t.ok, mirrorWant, state)
+			if e.relayRisk != nil {
+				if line := e.relayRisk.HeartbeatLine(p); line != "" {
+					val += " | " + line
+				}
+			}
+			fields = append(fields, notification.FieldPair{Key: p + " 镜像(TCP)", Value: val})
+		} else if want == 0 && mirrorWant == 0 {
+			fields = append(fields, notification.FieldPair{Key: p + " WS", Value: val})
 		}
-		fields = append(fields, notification.FieldPair{Key: p + " WS", Value: val})
 	}
 	totalState := "正常"
 	if sumOK != sumShould {
