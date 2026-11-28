@@ -25,6 +25,8 @@ parse_action_mode_args "${2:-deploy}" "${3:-user}"
 MODE="$(resolve_backend_mode "$MODE")"
 backend_run_vars "$MODE"
 
+echo ">>> run_node=${RUN_NODE} ssh=${SSH_TARGET}"
+
 REMOTE_LIB="$(deploy_remote_lib)"
 
 read -r -d '' REMOTE_SCRIPT_BODY <<EOF || true
@@ -37,6 +39,7 @@ ACTION="${ACTION}"
 MODE="${MODE}"
 RUN_CONF="${RUN_CONF}"
 RUN_BOT="${RUN_BOT}"
+RUN_NODE="${RUN_NODE}"
 LISTEN_PORT="${LISTEN_PORT}"
 MALL_BIN_NAME="${MALL_BIN_NAME}"
 ARBOPP_USE_GO_RUN="${ARBOPP_USE_GO_RUN}"
@@ -99,6 +102,9 @@ cmdline_matches_mode() {
       bot|robot)
         if [[ "\${cmd}" == *"--run_bot=true"* || "\${cmd}" == *"--run_bot=1"* ]]; then
           [[ "\${cmd}" == *"--run_conf=\${RUN_CONF}"* ]] || return 1
+          if [[ "\${RUN_NODE}" != "ALL" && -n "\${RUN_NODE}" ]]; then
+            [[ "\${cmd}" == *"--node=\${RUN_NODE}"* ]] || return 1
+          fi
           return 0
         fi
         return 1
@@ -402,22 +408,27 @@ wait_for_mall() {
 
 start_mall() {
   local bin_path="\${BIN_DIR}/\${MALL_BIN_NAME}"
+  local node_args=()
   cd "\${APP_DIR}" || { echo "ERROR: 无法 cd \${APP_DIR}" >&2; exit 1; }
   mkdir -p "\${BIN_DIR}" "\${LOG_DIR}"
-  echo ">>> [服务器] start_mall: cwd=\$(pwd)"
+  if [[ -n "\${RUN_NODE}" && "\${RUN_NODE}" != "ALL" ]]; then
+    node_args=(--node="\${RUN_NODE}")
+    export RUN_NODE="\${RUN_NODE}"
+  fi
+  echo ">>> [服务器] start_mall: cwd=\$(pwd) node=\${RUN_NODE:-ALL}"
   : >"\${LOG_FILE}" || { echo "ERROR: 无法写 \${LOG_FILE}" >&2; exit 1; }
   echo ">>> [服务器] 日志已清空: \${LOG_FILE}"
   export GO111MODULE=on
   export GOPROXY="\${GOPROXY:-https://goproxy.cn,direct}"
   if [[ "\${PAPER_USE_GO_RUN}" == "1" ]]; then
     ensure_go || { echo "ERROR: ensure_go 失败" >&2; exit 1; }
-    echo ">>> [服务器] 启动 \${GO_BIN} run main.go --run_conf=\${RUN_CONF} --run_bot=\${RUN_BOT}"
-    nohup "\${GO_BIN}" run main.go --run_conf="\${RUN_CONF}" --run_bot="\${RUN_BOT}" >>"\${LOG_FILE}" 2>&1 &
+    echo ">>> [服务器] 启动 \${GO_BIN} run main.go --run_conf=\${RUN_CONF} --run_bot=\${RUN_BOT} \${node_args[*]}"
+    nohup "\${GO_BIN}" run main.go --run_conf="\${RUN_CONF}" --run_bot="\${RUN_BOT}" "\${node_args[@]}" >>"\${LOG_FILE}" 2>&1 &
     echo ">>> [服务器] nohup 父进程 PID=\$!"
   else
     [[ -x "\${bin_path}" ]] || build_mall_binary
-    echo ">>> [服务器] 启动 \${bin_path} --run_conf=\${RUN_CONF} --run_bot=\${RUN_BOT}"
-    nohup "\${bin_path}" --run_conf="\${RUN_CONF}" --run_bot="\${RUN_BOT}" >>"\${LOG_FILE}" 2>&1 &
+    echo ">>> [服务器] 启动 \${bin_path} --run_conf=\${RUN_CONF} --run_bot=\${RUN_BOT} \${node_args[*]}"
+    nohup "\${bin_path}" --run_conf="\${RUN_CONF}" --run_bot="\${RUN_BOT}" "\${node_args[@]}" >>"\${LOG_FILE}" 2>&1 &
     echo ">>> [服务器] nohup PID=\$!"
   fi
   echo \$! >"\${PID_FILE}"

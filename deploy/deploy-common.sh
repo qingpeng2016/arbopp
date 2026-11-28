@@ -2,6 +2,47 @@
 # 本机只做 SSH 跳板；git / build / 启停均在服务器 MALL_APP_DIR 执行。
 # SSH：SSH_KEY 密钥登录；否则 sshpass / expect 密码登录
 
+# 按节点选 SSH 目标与 main --node（POLY|PRED|SXBET|ALL）
+deploy_apply_node_host() {
+  local raw="${1:-}"
+  raw="$(printf '%s' "$raw" | tr '[:lower:]' '[:upper:]')"
+  case "$raw" in
+    ""|ALL)
+      RUN_NODE="ALL"
+      : "${SSH_HOST:?请在 .deploy.env 设置 SSH_HOST，或指定节点 POLY/PRED/SXBET}"
+      ;;
+    POLY)
+      RUN_NODE="POLY"
+      SSH_HOST="${NODE_POLY_HOST:-}"
+      [[ -n "$SSH_HOST" ]] || {
+        echo "ERROR: 未设置 NODE_POLY_HOST（.deploy.env）" >&2
+        exit 1
+      }
+      ;;
+    PRED)
+      RUN_NODE="PRED"
+      SSH_HOST="${NODE_PRED_HOST:-}"
+      [[ -n "$SSH_HOST" ]] || {
+        echo "ERROR: 未设置 NODE_PRED_HOST（.deploy.env）" >&2
+        exit 1
+      }
+      ;;
+    SXBET|SX)
+      RUN_NODE="SXBET"
+      SSH_HOST="${NODE_SXBET_HOST:-}"
+      [[ -n "$SSH_HOST" ]] || {
+        echo "ERROR: 未设置 NODE_SXBET_HOST（.deploy.env）" >&2
+        exit 1
+      }
+      ;;
+    *)
+      echo "ERROR: 未知节点 ${raw}，可选: ALL | POLY | PRED | SXBET" >&2
+      exit 1
+      ;;
+  esac
+  echo ">>> 部署节点: ${RUN_NODE} → SSH ${SSH_USER}@${SSH_HOST}"
+}
+
 deploy_common_init() {
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   ENV_FILE="${SCRIPT_DIR}/.deploy.env"
@@ -19,7 +60,6 @@ deploy_common_init() {
   # shellcheck source=/dev/null
   source "$ENV_FILE"
 
-  : "${SSH_HOST:?请在 .deploy.env 设置 SSH_HOST}"
   : "${SSH_USER:?请在 .deploy.env 设置 SSH_USER}"
 
   SSH_PORT="${SSH_PORT:-22}"
@@ -52,7 +92,20 @@ deploy_common_init() {
   # SSH 为非 root 且代码目录属主 root（宝塔常见）时设为 1：远程用 sudo -i 执行 git / 启停
   REMOTE_SUDO="${REMOTE_SUDO:-0}"
 
+  # 分布式节点公网 IP（AWS 与本机相同 SSH_KEY/SSH_USER/REMOTE_SUDO）
+  NODE_POLY_HOST="${NODE_POLY_HOST:-}"
+  NODE_PRED_HOST="${NODE_PRED_HOST:-}"
+  NODE_SXBET_HOST="${NODE_SXBET_HOST:-}"
+  DEPLOY_NODE="${DEPLOY_NODE:-}"
+  RUN_NODE="${RUN_NODE:-ALL}"
+
   APP_DIR="$MALL_APP_DIR"
+  if [[ -n "$DEPLOY_NODE" ]]; then
+    deploy_apply_node_host "$DEPLOY_NODE"
+  else
+    : "${SSH_HOST:?请在 .deploy.env 设置 SSH_HOST，或 deploy 第三参指定 POLY/PRED/SXBET}"
+    RUN_NODE="ALL"
+  fi
   SSH_TARGET="${SSH_USER}@${SSH_HOST}"
 
   if [[ -n "$SSH_KEY_FILE" ]]; then

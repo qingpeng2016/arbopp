@@ -1,6 +1,6 @@
--- 双机公网联调（仅 POLY + PRED，无 SXBET）
+-- 双机公网联调（仅 POLY + SXBET，无 PRED）
 -- 机器 A（POLY）: 54.65.44.140:9000
--- 机器 B（PRED）: 52.215.36.68:9000
+-- 机器 B（SXBET）: 52.215.36.68:9000
 -- 若角色对调，交换下面两套 IP 即可。
 -- 执行前请备份；会 DROP node_route / node_config
 
@@ -46,19 +46,19 @@ INSERT INTO `node_config`
 VALUES
   ('POLY', 'polymarket', 'wss://ws-subscriptions-clob.polymarket.com/ws/market',
    'arb-poly-test-a', 'eu-west-1', '54.65.44.140:9000', 'prod', '公网联调 A=POLY'),
-  ('PRED', 'predict', 'wss://ws.predict.fun/ws',
-   'arb-pred-test-b', 'test', '52.215.36.68:9000', 'prod', '公网联调 B=PRED');
+  ('SXBET', 'sxbet', 'wss://realtime.sx.bet/connection/websocket',
+   'arb-sxbet-test-b', 'test', '52.215.36.68:9000', 'prod', '公网联调 B=SXBET');
 
 INSERT INTO `node_route` (`src_node`, `dst_node`, `route_json`, `description`) VALUES
-  ('POLY', 'PRED', JSON_OBJECT(
-    'mirror_platform', 'predict',
+  ('POLY', 'SXBET', JSON_OBJECT(
+    'mirror_platform', 'sxbet',
     'publish_local_book_to', '52.215.36.68:9000',
     'accept_mirror_cidr', '54.65.44.140/32',
     'hedge_order_to', '52.215.36.68:9000'
-  ), 'POLY→PRED 公网'),
-  ('PRED', 'POLY', JSON_OBJECT(
+  ), 'POLY→SXBET 公网'),
+  ('SXBET', 'POLY', JSON_OBJECT(
     'mirror_platform', 'polymarket',
     'publish_local_book_to', '54.65.44.140:9000',
     'accept_mirror_cidr', '52.215.36.68/32',
     'hedge_order_to', '54.65.44.140:9000'
-  ), 'PRED→POLY 公网');
+  ), 'SXBET→POLY 公网');

@@ -2,19 +2,36 @@
 
 ```bash
 cp .deploy.env.example .deploy.env
-# 编辑 .deploy.env：SSH_HOST、SSH_USER；AWS 用 SSH_KEY=~/.ssh/id_rsa + SSH_USER=ubuntu
+# 编辑 NODE_POLY_HOST / NODE_SXBET_HOST（AWS：同一 SSH_KEY + ubuntu + REMOTE_SUDO=1）
 chmod +x deploy-service.sh deploy-backend.sh
-./deploy-service.sh master
+./deploy-service.sh v2 deploy POLY
+./deploy-service.sh v2 deploy SXBET
 ```
 
-SSH：配置了 `SSH_KEY` 则用本机密钥（无需 `sshpass`）；未配置则用 `SSH_PASS` + `sshpass`/`expect`。
+## 用法
 
-宝塔等目录属 **root**、SSH 用 **ubuntu** 时设 `REMOTE_SUDO=1`（本机 SSH ubuntu，远端 `sudo -i` 执行 git pull / kill / nohup）。
+```text
+./deploy-service.sh <分支> [deploy|restart|stop|status] [POLY|PRED|SXBET|ALL]
+```
 
-服务器执行：`go run main.go --run_conf=test --run_bot=true`（`MALL_BOT_RUN_CONF` 可改）。
+| 第三参 | SSH 目标 | 远端启动 |
+|--------|----------|----------|
+| `POLY` | `NODE_POLY_HOST` | `--node=POLY` |
+| `PRED` | `NODE_PRED_HOST` | `--node=PRED` |
+| `SXBET` | `NODE_SXBET_HOST` | `--node=SXBET` |
+| 省略 / `ALL` | `SSH_HOST` | `--node=ALL`（默认） |
 
-`status` / `restart` / `stop`：第二个参数，例如 `./deploy-service.sh master status`。
+双机公网联调（POLY + SXBET）前在 MySQL 执行：`docs/sql/node_route_install_2node_public_test.sql`。
+
+例：
+
+```bash
+./deploy-service.sh v2 status SXBET
+./deploy-service.sh v2 restart POLY
+```
+
+SSH：配置了 `SSH_KEY` 则用本机密钥；未配置则用 `SSH_PASS` + `sshpass`/`expect`。
+
+服务器执行：`go run main.go --run_conf=test --run_bot=true --node=POLY`（由第三参决定）。
 
 日志：`$MALL_APP_DIR/logs/arbopp-bot-nohup.log`。
-
-底层：`./deploy-backend.sh <分支> [deploy|restart|stop|status] bot`
