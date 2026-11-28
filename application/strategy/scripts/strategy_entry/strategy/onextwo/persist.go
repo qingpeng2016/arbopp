@@ -138,6 +138,17 @@ func NotifyOrderResult(ctx context.Context, mapKey string, hit GrabHit) {
 	_ = notification.GetGlobalNotificationManager().SendOrderAlert(ctx, title, fields)
 }
 
+func SaveGrabHitAsync(d persistDeps, mapKey string, hit GrabHit) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if !SaveGrabHit(ctx, d, mapKey, hit) {
+			notification.SendErrorLog(ctx, "strategy_entry-onextwo-SaveGrabHitAsyncFailed",
+				zap.String("map_key", mapKey), zap.Bool("dry_run", hit.DryRun))
+		}
+	}()
+}
+
 func SaveGrabHit(ctx context.Context, d persistDeps, mapKey string, hit GrabHit) bool {
 	if d.task > 0 && d.btOpp != nil {
 		return saveBacktest(ctx, d, mapKey, hit)

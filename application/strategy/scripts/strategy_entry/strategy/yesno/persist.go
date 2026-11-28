@@ -8,8 +8,10 @@ import (
 	"time"
 
 	appcommon "github.com/gph-tech/fgmm-strategy-bitfinex/application/common"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/noderelay"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/watchgroup"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/notification"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/conf"
 	persistententity "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/entity"
 	persistentrepo "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/repository"
 	"github.com/shopspring/decimal"
@@ -183,6 +185,89 @@ func FillsAligned(fills []float64, mismatchPct float64) (matched float64, ok boo
 	return minF, true
 }
 
+// SaveGrabHitAsync Fire 后异步落库，不占用 WS→下单热路径。
+func SaveGrabHitAsync(d PersistGrab, mapKey string, hit GrabHit) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if !SaveGrabHit(ctx, d, mapKey, hit) {
+			notification.SendErrorLog(ctx, "strategy_entry-SaveGrabHitAsyncFailed",
+				zap.String("map_key", mapKey),
+				zap.Bool("dry_run", hit.DryRun),
+				zap.String("skip", hit.SkipOrderReason))
+		}
+	}()
+}
+
+// SaveInboundHedgeAsync 对端 TCP HEDGE 在本机 broker 成交后异步落库（单腿 + 关联 arb_id）。
+func SaveInboundHedgeAsync(d PersistGrab, mapKey string, cmd noderelay.HedgeCmd, send watchgroup.SendResult, sendErr error) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := saveInboundHedge(ctx, d, mapKey, cmd, send, sendErr); err != nil {
+			notification.SendErrorLog(ctx, "strategy_entry-SaveInboundHedgeFailed",
+				zap.String("map_key", mapKey),
+				zap.String("arb_id", cmd.ArbID),
+				zap.Error(err))
+		}
+	}()
+}
+
+func saveInboundHedge(ctx context.Context, d PersistGrab, mapKey string, cmd noderelay.HedgeCmd, send watchgroup.SendResult, sendErr error) error {
+	if d.OppRepo == nil || d.OrderRepo == nil {
+		return nil
+	}
+	now := time.Now().UTC()
+	ext := ExtDataJSON(nil, map[string]any{
+		"leg_role":   "hedge_recv",
+		"arb_id":     strings.TrimSpace(cmd.ArbID),
+		"node":       conf.GetRunNode(),
+		"initiator":  "peer",
+		"platform":   cmd.Platform,
+		"outcome_id": cmd.OutcomeID,
+	})
+	row := &persistententity.ArbBinaryOpportunity{
+		OppKind: "HEDGE_RECV", MapKey: strPtr(mapKey),
+		Leg1Platform: watchgroup.LegPlatform(cmd.Platform),
+		Leg1Info:     emptyLegJSON, Leg1OrderBooks: emptyLegJSON,
+		Leg2Info: emptyLegJSON, Leg2OrderBooks: emptyLegJSON, Leg3Info: emptyLegJSON, Leg3OrderBooks: emptyLegJSON,
+		TotalCost:     decimal.NewFromFloat(cmd.Px).Round(8),
+		ProfitSpace:   decimal.Zero,
+		ArbQty:        decimal.NewFromFloat(cmd.Qty).Round(8),
+		ThresholdKey:  thresholdKeyMaxCost,
+		BookUpdatedAt: &now, SnapshotAt: now, SnapshotAtMs: now.UnixMilli(),
+		ExtData:       extDataPtr(ext),
+	}
+	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := d.OppRepo.BatchCreate(runCtx, nil, []*persistententity.ArbBinaryOpportunity{row}); err != nil {
+		return err
+	}
+	status, errMsg := orderStatus(send.Fill, cmd.Qty, sendErr, send)
+	side := "NO"
+	if cmd.BuyYes {
+		side = "YES"
+	}
+	ord := &persistententity.ArbBinaryOrder{
+		StrategyType: strategyTypeYesNo, ArbOppID: row.ID, MapKey: mapKey, SideNo: 1,
+		Platform:                strings.ToUpper(strings.TrimSpace(cmd.Platform)),
+		PlatformMarketOutcomeID: strconv.FormatUint(uint64(cmd.OutcomeID), 10),
+		ClientOrderID:             strings.TrimSpace(send.ClientOrderID),
+		PlatformOrderID:           strings.TrimSpace(send.PlatformOrderID),
+		Side: side, Action: "BUY",
+		Price: decimal.NewFromFloat(cmd.Px).Round(8), Qty: decimal.NewFromFloat(cmd.Qty).Round(8),
+		TradeQty: decimal.NewFromFloat(send.Fill).Round(8), Fee: decimal.NewFromFloat(send.Fee).Round(8),
+		Status: status, ErrMsg: errMsg, SentAt: now,
+	}
+	if err := d.OrderRepo.BatchCreate(runCtx, nil, []*persistententity.ArbBinaryOrder{ord}); err != nil {
+		return err
+	}
+	if d.OnOrdersWritten != nil {
+		d.OnOrdersWritten(mapKey)
+	}
+	return nil
+}
+
 func SaveGrabHit(ctx context.Context, d PersistGrab, mapKey string, hit GrabHit) bool {
 	if !hit.Pick.At.IsZero() && (!hit.Leg1.OK || !hit.Leg2.OK) {
 		return false
@@ -261,7 +346,7 @@ func backtestOrderForSide(strategyType string, backtestTaskID uint, mapKey strin
 	if buyYes {
 		side = "YES"
 	}
-	status, errMsg := orderStatus(fill, qty, sendErr)
+	status, errMsg := orderStatus(fill, qty, sendErr, watchgroup.SendResult{})
 	return &persistententity.BacktestOrder{
 		BacktestTaskID: backtestTaskID, StrategyType: strategyType,
 		ArbOppID: oppID, MapKey: mapKey, SideNo: sideNo,
@@ -283,7 +368,7 @@ func orderForSide(strategyType string, backtestTaskID uint, mapKey string, oppID
 	if buyYes {
 		side = "YES"
 	}
-	status, errMsg := orderStatus(fill, qty, sendErr)
+	status, errMsg := orderStatus(fill, qty, sendErr, send)
 	return &persistententity.ArbBinaryOrder{
 		BacktestTaskID: backtestTaskID, StrategyType: strategyType,
 		ArbOppID: oppID, MapKey: mapKey, SideNo: sideNo,
@@ -315,13 +400,16 @@ func sideToken(platform, yesToken, noToken string, buyYes bool) string {
 	return strings.TrimSpace(noToken)
 }
 
-func orderStatus(fill, qty float64, sendErr error) (status, errMsg string) {
+func orderStatus(fill, qty float64, sendErr error, send watchgroup.SendResult) (status, errMsg string) {
 	if sendErr != nil {
 		msg := sendErr.Error()
 		if len(msg) > 1000 {
 			msg = msg[:1000]
 		}
 		return "ERROR", msg
+	}
+	if send.RoutedPeer {
+		return "ROUTED_PEER", ""
 	}
 	if fill <= 0 {
 		return "NO_FILL", ""

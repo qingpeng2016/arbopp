@@ -6,4 +6,5 @@ type SendResult struct {
 	PlatformOrderID string // Poly orderID / Predict orderHash / SX orderId
 	ClientOrderID   string
 	Fee             float64 // 结算币手续费；下单瞬间常为 0，由 sync_order_fills 回补
+	RoutedPeer      bool    // 对端节点代发单（HEDGE），本进程无直连平台回报
 }

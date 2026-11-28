@@ -7,11 +7,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
 
 	appcommon "github.com/gph-tech/fgmm-strategy-bitfinex/application/common"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/noderelay"
 	obcommon "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/orderbook/common"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/book"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/broker"
@@ -24,6 +26,7 @@ import (
 	predictws "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/ws/predict"
 	sxbetws "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/ws/sxbet"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/notification"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/conf"
 	httpentity "github.com/gph-tech/fgmm-strategy-bitfinex/domain/http/entity"
 	persistententity "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/entity"
 	persistentrepo "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/repository"
@@ -53,6 +56,7 @@ type event struct {
 	TS       time.Time
 	Changes  []book.PolyChange
 	RecvAt   time.Time // WS 回调收到消息的本地时间
+	Mirror   bool      // 对端 TCP 镜像：只更新盘口，不触发 grab、不向外 relay
 }
 
 type connState struct {
@@ -72,6 +76,7 @@ type watch struct {
 	wsHealth      *wsHealth
 	wsPersistMu   sync.Mutex
 	wsPersistLast map[string]time.Time
+	fireArbID     atomic.Value // string
 }
 
 // newWatch 为一组 map_key 建内存盘口，并记下 token、ticker 对应哪条结果。
@@ -182,6 +187,8 @@ func newWatch(ctx context.Context, e *Entry, g group) *watch {
 			}
 			return w.entry.OrderCount(), w.entry.Params().MaxOrderCount
 		},
+		BookAgeMs:     w.bookAgeMs,
+		WithFireArbID: w.withFireArbID,
 		SendOnOutcome: w.sendOnOutcome,
 		// FlattenOnOutcome: w.flattenOnOutcome, // 暂时关闭：单边成交后不再自动反向平仓
 		// RecordDetectLatency：WS收包→下单前 + 纯试算（Fire 之前）。
@@ -238,28 +245,40 @@ const groupRescanInterval = 5 * time.Second
 
 // run 同时盯多平台行情，这组被换掉或进程停时一起退出。
 func (w *watch) run() {
+	prof := w.entry.NodeProfile()
+	allMode := conf.IsNodeAllMode()
+	if prof == nil && !allMode {
+		notification.SendErrorLog(w.Ctx, "strategy_entry-watch-skip",
+			zap.String("reason", "node profile missing"))
+		return
+	}
 	var wg sync.WaitGroup
-	wg.Add(5)
-	go func() {
-		defer wg.Done()
-		w.servePoly()
-	}()
-	go func() {
-		defer wg.Done()
-		w.serveKalshi()
-	}()
-	go func() {
-		defer wg.Done()
-		w.servePredict()
-	}()
-	go func() {
-		defer wg.Done()
-		w.serveSxbet()
-	}()
-	go func() {
-		defer wg.Done()
-		w.serveGroupRescan()
-	}()
+	start := func(fn func()) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			fn()
+		}()
+	}
+	serves := func(platform string) bool {
+		if allMode || prof == nil {
+			return true
+		}
+		return prof.ServesOfficialWS(platform)
+	}
+	if serves(appcommon.PlatformPolymarket) {
+		start(w.servePoly)
+	}
+	if serves(appcommon.PlatformKalshi) {
+		start(w.serveKalshi)
+	}
+	if serves(appcommon.PlatformPredict) {
+		start(w.servePredict)
+	}
+	if serves(appcommon.PlatformSxbet) {
+		start(w.serveSxbet)
+	}
+	start(w.serveGroupRescan)
 	<-w.Ctx.Done()
 	wg.Wait()
 }
@@ -516,6 +535,10 @@ func (w *watch) write(e event) {
 	}
 	w.touchWS(e.Platform)
 
+	if e.Mirror {
+		return
+	}
+
 	outcomeIDs := w.outcomeIDsForGrab(e)
 	platform := e.Platform
 	start := recvAtOrNow(e.RecvAt)
@@ -523,6 +546,8 @@ func (w *watch) write(e event) {
 		oid := outcomeID
 		go w.dispatchBookUpdate(oid, platform, start)
 	}
+
+	w.maybeRelayBook(e)
 
 	if w.entry != nil && w.entry.wsBookQueue != nil {
 		go w.persistBookEventWS(e)
@@ -1173,11 +1198,66 @@ func (w *watch) predictSlippage() broker.PredictSlippage {
 	return broker.PredictSlippage{Abs: abs, IsMinAmountOut: p.PredictIsMinAmountOut}
 }
 
+func (w *watch) withFireArbID(arbID string, fn func()) {
+	if fn == nil {
+		return
+	}
+	arbID = strings.TrimSpace(arbID)
+	if arbID != "" {
+		w.fireArbID.Store(arbID)
+		defer w.fireArbID.Store("")
+	}
+	fn()
+}
+
+func (w *watch) bookAgeMs(platform string) int64 {
+	if w == nil {
+		return -1
+	}
+	platform = strings.ToUpper(strings.TrimSpace(platform))
+	h := w.wsHealthState()
+	h.mu.Lock()
+	t, ok := h.lastRx[platform]
+	h.mu.Unlock()
+	if !ok || t.IsZero() {
+		return -1
+	}
+	return time.Since(t).Milliseconds()
+}
+
 func (w *watch) sendOnOutcome(outcomeIndex int, buyYes bool, px, qty float64) (watchgroup.SendResult, error) {
 	if outcomeIndex < 0 || outcomeIndex >= len(w.Outcomes) || w.entry == nil {
 		return watchgroup.SendResult{}, nil
 	}
 	oc := &w.Outcomes[outcomeIndex]
+	platform := strings.ToUpper(strings.TrimSpace(oc.Platform))
+	if prof := w.entry.NodeProfile(); prof != nil && !prof.IsLocalPlatform(platform) {
+		if prof.EdgeForPlatform(platform) == nil {
+			return watchgroup.SendResult{}, errors.New("no relay edge for platform " + platform)
+		}
+		hub := w.entry.Relay()
+		if hub == nil {
+			return watchgroup.SendResult{}, errors.New("relay hub unavailable for platform " + platform)
+		}
+		cmd := noderelay.HedgeCmd{
+			MapKey:    w.MapKey,
+			Platform:  platform,
+			OutcomeID: oc.ID,
+			BuyYes:    buyYes,
+			Px:        px,
+			Qty:       qty,
+		}
+		if v := w.fireArbID.Load(); v != nil {
+			if id, _ := v.(string); strings.TrimSpace(id) != "" {
+				cmd.ArbID = id
+			}
+		}
+		err := hub.SendHedge(platform, cmd)
+		if err != nil {
+			return watchgroup.SendResult{}, err
+		}
+		return watchgroup.SendResult{RoutedPeer: true}, nil
+	}
 	c := w.entry.credsNow()
 	orderQty := qty
 	view, _ := w.StrategySnapshot()

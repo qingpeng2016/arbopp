@@ -12,7 +12,7 @@ import (
 )
 
 // Ops 本组 watch 上由 strategy_entry 注入的行情以外能力（参数、发单、落库）。
-// 约定：WS 热路径（盘口→选腿→发单）只读内存；唯一允许的 DB 是命中后写机会/订单。
+// 约定：WS 热路径（盘口→选腿→发单）只读内存；机会/订单在 Fire 后异步落库。
 type Ops struct {
 	StrategyParams   func() (maxCost, minAmount, maxAmount float64)
 	OneX2Limits      func() (yesTripleMax, noTripleMax float64)
@@ -34,6 +34,10 @@ type Ops struct {
 	RecordDetectLatency func(kind, mapKey, platform string, wsElapsed, computeElapsed time.Duration)
 	// RecordFireLatency 实盘 Fire 墙钟（kind=yesno|onextwo）；platforms=各腿平台。
 	RecordFireLatency func(kind, mapKey string, platforms []string, elapsed time.Duration)
+	// BookAgeMs 该平台最近一次盘口活动距今毫秒（官方 WS 或 TCP 镜像 touchWS）；无数据返回 -1。
+	BookAgeMs func(platform string) int64
+	// WithFireArbID 实盘 Fire 窗口内注入 arb_id（跨腿 HEDGE 关联用）。
+	WithFireArbID func(arbID string, fn func())
 	OppRepo               func() persistentrepo.ArbBinaryOpportunityRepo
 	OrderRepo             func() persistentrepo.ArbBinaryOrderRepo
 	BookRepo              func() persistentrepo.OrderBookRepo

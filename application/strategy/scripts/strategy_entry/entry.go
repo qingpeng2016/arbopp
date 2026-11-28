@@ -12,11 +12,13 @@ import (
 	"time"
 
 	appcommon "github.com/gph-tech/fgmm-strategy-bitfinex/application/common"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/noderelay"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketmap"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/persist"
 	entrystat "github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/stat"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/wsbookqueue"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/common/notification"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/conf"
 	httprepo "github.com/gph-tech/fgmm-strategy-bitfinex/domain/http/repository"
 	persistentrepo "github.com/gph-tech/fgmm-strategy-bitfinex/domain/persistent/repository"
 )
@@ -40,6 +42,9 @@ type Entry struct {
 	kalshi             httprepo.KalshiRepo
 	predict            httprepo.PredictRepo
 	sxbet              httprepo.SxbetRepo
+	nodeCfgRepo        persistentrepo.NodeConfigRepo
+	nodeRouteRepo      persistentrepo.NodeRouteRepo
+	relay              *noderelay.Hub
 
 	mu      sync.Mutex
 	run     bool               // 为真表示监控循环已启动
@@ -61,6 +66,7 @@ type Entry struct {
 	detectLatOnextwo *DetectLatency
 	fireLatYesno     *DetectLatency
 	fireLatOnextwo   *DetectLatency
+	nodeProf         atomic.Value // *noderoute.Profile when --node != ALL
 }
 
 type running struct {
@@ -89,6 +95,8 @@ func NewEntry(
 	kalshi httprepo.KalshiRepo,
 	predict httprepo.PredictRepo,
 	sxbet httprepo.SxbetRepo,
+	nodeCfgRepo persistentrepo.NodeConfigRepo,
+	nodeRouteRepo persistentrepo.NodeRouteRepo,
 ) *Entry {
 	e := &Entry{
 		marketRepo:         marketRepo,
@@ -107,6 +115,8 @@ func NewEntry(
 		kalshi:             kalshi,
 		predict:            predict,
 		sxbet:              sxbet,
+		nodeCfgRepo:        nodeCfgRepo,
+		nodeRouteRepo:      nodeRouteRepo,
 		watches:            map[string]*running{},
 		detectLatYesno:     NewDetectLatency(),
 		detectLatOnextwo:   NewDetectLatency(),
@@ -146,7 +156,22 @@ func (e *Entry) sxbetAPIKey() string {
 }
 
 // canTrade 这家交易所有可用账号才允许发单（发现/DryRun 不调用；仅实盘 Fire 前校验）。
+// 单节点模式：本所查账号；对端所若有 node_route 边且 relay 已启则视为可走 HEDGE。
 func (e *Entry) canTrade(platform string) bool {
+	platform = strings.ToUpper(strings.TrimSpace(platform))
+	if prof := e.NodeProfile(); prof != nil {
+		if prof.IsLocalPlatform(platform) {
+			return e.canTradeLocalCreds(platform)
+		}
+		if e.relay != nil && prof.EdgeForPlatform(platform) != nil {
+			return true
+		}
+		return false
+	}
+	return e.canTradeLocalCreds(platform)
+}
+
+func (e *Entry) canTradeLocalCreds(platform string) bool {
 	c := e.credsNow()
 	if strings.EqualFold(platform, appcommon.PlatformKalshi) {
 		return c.kalshiOK && e.kalshi != nil
@@ -289,6 +314,7 @@ func (e *Entry) Stop() {
 	if stop != nil {
 		stop()
 	}
+	e.stopRelay()
 	if done == nil {
 		return
 	}
@@ -302,6 +328,16 @@ func (e *Entry) Stop() {
 // loop 先对一次账，之后每 20 秒再对一次。行情不走这里。1
 func (e *Entry) loop(ctx context.Context) {
 	defer close(e.done)
+	if err := e.initNodeMode(ctx); err != nil {
+		notification.SendErrorLog(ctx, "strategy_entry-node-mode-fatal", zap.Error(err),
+			zap.String("node", conf.GetRunNode()))
+		_ = notification.GetGlobalNotificationManager().SendInfoAlert(ctx, "strategy_entry 未启动(节点配置失败)", []notification.FieldPair{
+			{Key: "node", Value: conf.GetRunNode()},
+			{Key: "error", Value: err.Error()},
+		})
+		return
+	}
+	defer e.stopRelay()
 	e.flush = persist.Start(e.bookRepo, e.oppRepo)
 	defer e.flush.Stop()
 	e.reconcile(ctx)

@@ -160,11 +160,25 @@ func (r *Runner) grabOneLocked(outcomeID uint, platform string, start time.Time)
 	var yesErr, noErr error
 	ordered := false
 	orderCapHit := false
+	arbID := ""
+	var fireStart, fireEnd time.Time
 	if tradeOK && !openBlocked {
 		if TryConsumeOrderSlot(&r.w.Ops) {
-			fireStart := time.Now()
-			yesRes, noRes, yesErr, noErr = Fire(outcomeSender{r}, tradePick.Yes.Side, tradePick.No.Side, tradePick.YesBuyYes, tradePick.NoBuyYes, tradePick.Qty)
+			arbID = newArbID()
+			fireStart = time.Now()
+			fireFn := func() {
+				yesRes, noRes, yesErr, noErr = Fire(outcomeSender{r}, tradePick.Yes.Side, tradePick.No.Side, tradePick.YesBuyYes, tradePick.NoBuyYes, tradePick.Qty)
+			}
+			if r.w.Ops.WithFireArbID != nil {
+				r.w.Ops.WithFireArbID(arbID, fireFn)
+			} else {
+				fireFn()
+			}
+			fireEnd = time.Now()
 			r.noteFireLatency([]string{tradePick.Yes.Platform, tradePick.No.Platform}, fireStart)
+			if r.w.Ops.NoteOpenOrdersWritten != nil {
+				r.w.Ops.NoteOpenOrdersWritten(mapKey)
+			}
 			ordered = true
 		} else {
 			orderCapHit = true
@@ -199,7 +213,10 @@ func (r *Runner) grabOneLocked(outcomeID uint, platform string, start time.Time)
 			hit.YesFill, hit.NoFill, hit.YesErr, hit.NoErr = yesFill, noFill, yesErr, noErr
 			hit.YesSend, hit.NoSend = yesRes, noRes
 			hit.SkipOrderReason = ""
-			hit.ExtData = ExtDataJSON(fp.SizeCheck.Snapshot, predBookSnap, map[string]any{
+			trace := fireTraceMap(arbID, platform, start, computeStart, fireStart, fireEnd,
+				[]string{tradePick.Yes.Platform, tradePick.No.Platform}, r.w.Ops.BookAgeMs,
+				yesRes, noRes, yesErr, noErr)
+			hit.ExtData = ExtDataJSON(fp.SizeCheck.Snapshot, predBookSnap, trace, map[string]any{
 				"ordered": true, "order_qty": fp.Qty, "fill_yes": yesFill, "fill_no": noFill,
 				"order_count": placedN, "max_order_count": maxN,
 			})
@@ -242,19 +259,16 @@ func (r *Runner) grabOneLocked(outcomeID uint, platform string, start time.Time)
 			})
 		}
 
-		insert := func() bool {
-			if !SaveGrabHit(ctx, persist, mapKey, hit) {
-				return false
-			}
-			if !saved || fp.Per < bestHit.Pick.Per {
-				bestHit, saved = hit, true
-			}
-			return true
-		}
 		if hit.DryRun {
-			r.recent.Save(key, fp.At, insert)
+			if r.recent[key].IsZero() {
+				r.recent[key] = fp.At
+				SaveGrabHitAsync(persist, mapKey, hit)
+			}
 		} else {
-			insert()
+			SaveGrabHitAsync(persist, mapKey, hit)
+		}
+		if !saved || fp.Per < bestHit.Pick.Per {
+			bestHit, saved = hit, true
 		}
 	}
 	if saved {
