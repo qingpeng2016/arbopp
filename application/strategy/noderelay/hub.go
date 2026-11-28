@@ -150,13 +150,11 @@ func (h *Hub) serveConn(c net.Conn) {
 			if err := json.Unmarshal(raw, &pong); err != nil {
 				continue
 			}
-			if v, ok := h.pingPending.Load(remote); ok {
-				if sent, ok2 := v.(time.Time); ok2 {
-					rtt := time.Since(sent)
-					h.pingPending.Delete(remote)
-					if h.health != nil {
-						h.health.OnPeerRTT(remote, rtt)
-					}
+			if sent, pendingKey, ok := h.pingPendingLookup(remote); ok {
+				rtt := time.Since(sent)
+				h.pingPending.Delete(pendingKey)
+				if h.health != nil {
+					h.health.OnPeerRTT(remote, rtt)
 				}
 			}
 		case "BOOK":
@@ -178,6 +176,35 @@ func (h *Hub) serveConn(c net.Conn) {
 			_ = h.onHedge(cmd)
 		}
 	}
+}
+
+func (h *Hub) pingPendingLookup(remote string) (sent time.Time, pendingKey string, ok bool) {
+	if v, hit := h.pingPending.Load(remote); hit {
+		if t, ok2 := v.(time.Time); ok2 {
+			return t, remote, true
+		}
+	}
+	if h.prof == nil {
+		return time.Time{}, "", false
+	}
+	remote = strings.TrimSpace(remote)
+	for _, e := range h.prof.Edges {
+		for _, cfg := range []string{e.PublishTo, e.HedgeTo} {
+			cfg = strings.TrimSpace(cfg)
+			if cfg == "" {
+				continue
+			}
+			if !noderoute.PeerAddrMatch(cfg, remote) {
+				continue
+			}
+			if v, hit := h.pingPending.Load(cfg); hit {
+				if t, ok2 := v.(time.Time); ok2 {
+					return t, cfg, true
+				}
+			}
+		}
+	}
+	return time.Time{}, "", false
 }
 
 func peerRemoteKey(c net.Conn) string {

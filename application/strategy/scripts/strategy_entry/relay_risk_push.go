@@ -6,7 +6,7 @@ import (
 )
 
 func (e *Entry) startRelayBookPushLoop(ctx context.Context) {
-	if e == nil || e.relayRisk == nil {
+	if e == nil || e.NodeProfile() == nil || e.Relay() == nil {
 		return
 	}
 	go func() {
@@ -14,7 +14,10 @@ func (e *Entry) startRelayBookPushLoop(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			iv := e.relayRisk.Config().BookPushInterval
+			iv := 5 * time.Second
+			if e.relayRisk != nil {
+				iv = e.relayRisk.Config().BookPushInterval
+			}
 			if iv <= 0 {
 				iv = 5 * time.Second
 			}

@@ -127,14 +127,20 @@ func (w *watch) buildRelayPayloadsAllMemory(platform string) []noderelay.BookPay
 		return nil
 	}
 	var out []noderelay.BookPayload
-	tsMs := time.Now().UnixMilli()
-	w.Books.ForEachPlatform(platform, func(id string, b book.Book) {
-		if strings.Contains(id, ":not") {
-			return
+	snap := w.Books.Snapshot()
+	prefix := platform + "|"
+	for k, b := range snap.books {
+		if !strings.HasPrefix(k, prefix) {
+			continue
+		}
+		id := strings.TrimPrefix(k, prefix)
+		if id == "" || strings.Contains(id, ":not") {
+			continue
 		}
 		if !b.Live && len(b.Bids) == 0 && len(b.Asks) == 0 && len(b.NoBids) == 0 {
-			return
+			continue
 		}
+		tsMs := time.Now().UnixMilli()
 		if !b.ExchangeTS.IsZero() {
 			tsMs = b.ExchangeTS.UnixMilli()
 		}
@@ -151,12 +157,12 @@ func (w *watch) buildRelayPayloadsAllMemory(platform string) []noderelay.BookPay
 			TSUnixMs: tsMs,
 		}
 		if platform == appcommon.PlatformSxbet {
-			if bNo, ok := w.Books.Get(platform, id+":not"); ok && len(bNo.Asks) > 0 {
+			if bNo, ok := snap.Get(platform, id+":not"); ok && len(bNo.Asks) > 0 {
 				p.NotAsks = bookToRelayLevels(bNo.Asks)
 			}
 		}
 		out = append(out, p)
-	})
+	}
 	return out
 }
 

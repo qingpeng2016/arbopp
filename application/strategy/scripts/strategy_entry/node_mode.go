@@ -57,8 +57,8 @@ func (e *Entry) initNodeMode(ctx context.Context) error {
 	e.relayRisk = noderisk.NewGuard(ctx, prof, e.thresholdRepo, node)
 	if e.relayRisk != nil {
 		e.relayRisk.Start()
-		e.startRelayBookPushLoop(ctx)
 	}
+	e.startRelayBookPushLoop(ctx)
 	e.relay = noderelay.NewHub(ctx, prof, e.onRelayBook, e.onRelayHedge, e.relayRisk)
 	if e.relay == nil {
 		e.nodeProf.Store(nil)

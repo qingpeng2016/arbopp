@@ -96,6 +96,11 @@ func peerHost(addr string) string {
 	return h
 }
 
+// PeerAddrMatch whether remote TCP addr matches configured host:port (端口须一致)。
+func PeerAddrMatch(configured, remote string) bool {
+	return peerAddrMatch(configured, remote)
+}
+
 func peerAddrMatch(configured, remote string) bool {
 	configured = strings.TrimSpace(configured)
 	remote = strings.TrimSpace(remote)

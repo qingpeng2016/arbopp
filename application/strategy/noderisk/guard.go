@@ -24,7 +24,7 @@ type Guard struct {
 	platforms  []string
 	startedAt  time.Time
 
-	mu          sync.Mutex
+	mu          sync.RWMutex
 	plat        map[string]*platState
 	lastAlertAt map[string]time.Time
 }
@@ -34,6 +34,7 @@ type platState struct {
 	tripped       bool
 	reason        string
 	connUp        bool
+	peerLinks     int // 入站+出站 TCP 计数，避免单连接断开误熔断
 	lastBookRx    time.Time
 	gotBook       bool
 	lastRTT       time.Duration
@@ -129,8 +130,8 @@ func (g *Guard) Allow(platform string) bool {
 	if g.prof.EdgeForPlatform(platform) == nil {
 		return true
 	}
-	g.mu.Lock()
-	defer g.mu.Unlock()
+	g.mu.RLock()
+	defer g.mu.RUnlock()
 	st, ok := g.plat[platform]
 	if !ok {
 		return true
@@ -141,11 +142,38 @@ func (g *Guard) Allow(platform string) bool {
 // Hub 回调 ------------------------------------------------------------------
 
 func (g *Guard) OnPeerConnUp(remoteAddr string) {
-	g.setConn(remoteAddr, true)
+	plat := g.prof.PlatformForPeerAddr(remoteAddr)
+	if plat == "" {
+		return
+	}
+	cfg := g.Config()
+	g.mu.Lock()
+	st := g.platState(plat)
+	st.peerLinks++
+	st.connUp = st.peerLinks > 0
+	g.mu.Unlock()
+	if cfg.Enabled {
+		g.bumpOK(plat)
+	}
 }
 
 func (g *Guard) OnPeerConnDown(remoteAddr string) {
-	g.setConn(remoteAddr, false)
+	plat := g.prof.PlatformForPeerAddr(remoteAddr)
+	if plat == "" {
+		return
+	}
+	cfg := g.Config()
+	g.mu.Lock()
+	st := g.platState(plat)
+	if st.peerLinks > 0 {
+		st.peerLinks--
+	}
+	st.connUp = st.peerLinks > 0
+	links := st.peerLinks
+	g.mu.Unlock()
+	if cfg.Enabled && links == 0 {
+		g.trip(plat, "risk_peer_tcp_down", map[string]string{"peer": remoteAddr})
+	}
 }
 
 func (g *Guard) OnPeerRTT(remoteAddr string, rtt time.Duration) {
@@ -191,31 +219,6 @@ func (g *Guard) RecordMirrorBook(platform string) {
 	g.mu.Unlock()
 }
 
-func (g *Guard) setConn(remoteAddr string, up bool) {
-	plat := g.prof.PlatformForPeerAddr(remoteAddr)
-	if plat == "" {
-		return
-	}
-	cfg := g.Config()
-	g.mu.Lock()
-	st := g.platState(plat)
-	if up {
-		st.connUp = true
-	} else {
-		st.connUp = false
-	}
-	g.mu.Unlock()
-
-	if !cfg.Enabled {
-		return
-	}
-	if !up {
-		g.trip(plat, "risk_peer_tcp_down", map[string]string{"peer": remoteAddr})
-		return
-	}
-	g.bumpOK(plat)
-}
-
 func (g *Guard) platState(platform string) *platState {
 	st, ok := g.plat[platform]
 	if !ok {
@@ -254,8 +257,8 @@ func (g *Guard) resetReloadTicker(t **time.Ticker, ch *<-chan time.Time) {
 	if *t != nil {
 		(*t).Stop()
 	}
-	*d := time.NewTicker(g.Config().CheckInterval)
-	*ch = (*d).C
+	*t = time.NewTicker(g.Config().CheckInterval)
+	*ch = (*t).C
 }
 
 func (g *Guard) evaluate() {
