@@ -43,70 +43,30 @@ deploy_apply_node_host() {
   echo ">>> 部署节点: ${RUN_NODE} → SSH ${SSH_USER}@${SSH_HOST}"
 }
 
-deploy_common_init() {
-  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  ENV_FILE="${SCRIPT_DIR}/.deploy.env"
-  REMOTE_LIB_FILE="${SCRIPT_DIR}/remote-lib.sh"
+# 按节点覆盖 SSH_KEY（如 AWS 爱尔兰/东京各一把 pem）
+deploy_resolve_node_ssh_key() {
+  local node_key=""
+  case "${RUN_NODE:-ALL}" in
+    POLY) node_key="${NODE_POLY_SSH_KEY:-}" ;;
+    PRED) node_key="${NODE_PRED_SSH_KEY:-}" ;;
+    SXBET|SX) node_key="${NODE_SXBET_SSH_KEY:-}" ;;
+  esac
+  if [[ -n "$node_key" ]]; then
+    SSH_KEY="$node_key"
+  fi
+}
 
-  [[ -f "$ENV_FILE" ]] || {
-    echo "缺少 ${ENV_FILE}，请先: cp .deploy.env.example .deploy.env" >&2
-    exit 1
-  }
-  [[ -f "$REMOTE_LIB_FILE" ]] || {
-    echo "缺少 ${REMOTE_LIB_FILE}" >&2
-    exit 1
-  }
-
-  # shellcheck source=/dev/null
-  source "$ENV_FILE"
-
-  : "${SSH_USER:?请在 .deploy.env 设置 SSH_USER}"
-
-  SSH_PORT="${SSH_PORT:-22}"
+deploy_build_ssh_scp_opts() {
   SSH_KEY_FILE=""
   if [[ -n "${SSH_KEY:-}" ]]; then
     SSH_KEY_FILE="${SSH_KEY/#\~/$HOME}"
     [[ -f "$SSH_KEY_FILE" ]] || {
-      echo "SSH_KEY 文件不存在: ${SSH_KEY_FILE}（.deploy.env 里 SSH_KEY=${SSH_KEY}）" >&2
+      echo "SSH_KEY 文件不存在: ${SSH_KEY_FILE}（RUN_NODE=${RUN_NODE} SSH_KEY=${SSH_KEY}）" >&2
       exit 1
     }
   else
-    : "${SSH_PASS:?请在 .deploy.env 设置 SSH_PASS，或设置 SSH_KEY 使用密钥登录}"
+    : "${SSH_PASS:?请在 .deploy.env 设置 SSH_PASS，或设置 SSH_KEY / NODE_*_SSH_KEY 使用密钥登录}"
   fi
-  MALL_APP_DIR="${MALL_APP_DIR:-/www/wwwroot/arbopp}"
-  MALL_USER_RUN_CONF="${MALL_USER_RUN_CONF:-test}"
-  MALL_BOT_RUN_CONF="${MALL_BOT_RUN_CONF:-test}"
-  MALL_USER_PORT="${MALL_USER_PORT:-8886}"
-  # 1=服务器 go run main.go；0=服务器 go build 后跑 bin（deploy-service.sh 会强制为 1）
-  ARBOPP_USE_GO_RUN="${ARBOPP_USE_GO_RUN:-${PAPER_USE_GO_RUN:-1}}"
-  PAPER_USE_GO_RUN="$ARBOPP_USE_GO_RUN"
-  ARBOPP_GO_ROOT="${ARBOPP_GO_ROOT:-${PAPER_GO_ROOT:-}}"
-  PAPER_GO_ROOT="$ARBOPP_GO_ROOT"
-  ARBOPP_GO_VERSION="${ARBOPP_GO_VERSION:-${PAPER_GO_VERSION:-1.23.0}}"
-  PAPER_GO_VERSION="$ARBOPP_GO_VERSION"
-  DEPLOY_UPLOAD_CONF="${DEPLOY_UPLOAD_CONF:-0}"
-  MALL_BIN_NAME="${MALL_BIN_NAME:-arbopp}"
-  GIT_FETCH_TIMEOUT="${GIT_FETCH_TIMEOUT:-120}"
-  LOCAL_REPO_DIR="${LOCAL_REPO_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-  GIT_REPO_URL="${GIT_REPO_URL:-git@github.com:qingpeng2016/arbopp.git}"
-  # SSH 为非 root 且代码目录属主 root（宝塔常见）时设为 1：远程用 sudo -i 执行 git / 启停
-  REMOTE_SUDO="${REMOTE_SUDO:-0}"
-
-  # 分布式节点公网 IP（AWS 与本机相同 SSH_KEY/SSH_USER/REMOTE_SUDO）
-  NODE_POLY_HOST="${NODE_POLY_HOST:-}"
-  NODE_PRED_HOST="${NODE_PRED_HOST:-}"
-  NODE_SXBET_HOST="${NODE_SXBET_HOST:-}"
-  DEPLOY_NODE="${DEPLOY_NODE:-}"
-  RUN_NODE="${RUN_NODE:-ALL}"
-
-  APP_DIR="$MALL_APP_DIR"
-  if [[ -n "$DEPLOY_NODE" ]]; then
-    deploy_apply_node_host "$DEPLOY_NODE"
-  else
-    : "${SSH_HOST:?请在 .deploy.env 设置 SSH_HOST，或 deploy 第三参指定 POLY/PRED/SXBET}"
-    RUN_NODE="ALL"
-  fi
-  SSH_TARGET="${SSH_USER}@${SSH_HOST}"
 
   if [[ -n "$SSH_KEY_FILE" ]]; then
     SSH_OPTS=(
@@ -128,7 +88,6 @@ deploy_common_init() {
       -o PubkeyAuthentication=no
       -p "$SSH_PORT"
     )
-    # scp 端口是大写 -P；勿把 SSH_OPTS 直接传给 scp（-p 会被当成「保留时间」+ 本地路径 22）
     SCP_OPTS=(
       -o StrictHostKeyChecking=accept-new
       -o PreferredAuthentications=password
@@ -136,6 +95,67 @@ deploy_common_init() {
       -P "$SSH_PORT"
     )
   fi
+}
+
+deploy_common_init() {
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  ENV_FILE="${SCRIPT_DIR}/.deploy.env"
+  REMOTE_LIB_FILE="${SCRIPT_DIR}/remote-lib.sh"
+
+  [[ -f "$ENV_FILE" ]] || {
+    echo "缺少 ${ENV_FILE}，请先: cp .deploy.env.example .deploy.env" >&2
+    exit 1
+  }
+  [[ -f "$REMOTE_LIB_FILE" ]] || {
+    echo "缺少 ${REMOTE_LIB_FILE}" >&2
+    exit 1
+  }
+
+  # shellcheck source=/dev/null
+  source "$ENV_FILE"
+
+  : "${SSH_USER:?请在 .deploy.env 设置 SSH_USER}"
+
+  SSH_PORT="${SSH_PORT:-22}"
+  MALL_APP_DIR="${MALL_APP_DIR:-/www/wwwroot/arbopp}"
+  MALL_USER_RUN_CONF="${MALL_USER_RUN_CONF:-test}"
+  MALL_BOT_RUN_CONF="${MALL_BOT_RUN_CONF:-test}"
+  MALL_USER_PORT="${MALL_USER_PORT:-8886}"
+  # 1=服务器 go run main.go；0=服务器 go build 后跑 bin（deploy-service.sh 会强制为 1）
+  ARBOPP_USE_GO_RUN="${ARBOPP_USE_GO_RUN:-${PAPER_USE_GO_RUN:-1}}"
+  PAPER_USE_GO_RUN="$ARBOPP_USE_GO_RUN"
+  ARBOPP_GO_ROOT="${ARBOPP_GO_ROOT:-${PAPER_GO_ROOT:-}}"
+  PAPER_GO_ROOT="$ARBOPP_GO_ROOT"
+  ARBOPP_GO_VERSION="${ARBOPP_GO_VERSION:-${PAPER_GO_VERSION:-1.23.0}}"
+  PAPER_GO_VERSION="$ARBOPP_GO_VERSION"
+  DEPLOY_UPLOAD_CONF="${DEPLOY_UPLOAD_CONF:-0}"
+  MALL_BIN_NAME="${MALL_BIN_NAME:-arbopp}"
+  GIT_FETCH_TIMEOUT="${GIT_FETCH_TIMEOUT:-120}"
+  LOCAL_REPO_DIR="${LOCAL_REPO_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+  GIT_REPO_URL="${GIT_REPO_URL:-git@github.com:qingpeng2016/arbopp.git}"
+  # SSH 为非 root 且代码目录属主 root（宝塔常见）时设为 1：远程用 sudo -i 执行 git / 启停
+  REMOTE_SUDO="${REMOTE_SUDO:-0}"
+
+  # 分布式：SSH 用公网 IP；可选每节点独立 pem（NODE_*_SSH_KEY）
+  NODE_POLY_HOST="${NODE_POLY_HOST:-}"
+  NODE_POLY_SSH_KEY="${NODE_POLY_SSH_KEY:-}"
+  NODE_PRED_HOST="${NODE_PRED_HOST:-}"
+  NODE_PRED_SSH_KEY="${NODE_PRED_SSH_KEY:-}"
+  NODE_SXBET_HOST="${NODE_SXBET_HOST:-}"
+  NODE_SXBET_SSH_KEY="${NODE_SXBET_SSH_KEY:-}"
+  DEPLOY_NODE="${DEPLOY_NODE:-}"
+  RUN_NODE="${RUN_NODE:-ALL}"
+
+  APP_DIR="$MALL_APP_DIR"
+  if [[ -n "$DEPLOY_NODE" ]]; then
+    deploy_apply_node_host "$DEPLOY_NODE"
+  else
+    : "${SSH_HOST:?请在 .deploy.env 设置 SSH_HOST，或 deploy 第三参指定 POLY/PRED/SXBET}"
+    RUN_NODE="ALL"
+  fi
+  deploy_resolve_node_ssh_key
+  deploy_build_ssh_scp_opts
+  SSH_TARGET="${SSH_USER}@${SSH_HOST}"
 }
 
 deploy_remote_lib() {
