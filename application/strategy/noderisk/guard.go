@@ -41,6 +41,7 @@ type platState struct {
 	lastRTT       time.Duration
 	okStreak      int
 	lastTripAt    time.Time
+	tripExtra     map[string]string // 熔断时详情，重复 Lark 沿用
 }
 
 func NewGuard(parent context.Context, prof *noderoute.Profile, threshold persistentrepo.ConfigStrategyThresholdRepo, nodeCode string) *Guard {
@@ -303,6 +304,7 @@ func (g *Guard) evaluate() {
 		}
 
 		if tripped {
+			g.repeatAlertWhileTripped(plat)
 			ok := connUp && !stale && (rtt == 0 || rtt <= cfg.MaxRTT)
 			if ok {
 				g.bumpOK(plat)
@@ -345,6 +347,7 @@ func (g *Guard) trip(platform, reason string, extra map[string]string) {
 	st.reason = reason
 	st.okStreak = 0
 	st.lastTripAt = time.Now()
+	st.tripExtra = cloneStringMap(extra)
 	g.mu.Unlock()
 
 	if was {
@@ -364,8 +367,23 @@ func (g *Guard) recover(platform string) {
 	st.tripped = false
 	st.reason = ""
 	st.okStreak = 0
+	st.tripExtra = nil
 	g.mu.Unlock()
 	g.alert(platform, true, prevReason, nil)
+}
+
+// repeatAlertWhileTripped 熔断未恢复期间按 risk_relay_alert_repeat_sec 重复 Lark（首次仍由 trip 触发）。
+func (g *Guard) repeatAlertWhileTripped(platform string) {
+	g.mu.Lock()
+	st := g.platState(platform)
+	if !st.tripped || st.reason == "" {
+		g.mu.Unlock()
+		return
+	}
+	reason := st.reason
+	extra := cloneStringMap(st.tripExtra)
+	g.mu.Unlock()
+	g.alert(platform, false, reason, extra)
 }
 
 func (g *Guard) alert(platform string, recovered bool, reason string, extra map[string]string) {
@@ -403,6 +421,17 @@ func (g *Guard) alert(platform string, recovered bool, reason string, extra map[
 
 func formatMs(d time.Duration) string {
 	return strconv.FormatInt(d.Milliseconds(), 10)
+}
+
+func cloneStringMap(m map[string]string) map[string]string {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
 }
 
 // HeartbeatLine 供 WS 心跳汇报：镜像平台 relay 状态（无 DB）。
