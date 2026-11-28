@@ -283,14 +283,6 @@ func (g *Guard) evaluate() {
 		rtt := st.lastRTT
 		g.mu.Unlock()
 
-		if !connUp && tripped {
-			continue
-		}
-		if !connUp && !tripped {
-			// conn 由 OnPeerConnDown 即时处理
-			continue
-		}
-
 		stale := false
 		if gotBook {
 			stale = now.Sub(lastBook) > cfg.BookStale
@@ -298,9 +290,15 @@ func (g *Guard) evaluate() {
 			stale = true
 		}
 		if stale && !tripped {
-			g.trip(plat, "risk_book_push_stale", map[string]string{
+			reason := "risk_book_push_stale"
+			extra := map[string]string{
 				"stale_sec": strconv.FormatInt(int64(cfg.BookStale.Seconds()), 10),
-			})
+			}
+			if !connUp && !gotBook {
+				reason = "risk_peer_unreachable"
+				extra["conn"] = "down"
+			}
+			g.trip(plat, reason, extra)
 			continue
 		}
 
