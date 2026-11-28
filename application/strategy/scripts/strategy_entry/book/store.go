@@ -61,6 +61,24 @@ func (s Snapshot) Get(platform, id string) (Book, bool) {
 	return b, true
 }
 
+// EachPlatform 遍历快照中该平台下各 book（id 不含 platform 前缀）。
+func (s Snapshot) EachPlatform(platform string, fn func(id string, b Book)) {
+	if fn == nil {
+		return
+	}
+	prefix := strings.ToUpper(strings.TrimSpace(platform)) + "|"
+	for k, b := range s.books {
+		if !strings.HasPrefix(k, prefix) {
+			continue
+		}
+		id := strings.TrimPrefix(k, prefix)
+		if id == "" {
+			continue
+		}
+		fn(id, b)
+	}
+}
+
 func cloneBook(b Book) Book {
 	b.Bids = Clone(b.Bids)
 	b.Asks = Clone(b.Asks)

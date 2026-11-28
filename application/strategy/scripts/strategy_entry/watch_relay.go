@@ -128,17 +128,12 @@ func (w *watch) buildRelayPayloadsAllMemory(platform string) []noderelay.BookPay
 	}
 	var out []noderelay.BookPayload
 	snap := w.Books.Snapshot()
-	prefix := platform + "|"
-	for k, b := range snap.books {
-		if !strings.HasPrefix(k, prefix) {
-			continue
-		}
-		id := strings.TrimPrefix(k, prefix)
-		if id == "" || strings.Contains(id, ":not") {
-			continue
+	snap.EachPlatform(platform, func(id string, b book.Book) {
+		if strings.Contains(id, ":not") {
+			return
 		}
 		if !b.Live && len(b.Bids) == 0 && len(b.Asks) == 0 && len(b.NoBids) == 0 {
-			continue
+			return
 		}
 		tsMs := time.Now().UnixMilli()
 		if !b.ExchangeTS.IsZero() {
@@ -162,7 +157,7 @@ func (w *watch) buildRelayPayloadsAllMemory(platform string) []noderelay.BookPay
 			}
 		}
 		out = append(out, p)
-	}
+	})
 	return out
 }
 
