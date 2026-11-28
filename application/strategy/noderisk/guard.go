@@ -393,7 +393,12 @@ func (g *Guard) alert(platform string, recovered bool, reason string, extra map[
 	for k, v := range extra {
 		fields = append(fields, notification.FieldPair{Key: k, Value: v})
 	}
-	_ = notification.GetGlobalNotificationManager().SendInfoAlert(g.ctx, title, fields)
+	nm := notification.GetGlobalNotificationManager()
+	if recovered {
+		_ = nm.SendInfoAlert(g.ctx, title, fields)
+		return
+	}
+	_ = nm.SendErrorAlertWithOrder(g.ctx, title, fields)
 }
 
 func formatMs(d time.Duration) string {
