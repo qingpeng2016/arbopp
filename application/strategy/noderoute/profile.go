@@ -3,6 +3,7 @@ package noderoute
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"strings"
 
 	appcommon "github.com/gph-tech/fgmm-strategy-bitfinex/application/common"
@@ -58,6 +59,61 @@ func (p *Profile) EdgeForPlatform(platform string) *Edge {
 	}
 	platform = strings.ToUpper(strings.TrimSpace(platform))
 	return p.byPlatform[platform]
+}
+
+// PlatformForPeerAddr maps TCP remote addr to mirror platform (PublishTo / HedgeTo).
+func (p *Profile) PlatformForPeerAddr(remoteAddr string) string {
+	if p == nil {
+		return ""
+	}
+	remoteAddr = strings.TrimSpace(remoteAddr)
+	remoteHost := peerHost(remoteAddr)
+	for _, e := range p.Edges {
+		plat := strings.ToUpper(strings.TrimSpace(e.MirrorPlatform))
+		if plat == "" {
+			continue
+		}
+		if peerAddrMatch(e.PublishTo, remoteAddr) || peerAddrMatch(e.HedgeTo, remoteAddr) {
+			return plat
+		}
+		if remoteHost != "" && (strings.EqualFold(peerHost(e.PublishTo), remoteHost) ||
+			strings.EqualFold(peerHost(e.HedgeTo), remoteHost)) {
+			return plat
+		}
+	}
+	return ""
+}
+
+func peerHost(addr string) string {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return ""
+	}
+	h, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
+	}
+	return h
+}
+
+func peerAddrMatch(configured, remote string) bool {
+	configured = strings.TrimSpace(configured)
+	remote = strings.TrimSpace(remote)
+	if configured == "" || remote == "" {
+		return false
+	}
+	if strings.EqualFold(configured, remote) {
+		return true
+	}
+	ch, cp, err1 := net.SplitHostPort(configured)
+	if err1 != nil {
+		ch, cp = configured, "9000"
+	}
+	rh, rp, err2 := net.SplitHostPort(remote)
+	if err2 != nil {
+		return false
+	}
+	return cp == rp && strings.EqualFold(ch, rh)
 }
 
 func platformFromDB(s string) string {

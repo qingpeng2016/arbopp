@@ -86,6 +86,26 @@ func (s *Store) ensure(platform, id string) *Book {
 	return b
 }
 
+// ForEachPlatform 遍历该平台下内存簿（id 为 book 内 ID，不含 platform 前缀）。
+func (s *Store) ForEachPlatform(platform string, fn func(id string, b Book)) {
+	if fn == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	prefix := strings.ToUpper(strings.TrimSpace(platform)) + "|"
+	for k, bk := range s.books {
+		if !strings.HasPrefix(k, prefix) {
+			continue
+		}
+		id := strings.TrimPrefix(k, prefix)
+		if id == "" || bk == nil {
+			continue
+		}
+		fn(id, *bk)
+	}
+}
+
 func (s *Store) Get(platform, id string) (Book, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

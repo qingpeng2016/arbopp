@@ -82,7 +82,7 @@ func (c *LarkClient) SendTextMessage(ctx context.Context, text string) error {
 		Content: struct {
 			Text string `json:"text"`
 		}{
-			Text: text,
+			Text: larkContentWithPlatform(text),
 		},
 	}
 
@@ -174,8 +174,9 @@ func (c *LarkClient) SendCardMessageWithOrder(ctx context.Context, title, conten
 // SendAlert 发送报警消息
 func (c *LarkClient) SendAlert(ctx context.Context, alertType, service, message string, fields map[string]string) error {
 	title := fmt.Sprintf("🚨 %s 报警", alertType)
-	content := fmt.Sprintf("**服务:** %s\n**消息:** %s\n**时间:** %s",
+	body := fmt.Sprintf("**服务:** %s\n**消息:** %s\n**时间:** %s",
 		service, message, time.Now().Format("2006-01-02 15:04:05"))
+	content := larkContentWithPlatform(body)
 
 	return c.SendCardMessage(ctx, title, content, fields)
 }
@@ -183,10 +184,11 @@ func (c *LarkClient) SendAlert(ctx context.Context, alertType, service, message 
 // SendAlertWithOrder 发送报警消息（保持字段顺序）
 func (c *LarkClient) SendAlertWithOrder(ctx context.Context, alertType, service, message string, fields []FieldPair) error {
 	title := fmt.Sprintf("🚨 %s 报警", alertType)
-	content := fmt.Sprintf("**服务:** %s\n**消息:** %s\n**时间:** %s",
+	body := fmt.Sprintf("**服务:** %s\n**消息:** %s\n**时间:** %s",
 		service, message, time.Now().Format("2006-01-02 15:04:05"))
+	content := larkContentWithPlatform(body)
 
-	return c.SendCardMessageWithOrder(ctx, title, content, fields)
+	return c.SendCardMessageWithOrder(ctx, title, content, prependPlatformField(fields))
 }
 
 // SendErrorAlert 发送错误报警
@@ -207,10 +209,11 @@ func (c *LarkClient) SendWarningAlert(ctx context.Context, service, warningMsg s
 // SendInfoAlert 发送消息通知
 func (c *LarkClient) SendInfoAlert(ctx context.Context, service, infoMsg string, fields []FieldPair) error {
 	title := fmt.Sprintf("✅ %s 消息", "信息")
-	content := fmt.Sprintf("**服务:** %s\n**消息:** %s\n**时间:** %s",
+	body := fmt.Sprintf("**服务:** %s\n**消息:** %s\n**时间:** %s",
 		service, infoMsg, time.Now().Format("2006-01-02 15:04:05"))
+	content := larkContentWithPlatform(body)
 
-	return c.SendCardMessageWithOrder(ctx, title, content, fields)
+	return c.SendCardMessageWithOrder(ctx, title, content, prependPlatformField(fields))
 }
 
 // sendMessage 发送消息到 Lark

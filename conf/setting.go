@@ -68,7 +68,7 @@ type Notification struct {
 	Lark LarkNotification `mapstructure:"lark"`
 }
 
-// LarkNotification Lark通知配置
+// LarkNotification Lark 通知配置（全节点共用一套 webhook）
 type LarkNotification struct {
 	OrderWebhookURL  string `mapstructure:"order_webhook_url"`  // 下单结果专用机器人 Webhook URL
 	AlertWebhookURL  string `mapstructure:"alert_webhook_url"`  // 异常报警机器人 Webhook URL

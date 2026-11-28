@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/noderoute"
@@ -25,9 +26,13 @@ type Hub struct {
 	prof   *noderoute.Profile
 	onBook BookHandler
 	onHedge HedgeHandler
+	health PeerHealth
 
 	mu    sync.Mutex
 	conns map[string]*peerConn // publish target addr → conn
+
+	pingSeq     atomic.Int64
+	pingPending sync.Map // addr -> time.Time
 
 	seenHedge sync.Map // arb_id → struct{}
 }
@@ -38,7 +43,7 @@ type peerConn struct {
 	conn net.Conn
 }
 
-func NewHub(parent context.Context, prof *noderoute.Profile, onBook BookHandler, onHedge HedgeHandler) *Hub {
+func NewHub(parent context.Context, prof *noderoute.Profile, onBook BookHandler, onHedge HedgeHandler, health PeerHealth) *Hub {
 	if prof == nil {
 		return nil
 	}
@@ -49,6 +54,7 @@ func NewHub(parent context.Context, prof *noderoute.Profile, onBook BookHandler,
 		prof:    prof,
 		onBook:  onBook,
 		onHedge: onHedge,
+		health:  health,
 		conns:   map[string]*peerConn{},
 	}
 	for _, e := range prof.Edges {
@@ -99,6 +105,11 @@ func (h *Hub) listen() {
 }
 
 func (h *Hub) serveConn(c net.Conn) {
+	remote := peerRemoteKey(c)
+	if h.health != nil {
+		h.health.OnPeerConnUp(remote)
+		defer h.health.OnPeerConnDown(remote)
+	}
 	defer c.Close()
 	_ = setTCPNoDelay(c)
 	for {
@@ -117,7 +128,37 @@ func (h *Hub) serveConn(c net.Conn) {
 		}
 		switch strings.ToUpper(kind.Type) {
 		case "PING":
-			continue
+			var ping struct {
+				Type string `json:"type"`
+				Seq  int64  `json:"seq"`
+				TSMs int64  `json:"ts_ms"`
+			}
+			if err := json.Unmarshal(raw, &ping); err != nil {
+				continue
+			}
+			_ = writeFrame(c, map[string]any{
+				"type":   "PONG",
+				"seq":    ping.Seq,
+				"ts_ms":  ping.TSMs,
+				"echo_ms": time.Now().UnixMilli(),
+			})
+		case "PONG":
+			var pong struct {
+				Type string `json:"type"`
+				Seq  int64  `json:"seq"`
+			}
+			if err := json.Unmarshal(raw, &pong); err != nil {
+				continue
+			}
+			if v, ok := h.pingPending.Load(remote); ok {
+				if sent, ok2 := v.(time.Time); ok2 {
+					rtt := time.Since(sent)
+					h.pingPending.Delete(remote)
+					if h.health != nil {
+						h.health.OnPeerRTT(remote, rtt)
+					}
+				}
+			}
 		case "BOOK":
 			var p BookPayload
 			if err := json.Unmarshal(raw, &p); err != nil || h.onBook == nil {
@@ -137,6 +178,13 @@ func (h *Hub) serveConn(c net.Conn) {
 			_ = h.onHedge(cmd)
 		}
 	}
+}
+
+func peerRemoteKey(c net.Conn) string {
+	if c == nil || c.RemoteAddr() == nil {
+		return ""
+	}
+	return strings.TrimSpace(c.RemoteAddr().String())
 }
 
 func (h *Hub) dialLoop(addr string) {
@@ -187,8 +235,21 @@ func (h *Hub) pingLoop() {
 		select {
 		case <-h.ctx.Done():
 			return
-		case <-t.C:
-			h.broadcast(map[string]any{"type": "PING", "ts_ms": time.Now().UnixMilli()})
+		case at := <-t.C:
+			seq := h.pingSeq.Add(1)
+			msg := map[string]any{"type": "PING", "seq": seq, "ts_ms": at.UnixMilli()}
+			h.mu.Lock()
+			addrs := make([]string, 0, len(h.conns))
+			for a := range h.conns {
+				addrs = append(addrs, a)
+			}
+			h.mu.Unlock()
+			for _, a := range addrs {
+				if err := h.writeAddr(a, msg); err == nil {
+					h.pingPending.Store(a, at)
+				}
+			}
+			// inbound conns不含入 conns map；RTT 主要从来向 PONG 与 dial 方向测量
 		}
 	}
 }
@@ -217,6 +278,24 @@ func (h *Hub) SendHedge(platform string, cmd HedgeCmd) error {
 	}
 	cmd.Type = "HEDGE"
 	return h.writeAddr(addr, cmd)
+}
+
+// Connected 出站 publish 地址是否已连接。
+func (h *Hub) Connected(addr string) bool {
+	if h == nil {
+		return false
+	}
+	addr = strings.TrimSpace(addr)
+	h.mu.Lock()
+	pc, ok := h.conns[addr]
+	h.mu.Unlock()
+	if !ok || pc == nil {
+		return false
+	}
+	pc.mu.Lock()
+	ok = pc.conn != nil
+	pc.mu.Unlock()
+	return ok
 }
 
 func (h *Hub) broadcast(v any) {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/noderisk"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/noderelay"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/noderoute"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/strategy/yesno"
@@ -53,7 +54,12 @@ func (e *Entry) initNodeMode(ctx context.Context) error {
 		return fmt.Errorf("node %s: no enabled outbound routes", node)
 	}
 	e.nodeProf.Store(prof)
-	e.relay = noderelay.NewHub(ctx, prof, e.onRelayBook, e.onRelayHedge)
+	e.relayRisk = noderisk.NewGuard(ctx, prof, e.thresholdRepo, node)
+	if e.relayRisk != nil {
+		e.relayRisk.Start()
+		e.startRelayBookPushLoop(ctx)
+	}
+	e.relay = noderelay.NewHub(ctx, prof, e.onRelayBook, e.onRelayHedge, e.relayRisk)
 	if e.relay == nil {
 		e.nodeProf.Store(nil)
 		return fmt.Errorf("node %s: relay hub not started", node)
@@ -69,6 +75,9 @@ func (e *Entry) initNodeMode(ctx context.Context) error {
 func (e *Entry) onRelayBook(p noderelay.BookPayload) {
 	if e == nil {
 		return
+	}
+	if e.relayRisk != nil {
+		e.relayRisk.RecordMirrorBook(p.Platform)
 	}
 	mapKey := strings.TrimSpace(p.MapKey)
 	if mapKey == "" {
@@ -120,10 +129,16 @@ func (e *Entry) onRelayHedge(cmd noderelay.HedgeCmd) error {
 }
 
 func (e *Entry) stopRelay() {
-	if e == nil || e.relay == nil {
+	if e == nil {
 		return
 	}
-	e.relay.Stop()
-	e.relay = nil
+	if e.relay != nil {
+		e.relay.Stop()
+		e.relay = nil
+	}
+	if e.relayRisk != nil {
+		e.relayRisk.Stop()
+		e.relayRisk = nil
+	}
 	e.nodeProf.Store(nil)
 }

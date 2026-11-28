@@ -12,6 +12,7 @@ import (
 	"time"
 
 	appcommon "github.com/gph-tech/fgmm-strategy-bitfinex/application/common"
+	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/noderisk"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/noderelay"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/marketmap"
 	"github.com/gph-tech/fgmm-strategy-bitfinex/application/strategy/scripts/strategy_entry/persist"
@@ -45,6 +46,7 @@ type Entry struct {
 	nodeCfgRepo        persistentrepo.NodeConfigRepo
 	nodeRouteRepo      persistentrepo.NodeRouteRepo
 	relay              *noderelay.Hub
+	relayRisk          *noderisk.Guard
 
 	mu      sync.Mutex
 	run     bool               // 为真表示监控循环已启动
@@ -159,6 +161,9 @@ func (e *Entry) sxbetAPIKey() string {
 // 单节点模式：本所查账号；对端所若有 node_route 边且 relay 已启则视为可走 HEDGE。
 func (e *Entry) canTrade(platform string) bool {
 	platform = strings.ToUpper(strings.TrimSpace(platform))
+	if e.relayRisk != nil && !e.relayRisk.Allow(platform) {
+		return false
+	}
 	if prof := e.NodeProfile(); prof != nil {
 		if prof.IsLocalPlatform(platform) {
 			return e.canTradeLocalCreds(platform)
