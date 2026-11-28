@@ -11,7 +11,7 @@ import (
 
 const (
 	KeyEnabled            = "risk_relay_enabled"
-	KeyCheckIntervalSec   = "risk_relay_check_interval_sec"
+	KeyCheckIntervalSec   = "risk_relay_check_interval_sec" // 风控整轮：Reload + Ping + evaluate
 	KeyMaxRTTMs           = "risk_relay_max_rtt_ms"
 	KeyBookStaleSec       = "risk_relay_book_stale_sec"
 	KeyBookPushIntervalSec = "risk_relay_book_push_interval_sec"

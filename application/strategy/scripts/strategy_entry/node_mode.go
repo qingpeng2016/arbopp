@@ -55,14 +55,15 @@ func (e *Entry) initNodeMode(ctx context.Context) error {
 	}
 	e.nodeProf.Store(prof)
 	e.relayRisk = noderisk.NewGuard(ctx, prof, e.thresholdRepo, node)
-	if e.relayRisk != nil {
-		e.relayRisk.Start()
-	}
 	e.startRelayBookPushLoop(ctx)
 	e.relay = noderelay.NewHub(ctx, prof, e.onRelayBook, e.onRelayHedge, e.relayRisk)
 	if e.relay == nil {
 		e.nodeProf.Store(nil)
 		return fmt.Errorf("node %s: relay hub not started", node)
+	}
+	if e.relayRisk != nil {
+		e.relayRisk.SetPeerPing(func() { e.relay.PingPeers() })
+		e.relayRisk.Start()
 	}
 	_ = notification.GetGlobalNotificationManager().SendInfoAlert(ctx, "node-relay-started", []notification.FieldPair{
 		{Key: "node", Value: prof.NodeCode},

@@ -66,7 +66,6 @@ func NewHub(parent context.Context, prof *noderoute.Profile, onBook BookHandler,
 		go h.dialLoop(addr)
 	}
 	go h.listen()
-	go h.pingLoop()
 	return h
 }
 
@@ -255,28 +254,30 @@ func (h *Hub) setConn(addr string, c net.Conn) {
 	pc.mu.Unlock()
 }
 
-func (h *Hub) pingLoop() {
-	t := time.NewTicker(100 * time.Millisecond)
-	defer t.Stop()
-	for {
-		select {
-		case <-h.ctx.Done():
-			return
-		case at := <-t.C:
-			seq := h.pingSeq.Add(1)
-			msg := map[string]any{"type": "PING", "seq": seq, "ts_ms": at.UnixMilli()}
-			h.mu.Lock()
-			addrs := make([]string, 0, len(h.conns))
-			for a := range h.conns {
-				addrs = append(addrs, a)
+// PingPeers 每轮风控前调用一次（周期由 risk_relay_check_interval_sec 决定，非 5s 推书）。
+func (h *Hub) PingPeers() {
+	if h == nil {
+		return
+	}
+	now := time.Now()
+	seq := h.pingSeq.Add(1)
+	msg := map[string]any{"type": "PING", "seq": seq, "ts_ms": now.UnixMilli()}
+	h.mu.Lock()
+	addrs := make([]string, 0, len(h.conns))
+	for a := range h.conns {
+		addrs = append(addrs, a)
+	}
+	h.mu.Unlock()
+	for _, a := range addrs {
+		if v, ok := h.pingPending.Load(a); ok {
+			if sent, ok2 := v.(time.Time); ok2 && time.Since(sent) < 30*time.Second {
+				continue
 			}
-			h.mu.Unlock()
-			for _, a := range addrs {
-				if err := h.writeAddr(a, msg); err == nil {
-					h.pingPending.Store(a, at)
-				}
-			}
-			// inbound conns不含入 conns map；RTT 主要从来向 PONG 与 dial 方向测量
+			h.pingPending.Delete(a)
+		}
+		sentAt := time.Now()
+		if err := h.writeAddr(a, msg); err == nil {
+			h.pingPending.Store(a, sentAt)
 		}
 	}
 }

@@ -24,6 +24,7 @@ type Guard struct {
 	cfg        atomic.Value // Config
 	platforms  []string
 	startedAt  time.Time
+	hubPing    func() // 每轮评估前发 PING（由 Hub.PingPeers 注入）
 
 	mu          sync.RWMutex
 	plat        map[string]*platState
@@ -84,7 +85,15 @@ func mirrorPlatforms(prof *noderoute.Profile) []string {
 	return out
 }
 
-// Start 周期评估 + 配置刷新。
+// SetPeerPing 每 risk_relay_check_interval_sec 一轮评估前调用（不在此处占带宽推 BOOK）。
+func (g *Guard) SetPeerPing(fn func()) {
+	if g == nil {
+		return
+	}
+	g.hubPing = fn
+}
+
+// Start 周期评估 + 配置刷新（周期 = risk_relay_check_interval_sec）。
 func (g *Guard) Start() {
 	if g == nil {
 		return
@@ -194,14 +203,7 @@ func (g *Guard) OnPeerRTT(remoteAddr string, rtt time.Duration) {
 	if !cfg.Enabled {
 		return
 	}
-	if rtt > cfg.MaxRTT {
-		g.trip(plat, "risk_rtt_high", map[string]string{
-			"rtt_ms": formatMs(rtt),
-			"max_ms": formatMs(cfg.MaxRTT),
-			"peer":   remoteAddr,
-		})
-		return
-	}
+	// RTT 是否在阈值内，仅在 evaluate 周期统一判定（对齐 check_interval_sec）。
 	if tripped && strings.Contains(reason, "rtt") {
 		g.bumpOK(plat)
 	}
@@ -231,36 +233,51 @@ func (g *Guard) platState(platform string) *platState {
 }
 
 func (g *Guard) run() {
-	eval := time.NewTicker(time.Second)
-	defer eval.Stop()
-	var cfgReload <-chan time.Time
-	var reloadTick *time.Ticker
-	g.resetReloadTicker(&reloadTick, &cfgReload)
-	defer func() {
-		if reloadTick != nil {
-			reloadTick.Stop()
+	var ticker *time.Ticker
+	stopTick := func() {
+		if ticker != nil {
+			ticker.Stop()
+			ticker = nil
 		}
-	}()
+	}
+	defer stopTick()
+	resetTick := func() {
+		stopTick()
+		d := g.Config().CheckInterval
+		if d <= 0 {
+			d = 60 * time.Second
+		}
+		ticker = time.NewTicker(d)
+	}
+	g.Reload(g.ctx)
+	resetTick()
+	g.riskCycle()
 
 	for {
+		if ticker == nil {
+			resetTick()
+		}
 		select {
 		case <-g.ctx.Done():
 			return
-		case <-eval.C:
-			g.evaluate()
-		case <-cfgReload:
-			g.Reload(g.ctx)
-			g.resetReloadTicker(&reloadTick, &cfgReload)
+		case <-ticker.C:
+			prev := g.Config().CheckInterval
+			g.riskCycle()
+			if d := g.Config().CheckInterval; d > 0 && d != prev {
+				resetTick()
+			}
 		}
 	}
 }
 
-func (g *Guard) resetReloadTicker(t **time.Ticker, ch *<-chan time.Time) {
-	if *t != nil {
-		(*t).Stop()
+// riskCycle 一轮风控：读 DB 阈值 → PING（测 RTT）→ evaluate（含 RTT/BOOK/连接）。
+func (g *Guard) riskCycle() {
+	g.Reload(g.ctx)
+	if g.hubPing != nil {
+		g.hubPing()
 	}
-	*t = time.NewTicker(g.Config().CheckInterval)
-	*ch = (*t).C
+	time.Sleep(50 * time.Millisecond)
+	g.evaluate()
 }
 
 func (g *Guard) evaluate() {
@@ -270,8 +287,11 @@ func (g *Guard) evaluate() {
 	}
 	now := time.Now()
 	grace := cfg.BookStale
-	if grace < 2*cfg.BookPushInterval {
-		grace = 2 * cfg.BookPushInterval
+	if grace <= 0 {
+		grace = 15 * time.Second
+	}
+	if push := cfg.BookPushInterval; push > 0 && grace < 2*push {
+		grace = 2 * push
 	}
 
 	for _, plat := range g.platforms {
@@ -300,6 +320,14 @@ func (g *Guard) evaluate() {
 				extra["conn"] = "down"
 			}
 			g.trip(plat, reason, extra)
+			continue
+		}
+
+		if !tripped && rtt > 0 && rtt > cfg.MaxRTT {
+			g.trip(plat, "risk_rtt_high", map[string]string{
+				"rtt_ms": formatMs(rtt),
+				"max_ms": formatMs(cfg.MaxRTT),
+			})
 			continue
 		}
 
