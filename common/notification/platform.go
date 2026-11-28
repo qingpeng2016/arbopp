@@ -23,15 +23,3 @@ func larkContentWithPlatform(body string) string {
 	}
 	return fmt.Sprintf("**平台:** %s\n%s", runNodeLabel(), body)
 }
-
-func prependPlatformField(fields []FieldPair) []FieldPair {
-	label := runNodeLabel()
-	if len(fields) > 0 && fields[0].Key == "平台" {
-		fields[0].Value = label
-		return fields
-	}
-	out := make([]FieldPair, 0, len(fields)+1)
-	out = append(out, FieldPair{Key: "平台", Value: label})
-	out = append(out, fields...)
-	return out
-}

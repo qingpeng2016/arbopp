@@ -188,7 +188,7 @@ func (c *LarkClient) SendAlertWithOrder(ctx context.Context, alertType, service,
 		service, message, time.Now().Format("2006-01-02 15:04:05"))
 	content := larkContentWithPlatform(body)
 
-	return c.SendCardMessageWithOrder(ctx, title, content, prependPlatformField(fields))
+	return c.SendCardMessageWithOrder(ctx, title, content, fields)
 }
 
 // SendErrorAlert 发送错误报警
@@ -213,7 +213,7 @@ func (c *LarkClient) SendInfoAlert(ctx context.Context, service, infoMsg string,
 		service, infoMsg, time.Now().Format("2006-01-02 15:04:05"))
 	content := larkContentWithPlatform(body)
 
-	return c.SendCardMessageWithOrder(ctx, title, content, prependPlatformField(fields))
+	return c.SendCardMessageWithOrder(ctx, title, content, fields)
 }
 
 // sendMessage 发送消息到 Lark
