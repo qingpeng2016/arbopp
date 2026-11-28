@@ -399,10 +399,7 @@ func (g *Guard) alert(platform string, recovered bool, reason string, extra map[
 	}
 	g.mu.Unlock()
 
-	title := "relay风控触发"
-	if recovered {
-		title = "relay风控恢复"
-	}
+	title := relayAlertMessage(recovered, reason)
 	fields := []notification.FieldPair{
 		{Key: "node", Value: g.nodeCode},
 		{Key: "platform", Value: platform},
@@ -417,6 +414,19 @@ func (g *Guard) alert(platform string, recovered bool, reason string, extra map[
 		return
 	}
 	_ = nm.SendErrorAlertWithOrder(g.ctx, title, fields)
+}
+
+func relayAlertMessage(recovered bool, reason string) string {
+	if recovered {
+		if reason == "risk_peer_tcp_down" {
+			return "TCP长链接恢复"
+		}
+		return "relay风控恢复"
+	}
+	if reason == "risk_peer_tcp_down" {
+		return "TCP长链接断开"
+	}
+	return "relay风控触发"
 }
 
 func formatMs(d time.Duration) string {

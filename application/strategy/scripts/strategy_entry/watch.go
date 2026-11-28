@@ -56,7 +56,7 @@ type event struct {
 	TS       time.Time
 	Changes  []book.PolyChange
 	RecvAt   time.Time // WS 回调收到消息的本地时间
-	Mirror   bool      // 对端 TCP 镜像：只更新盘口，不触发 grab、不向外 relay
+	Mirror   bool      // 对端 TCP 镜像：不落 grab/relay；内存与 market_order_book_ws 与官方 WS 同路径异步落库
 }
 
 type connState struct {
@@ -536,6 +536,10 @@ func (w *watch) write(e event) {
 	w.touchWS(e.Platform)
 
 	if e.Mirror {
+		// 镜像簿：不抢单、不向对端 relay；落库与官方 WS 相同（异步 Redis → ws_book_flush）。
+		if w.entry != nil && w.entry.wsBookQueue != nil {
+			go w.persistBookEventWS(e)
+		}
 		return
 	}
 
